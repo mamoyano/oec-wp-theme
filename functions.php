@@ -285,12 +285,11 @@ require OEC_THEME_DIR . '/inc/theme-updater.php';
 
 /* ============================================================
    THEME UPDATER
-   Reemplazá 'oec-org/oec-wp-theme' con el owner/repo de GitHub.
    Para repos privados pasá el Personal Access Token como 2do arg.
    ============================================================ */
 function oec_register_updater(): void {
 	new OEC_Theme_Updater(
-		'oec-org/oec-wp-theme',    // ← cambiá por tu owner/repo
+		'mamoyano/oec-wp-theme',
 		defined( 'OEC_GITHUB_TOKEN' ) ? OEC_GITHUB_TOKEN : null
 	);
 }
