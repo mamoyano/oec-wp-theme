@@ -14,7 +14,7 @@ function oec_setup(): void {
 	add_theme_support( 'title-tag' );
 	add_theme_support( 'post-thumbnails' );
 	add_theme_support( 'automatic-feed-links' );
-	add_theme_support( 'html5', [ 'search-form', 'comment-form', 'comment-list', 'gallery', 'caption', 'style', 'script' ] );
+	add_theme_support( 'html5', [ 'search-form', 'gallery', 'caption', 'style', 'script' ] );
 	add_theme_support( 'custom-logo', [
 		'height'      => 80,
 		'width'       => 200,
@@ -56,9 +56,6 @@ function oec_enqueue_assets(): void {
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
 
-	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) ) {
-		wp_enqueue_script( 'comment-reply' );
-	}
 }
 add_action( 'wp_enqueue_scripts', 'oec_enqueue_assets' );
 
@@ -279,6 +276,7 @@ add_action( 'customize_register', 'oec_customize_register' );
 /* ============================================================
    INCLUDE FILES
    ============================================================ */
+require OEC_THEME_DIR . '/inc/performance.php';
 require OEC_THEME_DIR . '/inc/template-functions.php';
 require OEC_THEME_DIR . '/inc/admin-settings.php';
 require OEC_THEME_DIR . '/inc/theme-updater.php';
