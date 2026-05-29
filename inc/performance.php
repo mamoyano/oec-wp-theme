@@ -2,6 +2,19 @@
 defined( 'ABSPATH' ) || exit;
 
 /* ============================================================
+   0. EDITOR CLÁSICO — deshabilitar Gutenberg completamente
+      El editor de bloques se reemplaza por el editor HTML clásico
+      en todos los tipos de contenido (páginas, posts, etc.).
+   ============================================================ */
+add_filter( 'use_block_editor_for_post_type', '__return_false', 10 );
+add_filter( 'use_widgets_block_editor',       '__return_false' );
+
+// Limpiar patrones de bloques registrados por WP core
+add_action( 'after_setup_theme', function (): void {
+	remove_theme_support( 'core-block-patterns' );
+} );
+
+/* ============================================================
    1. EMOJIS — eliminar completamente
       WP carga un script de detección + CSS + DNS prefetch
       para emojis que nadie usa. ~15 KB ahorrados.

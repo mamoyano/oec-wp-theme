@@ -22,9 +22,6 @@ function oec_setup(): void {
 		'flex-width'  => true,
 	] );
 	add_theme_support( 'customize-selective-refresh-widgets' );
-	add_theme_support( 'wp-block-styles' );
-	add_theme_support( 'align-wide' );
-	add_theme_support( 'responsive-embeds' );
 
 	add_image_size( 'oec-hero',    1600, 900,  true );
 	add_image_size( 'oec-card',     800, 500,  true );
@@ -56,6 +53,20 @@ function oec_enqueue_assets(): void {
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
 
+	// Buscador del header (solo si hay token configurado)
+	if ( ! empty( oec_get_options()['oec_api_token'] ) ) {
+		wp_enqueue_script(
+			'oec-header-search',
+			OEC_THEME_URI . '/assets/js/header-search.js',
+			[],
+			OEC_THEME_VERSION,
+			[ 'strategy' => 'defer', 'in_footer' => true ]
+		);
+		wp_localize_script( 'oec-header-search', 'oecSearch', [
+			'endpoint'  => esc_url( rest_url( 'oec/v1/search' ) ),
+			'searchUrl' => esc_url( home_url( '/?s=' ) ),
+		] );
+	}
 }
 add_action( 'wp_enqueue_scripts', 'oec_enqueue_assets' );
 
@@ -279,6 +290,7 @@ add_action( 'customize_register', 'oec_customize_register' );
 require OEC_THEME_DIR . '/inc/performance.php';
 require OEC_THEME_DIR . '/inc/template-functions.php';
 require OEC_THEME_DIR . '/inc/admin-settings.php';
+require OEC_THEME_DIR . '/inc/search-api.php';
 require OEC_THEME_DIR . '/inc/theme-updater.php';
 
 /* ============================================================

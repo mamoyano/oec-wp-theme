@@ -18,6 +18,7 @@ function oec_get_defaults(): array {
 		'gtm_id'           => '',
 		'meta_pixel_id'    => '',
 		'ms_clarity_id'    => '',
+		'oec_api_token'    => '',
 	];
 }
 
@@ -66,6 +67,9 @@ function oec_sanitize_options( $raw ): array {
 	$clean['gtm_id']        = strtoupper( sanitize_text_field( $raw['gtm_id'] ?? '' ) );
 	$clean['meta_pixel_id'] = preg_replace( '/\D/', '', $raw['meta_pixel_id'] ?? '' );
 	$clean['ms_clarity_id'] = preg_replace( '/[^a-z0-9]/i', '', $raw['ms_clarity_id'] ?? '' );
+
+	// OEC API
+	$clean['oec_api_token'] = sanitize_text_field( $raw['oec_api_token'] ?? '' );
 
 	return $clean;
 }
@@ -123,9 +127,10 @@ function oec_render_settings_page(): void {
 	$opts = oec_get_options();
 	$tab  = sanitize_key( $_GET['tab'] ?? 'logo' );
 	$tabs = [
-		'logo'    => [ 'label' => __( 'Logo', 'oec-theme' ),              'icon' => '🖼' ],
-		'colores' => [ 'label' => __( 'Paleta de colores', 'oec-theme' ), 'icon' => '🎨' ],
-		'rastreo' => [ 'label' => __( 'Rastreo', 'oec-theme' ),           'icon' => '📊' ],
+		'logo'          => [ 'label' => __( 'Logo', 'oec-theme' ),              'icon' => '🖼' ],
+		'colores'       => [ 'label' => __( 'Paleta de colores', 'oec-theme' ), 'icon' => '🎨' ],
+		'rastreo'       => [ 'label' => __( 'Rastreo', 'oec-theme' ),           'icon' => '📊' ],
+		'integraciones' => [ 'label' => __( 'Integraciones', 'oec-theme' ),     'icon' => '🔌' ],
 	];
 
 	if ( ! array_key_exists( $tab, $tabs ) ) {
@@ -138,9 +143,10 @@ function oec_render_settings_page(): void {
 
 	// Keys that belong to each tab (for hidden-input preservation)
 	$tab_keys = [
-		'logo'    => [ 'logo_id', 'logo_url' ],
-		'colores' => [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ],
-		'rastreo' => [ 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		'logo'          => [ 'logo_id', 'logo_url' ],
+		'colores'       => [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ],
+		'rastreo'       => [ 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		'integraciones' => [ 'oec_api_token' ],
 	];
 
 	$all_keys    = array_merge( ...array_values( $tab_keys ) );
@@ -437,6 +443,60 @@ function oec_render_settings_page(): void {
 								<p class="description">
 									<?php esc_html_e( 'Clarity → tu proyecto → Configuración → Instalar manualmente. Formato: ~10 caracteres alfanuméricos.', 'oec-theme' ); ?>
 								</p>
+							</div>
+						</div>
+
+					</div>
+				</div>
+
+				<?php elseif ( $tab === 'integraciones' ) : ?>
+				<!-- ================================================
+				     TAB: INTEGRACIONES
+				     ================================================ -->
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'API de Online Education Center', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'El token se usa para conectar el buscador del header con la base de formaciones. Nunca se expone al navegador.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<div class="oec-tracker-row">
+							<div class="oec-tracker-row__head">
+								<div class="oec-tracker-logo" style="background:#194872;font-size:.6rem;font-weight:900;">OEC</div>
+								<div>
+									<strong><?php esc_html_e( 'OEC Search API', 'oec-theme' ); ?></strong>
+									<p><?php esc_html_e( 'Habilita el autocompletado de formaciones en el buscador del header.', 'oec-theme' ); ?></p>
+								</div>
+								<div class="oec-tracker-status" id="status-oec_api_token">
+									<?php oec_tracker_badge( $opts['oec_api_token'] ); ?>
+								</div>
+							</div>
+
+							<div class="oec-tracker-row__field">
+								<label for="oec-api-token"><?php esc_html_e( 'API Token', 'oec-theme' ); ?></label>
+								<input type="password"
+								       id="oec-api-token"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_token]"
+								       value="<?php echo esc_attr( $opts['oec_api_token'] ); ?>"
+								       class="regular-text oec-tracker-input"
+								       placeholder="PjTzQpp..."
+								       data-tracker="oec_api_token"
+								       autocomplete="new-password"
+								       spellcheck="false">
+								<p class="description">
+									<?php esc_html_e( 'Token de autenticación para la API de OEC. Lo encontrás en tu panel de administración de Online Education Center.', 'oec-theme' ); ?>
+									<?php if ( $opts['oec_api_token'] ) : ?>
+									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Token configurado — el buscador está activo.', 'oec-theme' ); ?></span>
+									<?php endif; ?>
+								</p>
+							</div>
+
+							<div class="oec-tracker-row__field" style="margin-top:1rem;">
+								<label><?php esc_html_e( 'Endpoint REST del buscador', 'oec-theme' ); ?></label>
+								<code style="display:block;padding:.5rem .875rem;background:#f0f4f8;border-radius:6px;font-size:.8125rem;color:#194872;border:1px solid #dce6ef;">
+									<?php echo esc_html( rest_url( 'oec/v1/search?q=genetica' ) ); ?>
+								</code>
+								<p class="description"><?php esc_html_e( 'El JS del header llama a este endpoint interno. Nunca expone el token al navegador.', 'oec-theme' ); ?></p>
 							</div>
 						</div>
 
