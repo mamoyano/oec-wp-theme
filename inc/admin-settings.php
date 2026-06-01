@@ -117,6 +117,37 @@ function oec_admin_enqueue( string $hook ): void {
 add_action( 'admin_enqueue_scripts', 'oec_admin_enqueue' );
 
 /* ============================================================
+   FORCE UPDATE CHECK — acción GET
+   ============================================================ */
+function oec_maybe_handle_force_check(): void {
+	if ( ! isset( $_GET['oec_action'] ) || $_GET['oec_action'] !== 'force_update_check' ) return;
+	if ( ! current_user_can( 'manage_options' ) ) return;
+	if ( ! isset( $_GET['_nonce'] ) || ! wp_verify_nonce( sanitize_key( $_GET['_nonce'] ), 'oec_force_update_check' ) ) return;
+
+	// Leer repo desde el header del style.css
+	$theme_data = get_file_data( get_template_directory() . '/style.css', [ 'github_uri' => 'GitHub Theme URI' ] );
+	$repo       = $theme_data['github_uri'] ?? '';
+
+	// 1. Borrar nuestro caché del updater
+	if ( $repo ) {
+		delete_transient( 'oec_updater_' . md5( $repo ) );
+	}
+
+	// 2. Borrar el caché de actualizaciones de WordPress
+	delete_site_transient( 'update_themes' );
+
+	// 3. Forzar re-verificación inmediata
+	wp_update_themes();
+
+	wp_safe_redirect( add_query_arg(
+		[ 'page' => 'oec-settings', 'tab' => 'actualizaciones', 'checked' => '1' ],
+		admin_url( 'themes.php' )
+	) );
+	exit;
+}
+add_action( 'admin_init', 'oec_maybe_handle_force_check' );
+
+/* ============================================================
    SETTINGS PAGE
    ============================================================ */
 function oec_render_settings_page(): void {
@@ -127,10 +158,11 @@ function oec_render_settings_page(): void {
 	$opts = oec_get_options();
 	$tab  = sanitize_key( $_GET['tab'] ?? 'logo' );
 	$tabs = [
-		'logo'          => [ 'label' => __( 'Logo', 'oec-theme' ),              'icon' => '🖼' ],
-		'colores'       => [ 'label' => __( 'Paleta de colores', 'oec-theme' ), 'icon' => '🎨' ],
-		'rastreo'       => [ 'label' => __( 'Rastreo', 'oec-theme' ),           'icon' => '📊' ],
-		'integraciones' => [ 'label' => __( 'Integraciones', 'oec-theme' ),     'icon' => '🔌' ],
+		'logo'            => [ 'label' => __( 'Logo', 'oec-theme' ),              'icon' => '🖼' ],
+		'colores'         => [ 'label' => __( 'Paleta de colores', 'oec-theme' ), 'icon' => '🎨' ],
+		'rastreo'         => [ 'label' => __( 'Rastreo', 'oec-theme' ),           'icon' => '📊' ],
+		'integraciones'   => [ 'label' => __( 'Integraciones', 'oec-theme' ),     'icon' => '🔌' ],
+		'actualizaciones' => [ 'label' => __( 'Actualizaciones', 'oec-theme' ),   'icon' => '🔄' ],
 	];
 
 	if ( ! array_key_exists( $tab, $tabs ) ) {
@@ -143,10 +175,11 @@ function oec_render_settings_page(): void {
 
 	// Keys that belong to each tab (for hidden-input preservation)
 	$tab_keys = [
-		'logo'          => [ 'logo_id', 'logo_url' ],
-		'colores'       => [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ],
-		'rastreo'       => [ 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
-		'integraciones' => [ 'oec_api_token' ],
+		'logo'            => [ 'logo_id', 'logo_url' ],
+		'colores'         => [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ],
+		'rastreo'         => [ 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		'integraciones'   => [ 'oec_api_token' ],
+		'actualizaciones' => [],
 	];
 
 	$all_keys    = array_merge( ...array_values( $tab_keys ) );
@@ -502,6 +535,162 @@ function oec_render_settings_page(): void {
 
 					</div>
 				</div>
+
+				<?php elseif ( $tab === 'actualizaciones' ) : ?>
+				<!-- ================================================
+				     TAB: ACTUALIZACIONES — diagnóstico y control
+				     ================================================ -->
+				<?php
+				// Leer datos para el diagnóstico
+				$theme_data   = get_file_data( get_template_directory() . '/style.css', [ 'github_uri' => 'GitHub Theme URI' ] );
+				$repo         = $theme_data['github_uri'] ?? '';
+				$cache_key    = $repo ? ( 'oec_updater_' . md5( $repo ) ) : '';
+				$cached       = $cache_key ? get_transient( $cache_key ) : false;
+				$installed_v  = wp_get_theme()->get( 'Version' );
+				$theme_slug   = get_template();
+
+				// Llamada en vivo a la API de GitHub (sin caché)
+				$gh_latest   = null;
+				$gh_error    = '';
+				if ( $repo ) {
+					$gh_response = wp_remote_get(
+						"https://api.github.com/repos/{$repo}/releases/latest",
+						[ 'headers' => [ 'User-Agent' => 'WordPress/' . get_bloginfo( 'version' ) ], 'timeout' => 8 ]
+					);
+					$gh_code = wp_remote_retrieve_response_code( $gh_response );
+					if ( is_wp_error( $gh_response ) ) {
+						$gh_error = $gh_response->get_error_message();
+					} elseif ( $gh_code === 200 ) {
+						$gh_latest = json_decode( wp_remote_retrieve_body( $gh_response ), true );
+					} elseif ( $gh_code === 404 ) {
+						$gh_error = __( 'Repositorio no encontrado o sin releases publicados. ¿El repo es público?', 'oec-theme' );
+					} else {
+						$gh_error = sprintf( __( 'GitHub respondió con código HTTP %d.', 'oec-theme' ), $gh_code );
+					}
+				}
+
+				$latest_tag = $gh_latest ? ltrim( $gh_latest['tag_name'] ?? '', 'vV' ) : null;
+				$has_update = $latest_tag && version_compare( $latest_tag, $installed_v, '>' );
+
+				if ( isset( $_GET['checked'] ) ) :
+				?>
+				<div class="notice notice-success is-dismissible" style="margin-bottom:1.5rem;">
+					<p><?php esc_html_e( '✅ Caché borrado. WordPress verificó actualizaciones ahora mismo.', 'oec-theme' ); ?></p>
+				</div>
+				<?php endif; ?>
+
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Estado de la actualización', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Diagnóstico en tiempo real — esta consulta a GitHub se hace ahora mismo, sin caché.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<!-- Tabla de diagnóstico -->
+						<table style="width:100%;border-collapse:collapse;font-size:.9rem;">
+							<?php
+							$rows = [
+								[
+									'label'  => __( 'Carpeta del tema (slug)', 'oec-theme' ),
+									'value'  => '<code>' . esc_html( $theme_slug ) . '</code>',
+									'note'   => __( 'Debe coincidir con el nombre del ZIP del release.', 'oec-theme' ),
+								],
+								[
+									'label'  => __( 'Versión instalada', 'oec-theme' ),
+									'value'  => '<strong>' . esc_html( $installed_v ) . '</strong>',
+									'note'   => __( 'Leída desde style.css del servidor.', 'oec-theme' ),
+								],
+								[
+									'label'  => __( 'Repositorio GitHub', 'oec-theme' ),
+									'value'  => $repo
+										? '<a href="https://github.com/' . esc_attr( $repo ) . '" target="_blank">' . esc_html( $repo ) . '</a>'
+										: '<span style="color:#c00;">⚠ No configurado en style.css</span>',
+									'note'   => __( 'Header "GitHub Theme URI" en style.css.', 'oec-theme' ),
+								],
+								[
+									'label'  => __( 'Último release en GitHub', 'oec-theme' ),
+									'value'  => $gh_error
+										? '<span style="color:#c00;">✗ ' . esc_html( $gh_error ) . '</span>'
+										: ( $gh_latest
+											? '<strong>' . esc_html( $gh_latest['tag_name'] ) . '</strong> — <a href="' . esc_url( $gh_latest['html_url'] ) . '" target="_blank">' . esc_html__( 'ver release', 'oec-theme' ) . '</a>'
+											: '<span style="color:#888;">' . esc_html__( 'Sin datos', 'oec-theme' ) . '</span>'
+										),
+									'note'   => $gh_latest ? esc_html( $gh_latest['published_at'] ?? '' ) : '',
+								],
+								[
+									'label'  => __( 'Caché del updater', 'oec-theme' ),
+									'value'  => $cached !== false
+										? '<span style="color:#888;">' . esc_html__( 'Activo (expira en ', 'oec-theme' ) . ( $cache_key ? human_time_diff( time() + (int) get_option( '_transient_timeout_' . $cache_key, 0 ), time() ) : '?' ) . ')</span>'
+										: '<span style="color:#1e7e34;">' . esc_html__( 'Sin caché — se consultará en la próxima verificación', 'oec-theme' ) . '</span>',
+									'note'   => '',
+								],
+								[
+									'label'  => __( '¿Hay actualización disponible?', 'oec-theme' ),
+									'value'  => $has_update
+										? '<span style="color:#1e7e34;font-weight:700;">✅ Sí — ' . esc_html( $latest_tag ) . ' > ' . esc_html( $installed_v ) . '</span>'
+										: ( $latest_tag
+											? '<span style="color:#888;">✓ ' . esc_html__( 'Ya estás en la última versión.', 'oec-theme' ) . '</span>'
+											: '<span style="color:#888;">—</span>'
+										),
+									'note'   => '',
+								],
+							];
+							foreach ( $rows as $row ) :
+							?>
+							<tr style="border-bottom:1px solid #f0f0f1;">
+								<td style="padding:.875rem 1rem .875rem 0;font-weight:600;color:#1e2d3d;width:35%;vertical-align:top;">
+									<?php echo esc_html( $row['label'] ); ?>
+								</td>
+								<td style="padding:.875rem 0;vertical-align:top;">
+									<?php echo $row['value']; // phpcs:ignore ?>
+									<?php if ( $row['note'] ) : ?>
+									<br><span style="font-size:.75rem;color:#888;"><?php echo esc_html( $row['note'] ); ?></span>
+									<?php endif; ?>
+								</td>
+							</tr>
+							<?php endforeach; ?>
+						</table>
+
+						<!-- Botón forzar verificación -->
+						<div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #f0f0f1;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+							<a href="<?php echo esc_url( add_query_arg( [
+								'page'       => 'oec-settings',
+								'tab'        => 'actualizaciones',
+								'oec_action' => 'force_update_check',
+								'_nonce'     => wp_create_nonce( 'oec_force_update_check' ),
+							], admin_url( 'themes.php' ) ) ); ?>"
+							   class="button button-primary button-large">
+								🔄 <?php esc_html_e( 'Borrar caché y forzar verificación', 'oec-theme' ); ?>
+							</a>
+							<a href="<?php echo esc_url( admin_url( 'update-core.php' ) ); ?>" class="button button-large">
+								<?php esc_html_e( 'Ir a WordPress → Actualizaciones', 'oec-theme' ); ?>
+							</a>
+							<p style="font-size:.8125rem;color:#646970;margin:0;">
+								<?php esc_html_e( 'Después de forzar, revisá Apariencia → Temas.', 'oec-theme' ); ?>
+							</p>
+						</div>
+
+					</div>
+				</div>
+
+				<?php if ( $has_update ) : ?>
+				<!-- Aviso de actualización disponible -->
+				<div class="oec-card" style="margin-top:1rem;border-color:#1e7e34;">
+					<div class="oec-card__body" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 2rem;">
+						<div>
+							<strong style="color:#1e7e34;font-size:1rem;">
+								✅ <?php printf( esc_html__( 'Versión %s disponible', 'oec-theme' ), esc_html( $latest_tag ) ); ?>
+							</strong>
+							<p style="font-size:.875rem;color:#646970;margin:.25rem 0 0;">
+								<?php esc_html_e( 'WordPress debería mostrártela en Apariencia → Temas. Si no aparece, usá el botón de arriba.', 'oec-theme' ); ?>
+							</p>
+						</div>
+						<a href="<?php echo esc_url( admin_url( 'themes.php' ) ); ?>" class="button button-primary">
+							<?php esc_html_e( 'Ir a Temas', 'oec-theme' ); ?>
+						</a>
+					</div>
+				</div>
+				<?php endif; ?>
 
 				<?php endif; ?>
 
