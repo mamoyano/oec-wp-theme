@@ -288,6 +288,12 @@ function oec_handle_contact_form(): void {
 		wp_die( esc_html__( 'Acción no permitida.', 'oec-theme' ) );
 	}
 
+	// Trampa para bots (campo invisible en el formulario): se descarta en silencio.
+	if ( ! empty( $_POST['cf_website'] ) ) {
+		wp_safe_redirect( add_query_arg( 'contact', 'success', wp_get_referer() ) . '#contacto' );
+		exit;
+	}
+
 	$name     = sanitize_text_field( wp_unslash( $_POST['cf_name']     ?? '' ) );
 	$email    = sanitize_email( wp_unslash( $_POST['cf_email']    ?? '' ) );
 	$phone    = sanitize_text_field( wp_unslash( $_POST['cf_phone']    ?? '' ) );
@@ -295,7 +301,7 @@ function oec_handle_contact_form(): void {
 	$message  = sanitize_textarea_field( wp_unslash( $_POST['cf_message']  ?? '' ) );
 
 	if ( ! $name || ! is_email( $email ) ) {
-		wp_safe_redirect( add_query_arg( 'contact', 'error', wp_get_referer() ) );
+		wp_safe_redirect( add_query_arg( 'contact', 'error', wp_get_referer() ) . '#contacto' );
 		exit;
 	}
 
@@ -309,8 +315,31 @@ function oec_handle_contact_form(): void {
 
 	wp_mail( $to, $subject, $body, $headers );
 
-	wp_safe_redirect( add_query_arg( 'contact', 'success', wp_get_referer() ) );
+	wp_safe_redirect( add_query_arg( 'contact', 'success', wp_get_referer() ) . '#contacto' );
 	exit;
 }
 add_action( 'admin_post_oec_contact_form',        'oec_handle_contact_form' );
 add_action( 'admin_post_nopriv_oec_contact_form', 'oec_handle_contact_form' );
+
+/**
+ * Página "Quiénes somos" (page-quienes-somos.php): se crea sola en el sitio
+ * de contenido, vacía — el contenido vive en la plantilla.
+ */
+function oec_create_quienes_somos_page(): void {
+	if ( get_option( 'oec_quienes_somos_page_v1' ) || ! oec_is_config_site() ) {
+		return;
+	}
+	if ( ! get_page_by_path( 'quienes-somos' ) ) {
+		wp_insert_post( [
+			'post_title'   => 'Quiénes somos',
+			'post_name'    => 'quienes-somos',
+			'post_status'  => 'publish',
+			'post_type'    => 'page',
+			'post_content' => '',
+			'post_author'  => get_current_user_id() ?: 1,
+		] );
+	}
+	update_option( 'oec_quienes_somos_page_v1', 1 );
+}
+add_action( 'after_switch_theme', 'oec_create_quienes_somos_page' );
+add_action( 'admin_init', 'oec_create_quienes_somos_page' );

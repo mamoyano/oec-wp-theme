@@ -8,6 +8,9 @@ defined( 'ABSPATH' ) || exit;
  * índice. Para sumar uno, agregar su slug acá.
  */
 return [
+	// Páginas viejas sin reemplazo (decisión de Mario, 2026-09-28).
+	'audio-course-navette',
+	'streaming',
 	'03-esqueleto-y-huesos',
 	'04-sistema-articular',
 	'actividad-fisica-diferencias-de-sexo-y-capacidad-funcional-de-ejercicio-en-la-bronquiectasia-perspectivas-de-una-cohorte-del-sur-de-asia-2',

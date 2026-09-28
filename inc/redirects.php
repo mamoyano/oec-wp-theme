@@ -13,6 +13,8 @@ defined( 'ABSPATH' ) || exit;
    - /formaciones-filtradas → /formaciones con los mismos filtros
    - /formacion-incrustada/{slug} → /formacion/{slug}
    - URLs cortadas ("/masa-") → el único post que empieza así
+   - slugs de la plataforma vieja: "-t-{código}" → ficha de formación,
+     "-sa-{código}" (artículo no migrado) → búsqueda por el título
    - /especiales/{slug}     → landing de la temática o formaciones filtradas
    - /blogs, /blogs/page/N  → artículos filtrados por blogs
    - posts depurados        → 410 Gone (inc/redirects-gone.php)
@@ -189,6 +191,24 @@ function oec_redirect_truncado( string $slug ): ?string {
 	return 1 === count( $ids ) ? get_permalink( (int) $ids[0] ) : null;
 }
 
+/**
+ * Slugs de la plataforma anterior a WordPress:
+ * - "…-t-K6019a7d39d3e8": formación → su ficha (g-se.com ya hacía ese 301).
+ * - "…-550-sa-l57cfb27158937": artículo que no se migró (ya daba 404 en
+ *   g-se.com) → búsqueda con las primeras palabras del título.
+ * Llamar con el sitio /es activo.
+ */
+function oec_redirect_slug_viejo( string $slug ): ?string {
+	if ( preg_match( '/-t-[A-Za-z0-9]{10,}$/', $slug ) ) {
+		return oec_redirect_formacion( $slug );
+	}
+	if ( preg_match( '/^(.+?)(?:-\d+)?-sa-[A-Za-z0-9]{10,}$/', $slug, $m ) ) {
+		$palabras = array_slice( array_filter( explode( '-', $m[1] ), fn( $w ) => strlen( $w ) > 2 ), 0, 6 );
+		return $palabras ? oec_articulos_url( [ 'q' => implode( ' ', $palabras ) ] ) : null;
+	}
+	return null;
+}
+
 /** Destino para una ruta del sitio /es (relativa, sin barras de borde). */
 function oec_redirect_es( string $rel ): ?string {
 	$parts = explode( '/', $rel );
@@ -205,7 +225,7 @@ function oec_redirect_es( string $rel ): ?string {
 	if ( 'organizaciones-educativas' === $rel ) {
 		return oec_organizaciones_url();
 	}
-	if ( 1 === count( $parts ) && ( $post = oec_redirect_truncado( $rel ) ) ) {
+	if ( 1 === count( $parts ) && ( $post = oec_redirect_truncado( $rel ) ?: oec_redirect_slug_viejo( $rel ) ) ) {
 		return $post;
 	}
 	if ( 'socio' === $parts[0] && isset( $parts[1] ) ) {
@@ -247,7 +267,9 @@ function oec_redirect_root( string $rel ): ?string {
 	} elseif ( ! str_contains( $rel, '/' ) && '' !== $rel ) {
 		// Post en español servido sin prefijo de idioma (o con la URL cortada).
 		$post   = get_page_by_path( $rel, OBJECT, 'post' );
-		$target = ( $post && 'publish' === $post->post_status ) ? get_permalink( $post ) : oec_redirect_truncado( $rel );
+		$target = ( $post && 'publish' === $post->post_status )
+			? get_permalink( $post )
+			: ( oec_redirect_truncado( $rel ) ?: oec_redirect_slug_viejo( $rel ) );
 	}
 	// Las imágenes y PDFs viejos (/wp-content/uploads/…) no llegan a PHP:
 	// los resuelve el .htaccess (ver el bloque "OEC uploads" en el servidor).
