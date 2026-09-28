@@ -447,6 +447,8 @@ require OEC_THEME_DIR . '/inc/formaciones.php';
 require OEC_THEME_DIR . '/inc/ai-chat.php';
 require OEC_THEME_DIR . '/inc/newsletter.php';
 require OEC_THEME_DIR . '/inc/seed.php';
+require OEC_THEME_DIR . '/inc/redirects.php';
+require OEC_THEME_DIR . '/inc/mail.php';
 require OEC_THEME_DIR . '/inc/theme-updater.php';
 
 /* ============================================================

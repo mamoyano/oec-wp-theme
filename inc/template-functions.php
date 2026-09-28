@@ -156,6 +156,21 @@ function oec_breadcrumb( array $items, bool $schema = true ): void {
 	], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . "</script>\n";
 }
 
+/**
+ * URL de la página N de /articulos con los filtros activos, en el formato que
+ * WordPress considera canónico (/articulos/page/N): con ?paged=N WP responde
+ * un 301 a esta misma URL.
+ */
+function oec_articulos_page_url( int $page, array $params = [] ): string {
+	$url   = oec_articulos_url( $params );
+	$query = (string) wp_parse_url( $url, PHP_URL_QUERY );
+	$base  = strtok( $url, '?' );
+	if ( $page > 1 ) {
+		$base = user_trailingslashit( trailingslashit( $base ) . 'page/' . $page, 'paged' );
+	}
+	return '' !== $query ? $base . '?' . $query : $base;
+}
+
 /** Texto buscado en /articulos (?q=), limpio y acotado. */
 function oec_articulos_q(): string {
 	return mb_substr( trim( sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) ) ), 0, 80 );

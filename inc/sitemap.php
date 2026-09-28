@@ -111,7 +111,7 @@ function oec_seo_sites(): array {
 		restore_current_blog();
 	}
 	$main = get_main_site_id();
-	if ( count( $sites ) > 1 && function_exists( 'oec_detect_preferred_lang' ) ) {
+	if ( count( $sites ) > 1 && function_exists( 'oec_root_preferred_lang' ) ) {
 		$sites = array_values( array_filter( $sites, fn( $s ) => $s['id'] !== $main ) );
 	}
 	return $sites = apply_filters( 'oec_seo_sites', $sites );

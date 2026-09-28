@@ -124,7 +124,7 @@ remove_action( 'wp_head', 'rel_canonical' );
 // a la página de categoría nativa (/category/slug/), que es la URL indexable.
 // Cualquier combinación de 2+ filtros, o año/autor solos -> noindex (no aportan
 // contenido único para el buscador, evitan contenido duplicado).
-add_action( 'wp_head', function () use ( $f_tipo, $f_tematica, $f_anio, $f_autor, $f_q ): void {
+add_action( 'wp_head', function () use ( $f_tipo, $f_tematica, $f_anio, $f_autor, $f_q, $paged ): void {
 	$active_filters = array_filter( [
 		'tipo'     => $f_tipo,
 		'tematica' => $f_tematica,
@@ -135,8 +135,9 @@ add_action( 'wp_head', function () use ( $f_tipo, $f_tematica, $f_anio, $f_autor
 	$active_count = count( $active_filters );
 
 	if ( 0 === $active_count ) {
-		$current_url = home_url( wp_unslash( $_SERVER['REQUEST_URI'] ?? '/articulos/' ) );
-		echo '<link rel="canonical" href="' . esc_url( $current_url ) . '">' . "\n";
+		// Armada, no copiada de REQUEST_URI: en multisitio home_url() ya trae
+		// /es (quedaba /es/es/…) y así no se cuelan parámetros ajenos (?utm…).
+		echo '<link rel="canonical" href="' . esc_url( oec_articulos_page_url( $paged ) ) . '">' . "\n";
 		return;
 	}
 
@@ -400,8 +401,7 @@ get_header();
 		$oec_art_tp = (int) $art_query->max_num_pages;
 		if ( $oec_art_tp > 1 ) :
 			$oec_art_cp   = $paged;
-			$pagination_base = oec_articulos_url( [] );
-			$oec_art_page_url = fn( $p ) => esc_url( $p > 1 ? add_query_arg( 'paged', $p, $pagination_base ) : $pagination_base );
+			$oec_art_page_url = fn( $p ) => esc_url( oec_articulos_page_url( $p ) );
 			?>
 		<nav class="oec-pager" aria-label="<?php esc_attr_e( 'Paginación de artículos', 'oec-theme' ); ?>">
 			<?php if ( $oec_art_cp > 1 ) : ?>
