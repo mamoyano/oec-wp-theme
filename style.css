@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.55
+Version: 1.0.56
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -2183,6 +2183,9 @@ body.oec-chat-open { overflow: hidden; }
 .oec-especiales-card__thumb { position: relative; aspect-ratio: 16/9; overflow: hidden; }
 .oec-especiales-card__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .oec-especiales-card__thumb-fallback { width: 100%; height: 100%; background: linear-gradient(160deg, var(--card-accent, var(--color-primary)) 0%, var(--color-dark) 100%); }
+/* Capa de color para portadas sin teñir ("tinte" en oec_get_especiales_list()),
+   con la misma intensidad que traen incorporada las de Nutrición y Fuerza. */
+.oec-especiales-card__tint { position: absolute; inset: 0; background: var(--card-tint); opacity: .85; }
 .oec-especiales-card__accent { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: var(--card-accent, var(--color-primary)); }
 .oec-especiales-card__body { display: flex; flex-direction: column; gap: .5rem; padding: 1.25rem 1.5rem 1.5rem; }
 .oec-especiales-card__title { font-size: 1.25rem; font-weight: 800; color: var(--color-dark); margin: 0; }

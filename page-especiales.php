@@ -81,6 +81,9 @@ get_header();
 				<?php else : ?>
 				<div class="oec-especiales-card__thumb-fallback"></div>
 				<?php endif; ?>
+				<?php if ( ! empty( $esp['tinte'] ) && $esp['image'] ) : ?>
+				<span class="oec-especiales-card__tint" style="--card-tint: <?php echo esc_attr( $esp['tinte'] ); ?>;" aria-hidden="true"></span>
+				<?php endif; ?>
 				<span class="oec-especiales-card__accent" aria-hidden="true"></span>
 			</div>
 			<div class="oec-especiales-card__body">

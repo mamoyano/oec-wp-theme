@@ -397,6 +397,10 @@ function oec_render_trust_logos_shortcode( $atts ): string {
  * comprimidos para fondo (960 px, 24 fps, sin audio, faststart — van detrás
  * de un overlay casi opaco). network_home_url() arma la URL con el dominio
  * vigente (hoy nuevo.g-se.com, mañana g-se.com).
+ *
+ * "tinte" (opcional): color oscuro de la temática para teñir la portada en
+ * la tarjeta de /especiales/ cuando la imagen no viene ya teñida (las de
+ * Nutrición y Fuerza traen la capa de color incorporada en el PNG).
  */
 function oec_get_especiales_list(): array {
 	static $cache = [];
@@ -451,6 +455,7 @@ function oec_especiales_registradas(): array {
 			'image'     => network_home_url( '/wp-content/uploads/2026/09/Portada-de-Fisiologia-del-Ejercicio-1.png' ),
 			'video'     => network_home_url( '/wp-content/uploads/2026/09/hero-fisiologia-del-ejercicio.mp4' ),
 			'accent'    => '#b794ff',
+			'tinte'     => '#3d1f7a', // la portada es la foto sin teñir: la tarjeta de /especiales/ le pone la capa
 			'lista'     => 'G-SE - Fisiología del Ejercicio',
 			'categoria' => 'fisiologia-del-ejercicio',
 		],
