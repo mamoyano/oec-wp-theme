@@ -473,10 +473,22 @@ class OEC_AI_Chat {
 		}
 		@ini_set( 'output_buffering', 'off' );    // phpcs:ignore
 		@ini_set( 'zlib.output_compression', false ); // phpcs:ignore
+		@ini_set( 'implicit_flush', '1' );            // phpcs:ignore
+		@set_time_limit( 0 );                          // phpcs:ignore
+		// Apache/LiteSpeed: sin gzip, que retiene la respuesta hasta el final
+		if ( function_exists( 'apache_setenv' ) ) {
+			@apache_setenv( 'no-gzip', '1' );          // phpcs:ignore
+		}
 
 		header( 'Content-Type: text/event-stream' );
-		header( 'Cache-Control: no-cache' );
+		header( 'Cache-Control: no-cache, no-transform' );
 		header( 'X-Accel-Buffering: no' );
+		header( 'X-LiteSpeed-Cache-Control: no-cache' );
+
+		// Relleno inicial (comentario SSE, el cliente lo ignora) para desbordar
+		// los buffers de 4–8 KB de proxies/FastCGI y forzar el primer envío.
+		echo ':' . str_repeat( ' ', 8192 ) . "\n\n"; // phpcs:ignore
+		flush();
 
 		$opts    = oec_get_options();
 		$api_key = $opts['oec_anthropic_key'] ?? '';

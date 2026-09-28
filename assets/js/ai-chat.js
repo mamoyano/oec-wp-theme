@@ -334,7 +334,87 @@
   }
 
   /* ── Fetch AI reply via SSE streaming ───────────────────── */
+  // Estados locales mientras se espera: si un proxy bufferiza el stream, los
+  // estados del servidor llegan junto con el texto y nunca llegarían a verse.
+  const LOCAL_STATUSES = [
+    'Analizando tu consulta...',
+    'Revisando el catálogo de formaciones...',
+    'Buscando las opciones que mejor se ajustan...',
+    'Preparando la respuesta...',
+  ];
+
   async function fetchReply(message) {
+    let fullText   = '';   // complete reply text for history
+    let bubText    = '';   // text for the current bubble only
+    let bubble     = null;
+    let allBubbles = [];   // track every bubble for post-stream URL upgrade
+    let started    = false;
+    let pending    = '';   // texto recibido que aún no se tipeó
+    let streamEnded = false;
+    let doneData   = null;
+
+    let statusIdx = 0;
+    updateTypingStatus(LOCAL_STATUSES[0]);
+    let statusTimer = setInterval(() => {
+      if (statusIdx < LOCAL_STATUSES.length - 1) updateTypingStatus(LOCAL_STATUSES[++statusIdx]);
+    }, 1800);
+    const stopLocalStatus = () => { clearInterval(statusTimer); statusTimer = null; };
+
+    // Pinta un fragmento de texto: separa burbujas por ||| y muestra el cursor
+    function renderChunk(chunk) {
+      fullText += chunk;
+      bubText  += chunk;
+
+      if (!started) {
+        started = true;
+        stopLocalStatus();
+        hideTyping();
+        bubble = createAssistantBubble();
+        allBubbles.push(bubble);
+      }
+
+      while (bubText.includes('|||')) {
+        const sepIdx = bubText.indexOf('|||');
+        const before = bubText.slice(0, sepIdx).trim();
+        bubText      = bubText.slice(sepIdx + 3).trimStart();
+
+        if (bubble) {
+          try { bubble.innerHTML = renderMarkdown(before); }
+          catch (_) { bubble.textContent = before; }
+        }
+        bubble = createAssistantBubble();
+        allBubbles.push(bubble);
+      }
+
+      // No pintar un "|" suelto que puede ser el comienzo de un separador
+      const visible = bubText.replace(/\|{1,2}$/, '');
+      if (bubble) {
+        try {
+          bubble.innerHTML = renderMarkdown(visible, true) +
+            '<span class="oec-cursor" aria-hidden="true">▌</span>';
+        } catch (_) {
+          bubble.textContent = visible;
+        }
+        scrollBody();
+      }
+    }
+
+    // Efecto de tipeo a ritmo constante, independiente de cómo llegue la red:
+    // ~2 caracteres cada 16 ms, acelerando si se acumula texto pendiente.
+    // Con la pestaña oculta los timers se frenan: ahí se vuelca todo junto.
+    const typed = new Promise(resolve => {
+      (function step() {
+        if (pending) {
+          let n = document.hidden ? pending.length : Math.max(2, Math.ceil(pending.length / 40));
+          if (/[\uD800-\uDBFF]/.test(pending.charAt(n - 1))) n++; // no cortar emojis
+          renderChunk(pending.slice(0, n));
+          pending = pending.slice(n);
+        }
+        if (pending || !streamEnded) setTimeout(step, 16);
+        else resolve();
+      })();
+    });
+
     try {
       const res = await fetch(streamEndpoint, {
         method:  'POST',
@@ -347,11 +427,6 @@
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
       let sseBuf    = '';
-      let fullText  = '';   // complete reply text for history
-      let bubText   = '';   // text for the current bubble only
-      let bubble    = null;
-      let allBubbles = [];  // track every bubble for post-stream URL upgrade
-      let started   = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -361,6 +436,7 @@
 
         const lines = sseBuf.split('\n');
         sseBuf = lines.pop();
+        let liveStatus = null;
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue;
@@ -369,93 +445,75 @@
 
           /* ── status update ── */
           if (data.status !== undefined) {
-            updateTypingStatus(data.status);
+            liveStatus = data.status;
           }
 
-          /* ── text chunk ── */
+          /* ── text chunk → cola de tipeo ── */
           if (data.t !== undefined) {
-            fullText += data.t;
-            bubText  += data.t;
-
-            if (!started) {
-              started = true;
-              hideTyping();
-              bubble = createAssistantBubble();
-              allBubbles.push(bubble);
-            }
-
-            // Split bubbles in real time — no post-stream erase/rerender
-            while (bubText.includes('|||')) {
-              const sepIdx = bubText.indexOf('|||');
-              const before = bubText.slice(0, sepIdx).trim();
-              bubText      = bubText.slice(sepIdx + 3).trimStart();
-
-              // Finalize current bubble without cursor
-              if (bubble) {
-                try { bubble.innerHTML = renderMarkdown(before); }
-                catch (_) { bubble.textContent = before; }
-              }
-              // Open fresh bubble for the next part
-              bubble = createAssistantBubble();
-              allBubbles.push(bubble);
-            }
-
-            // Update current bubble with remaining text + streaming cursor (skip images while streaming)
-            if (bubble) {
-              try {
-                bubble.innerHTML = renderMarkdown(bubText, true) +
-                  '<span class="oec-cursor" aria-hidden="true">▌</span>';
-              } catch (_) {
-                bubble.textContent = bubText;
-              }
-              scrollBody();
-            }
+            pending += data.t;
           }
 
           /* ── stream complete ── */
           if (data.done !== undefined) {
-            setBusy(false);
-
-            // Just remove the cursor — no rerender, bubbles already split
-            if (bubble) {
-              try { bubble.innerHTML = renderMarkdown(bubText.trim()); }
-              catch (_) { bubble.textContent = bubText.trim(); }
-              scrollBody();
-            }
-
-            // Upgrade formation URLs inside bubbles to inline cards, then show card strip
-            if (data.formations && data.formations.length) {
-              data.formations.forEach(f => {
-                const id = String(f.id);
-                mentionedFormationIds = [id, ...mentionedFormationIds.filter(x => x !== id)].slice(0, 5);
-              });
-              upgradeFormationLinks(allBubbles, data.formations);
-              await new Promise(r => setTimeout(r, 300));
-              renderCards(data.formations);
-            }
-
-            // Update conversation history
-            const cleanReply = fullText.replace(/\|\|\|/g, '\n\n').trim();
-            history.push({ role: 'user',      content: message    });
-            history.push({ role: 'assistant', content: cleanReply });
-            if (history.length > 10) history = history.slice(-10);
+            doneData = data;
           }
 
           /* ── error event ── */
           if (data.message !== undefined && !data.done) {
+            stopLocalStatus();
             setBusy(false);
             appendMsg('assistant', data.message);
           }
         }
+
+        // El estado del servidor solo se muestra si llegó en vivo: si vino en
+        // la misma lectura que el texto, el stream está bufferizado y ya pasó.
+        if (liveStatus && !started && !pending) {
+          stopLocalStatus();
+          updateTypingStatus(liveStatus);
+        }
       }
-
-      // Guard: if stream ended without a 'done' event
-      if (!started) setBusy(false);
-
     } catch (_) {
-      setBusy(false);
-      appendMsg('assistant', 'Ocurrió un error de conexión. Por favor, intentá de nuevo.');
+      if (!started && !pending) {
+        stopLocalStatus();
+        setBusy(false);
+        appendMsg('assistant', 'Ocurrió un error de conexión. Por favor, intentá de nuevo.');
+      }
     }
+
+    streamEnded = true;
+    await typed;
+    stopLocalStatus();
+
+    if (busy) setBusy(false);
+
+    // Just remove the cursor — no rerender, bubbles already split
+    if (bubble) {
+      try { bubble.innerHTML = renderMarkdown(bubText.trim()); }
+      catch (_) { bubble.textContent = bubText.trim(); }
+      scrollBody();
+    }
+
+    // Guard: if stream ended without a 'done' event
+    if (!doneData) return;
+
+    // Upgrade formation URLs inside bubbles to inline cards, then show card strip
+    const formations = doneData.formations;
+    if (formations && formations.length) {
+      formations.forEach(f => {
+        const id = String(f.id);
+        mentionedFormationIds = [id, ...mentionedFormationIds.filter(x => x !== id)].slice(0, 5);
+      });
+      upgradeFormationLinks(allBubbles, formations);
+      await new Promise(r => setTimeout(r, 300));
+      renderCards(formations);
+    }
+
+    // Update conversation history
+    const cleanReply = fullText.replace(/\|\|\|/g, '\n\n').trim();
+    history.push({ role: 'user',      content: message    });
+    history.push({ role: 'assistant', content: cleanReply });
+    if (history.length > 10) history = history.slice(-10);
   }
 
   /* ── Send from overlay input ─────────────────────────────── */
