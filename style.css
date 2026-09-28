@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.51
+Version: 1.0.52
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4158,7 +4158,30 @@ body.oec-chat-open { overflow: hidden; }
 .single-content h2 { font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: .75rem; }
 .single-content h3 { font-size: 1.25rem; margin-top: 2rem; margin-bottom: .5rem; }
 .single-content p { margin-bottom: 1.25rem; }
-.single-content ul, .single-content ol { margin: 0 0 1.25rem 1.25rem; }
+.single-content ul, .single-content ol { margin: 0 0 1.25rem; padding-left: 1.5rem; }
+.single-content ul { list-style: disc; }
+.single-content ol { list-style: decimal; }
+.single-content ul ul { list-style: circle; }
+.single-content li { margin-bottom: .375rem; padding-left: .25rem; }
+.single-content li > ul, .single-content li > ol { margin: .375rem 0 0; }
+.single-content li::marker { color: var(--color-primary); }
+
+/* Medios embebidos del contenido (incluido el HTML viejo con width/height fijos):
+   nunca más anchos que la columna; los videos mantienen 16:9. */
+.single-content iframe, .single-content embed, .single-content object, .single-content video {
+  display: block;
+  max-width: 100%;
+  margin: 1.5rem auto;
+  border: 0;
+}
+.single-content iframe[src*="youtube"], .single-content iframe[src*="youtu.be"], .single-content iframe[src*="vimeo"] {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+}
+/* Tablas viejas con anchos fijos: se desplazan dentro de su caja en vez de romper la página. */
+.single-content table { display: block; max-width: 100%; overflow-x: auto; margin: 1.5rem 0; border-collapse: collapse; }
 .single-content blockquote {
   border-left: 4px solid var(--color-primary);
   padding: .75rem 1rem;
