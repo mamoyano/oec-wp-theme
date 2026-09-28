@@ -10,15 +10,32 @@ function oec_get_defaults(): array {
 	return [
 		'logo_id'          => 0,
 		'logo_url'         => '',
+		'logo_height'      => 40,
+		// Solo 5 colores configurables; el resto de la paleta (fondos
+		// suaves, bordes, texto secundario, badges) se deriva de estos en
+		// oec_palette(). Blanco, sombra y avisos son fijos en style.css.
 		'color_primary'    => '#194872',
-		'color_dark'       => '#071b2d',
-		'color_accent'     => '#e8952a',
-		'color_light'      => '#f4f8fc',
+		'color_dark'       => '#012b1b',
+		'color_dark_2'     => '#14510b',
+		'color_accent'     => '#ffde59',
 		'color_text'       => '#1e2d3d',
 		'gtm_id'           => '',
 		'meta_pixel_id'    => '',
 		'ms_clarity_id'    => '',
-		'oec_api_token'    => '',
+		'oec_api_token'      => '',
+		'oec_anthropic_key'  => '',
+		'credits_api_key'    => '',
+		// Topbar & footer content
+		'campus_virtual_url' => '',
+		'footer_desc'        => 'La comunidad educativa en ciencias del ejercicio físico más grande de hispanoamérica.',
+		'footer_landings'    => '',
+		'footer_legal'       => '',
+		'footer_cta_url'     => '',
+		'social_linkedin'    => '',
+		'social_instagram'   => '',
+		'social_facebook'    => '',
+		'social_youtube'     => '',
+		'social_x'           => '',
 	];
 }
 
@@ -33,6 +50,57 @@ function oec_darken_hex( string $hex, int $percent = 12 ): string {
 	$g      = max( 0, (int) round( hexdec( substr( $hex, 2, 2 ) ) * $factor ) );
 	$b      = max( 0, (int) round( hexdec( substr( $hex, 4, 2 ) ) * $factor ) );
 	return sprintf( '#%02x%02x%02x', $r, $g, $b );
+}
+
+/* Mezcla un hex hacia blanco (usado para el fondo pastel de los badges). */
+function oec_lighten_hex( string $hex, int $percent = 85 ): string {
+	$hex    = ltrim( $hex, '#' );
+	$factor = $percent / 100;
+	$mix    = fn( int $c ) => (int) round( $c + ( 255 - $c ) * $factor );
+	$r      = $mix( hexdec( substr( $hex, 0, 2 ) ) );
+	$g      = $mix( hexdec( substr( $hex, 2, 2 ) ) );
+	$b      = $mix( hexdec( substr( $hex, 4, 2 ) ) );
+	return sprintf( '#%02x%02x%02x', $r, $g, $b );
+}
+
+/* Claves de los colores configurables (orden de la pantalla de ajustes). */
+function oec_color_keys(): array {
+	return [ 'color_primary', 'color_dark', 'color_dark_2', 'color_accent', 'color_text' ];
+}
+
+/* Paleta completa a partir de los 5 colores base. Los tonos derivados
+ * usan las mismas mezclas que los valores por defecto de style.css, así
+ * que con la paleta por defecto el resultado coincide con el archivo. */
+function oec_palette( ?array $opts = null ): array {
+	$opts     = $opts ?? oec_get_options();
+	$defaults = oec_get_defaults();
+	$c        = [];
+	foreach ( oec_color_keys() as $key ) {
+		$c[ substr( $key, 6 ) ] = sanitize_hex_color( $opts[ $key ] ?? '' ) ?: $defaults[ $key ];
+	}
+	$c['accent_hover'] = oec_darken_hex( $c['accent'] );
+	$c['light']        = oec_lighten_hex( $c['primary'], 97 );
+	$c['border']       = oec_lighten_hex( $c['primary'], 85 );
+	$c['muted']        = oec_lighten_hex( $c['text'], 30 );
+	$c['badge_articulo']    = $c['primary'];
+	$c['badge_articulo_bg'] = oec_lighten_hex( $c['primary'] );
+	$c['badge_blog']        = $c['dark_2'];
+	$c['badge_blog_bg']     = oec_lighten_hex( $c['dark_2'] );
+	return $c;
+}
+
+/* "25,72,114" a partir de "#194872" — para usar el color con alpha:
+ * rgba(var(--color-x-rgb), .5) */
+function oec_hex_to_rgb_list( string $hex ): string {
+	$hex = ltrim( $hex, '#' );
+	if ( strlen( $hex ) === 3 ) {
+		$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
+	}
+	return implode( ',', [
+		hexdec( substr( $hex, 0, 2 ) ),
+		hexdec( substr( $hex, 2, 2 ) ),
+		hexdec( substr( $hex, 4, 2 ) ),
+	] );
 }
 
 /* ============================================================
@@ -54,11 +122,19 @@ function oec_sanitize_options( $raw ): array {
 	$clean    = [];
 
 	// Logo
-	$clean['logo_id']  = absint( $raw['logo_id']  ?? 0 );
-	$clean['logo_url'] = esc_url_raw( $raw['logo_url'] ?? '' );
+	$clean['logo_id']     = absint( $raw['logo_id']  ?? 0 );
+	$clean['logo_url']    = esc_url_raw( $raw['logo_url'] ?? '' );
+	$clean['logo_height'] = min( 120, max( 20, absint( $raw['logo_height'] ?? 40 ) ) );
+
+	// Favicon: se guarda en el ícono del sitio de WordPress (site_icon), que
+	// el core imprime en wp_head. Solo viene en el POST de la pestaña
+	// Identidad (no se preserva como hidden), por eso el isset.
+	if ( isset( $raw['site_icon'] ) ) {
+		update_option( 'site_icon', absint( $raw['site_icon'] ) );
+	}
 
 	// Colors
-	foreach ( [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ] as $key ) {
+	foreach ( oec_color_keys() as $key ) {
 		$val          = sanitize_hex_color( $raw[ $key ] ?? '' );
 		$clean[ $key ] = $val ?: $defaults[ $key ];
 	}
@@ -69,7 +145,21 @@ function oec_sanitize_options( $raw ): array {
 	$clean['ms_clarity_id'] = preg_replace( '/[^a-z0-9]/i', '', $raw['ms_clarity_id'] ?? '' );
 
 	// OEC API
-	$clean['oec_api_token'] = sanitize_text_field( $raw['oec_api_token'] ?? '' );
+	$clean['oec_api_token']   = sanitize_text_field( $raw['oec_api_token']   ?? '' );
+	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
+
+	// Anthropic
+	$clean['oec_anthropic_key'] = sanitize_text_field( $raw['oec_anthropic_key'] ?? '' );
+
+	// Topbar & footer
+	$clean['campus_virtual_url'] = esc_url_raw( $raw['campus_virtual_url'] ?? '' );
+	$clean['footer_desc']        = sanitize_text_field( $raw['footer_desc'] ?? '' );
+	$clean['footer_landings']    = sanitize_textarea_field( $raw['footer_landings'] ?? '' );
+	$clean['footer_legal']       = sanitize_textarea_field( $raw['footer_legal'] ?? '' );
+	$clean['footer_cta_url']     = esc_url_raw( $raw['footer_cta_url'] ?? '' );
+	foreach ( [ 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ] as $skey ) {
+		$clean[ $skey ] = esc_url_raw( $raw[ $skey ] ?? '' );
+	}
 
 	return $clean;
 }
@@ -79,8 +169,8 @@ function oec_sanitize_options( $raw ): array {
    ============================================================ */
 function oec_add_admin_menu(): void {
 	add_theme_page(
-		__( 'OEC — Configuración del tema', 'oec-theme' ),
-		__( 'Configuración OEC', 'oec-theme' ),
+		__( 'Configuración', 'oec-theme' ),
+		__( 'Online Education Center', 'oec-theme' ),
 		'manage_options',
 		'oec-settings',
 		'oec_render_settings_page'
@@ -103,13 +193,18 @@ function oec_admin_enqueue( string $hook ): void {
 		'oec-admin-settings',
 		OEC_THEME_URI . '/assets/js/admin-settings.js',
 		[ 'jquery', 'wp-color-picker', 'wp-util' ],
-		OEC_THEME_VERSION,
+		oec_asset_version( 'assets/js/admin-settings.js' ),
 		true
 	);
 	wp_localize_script( 'oec-admin-settings', 'oecAdmin', [
 		'mediaTitle'  => __( 'Seleccionar logo', 'oec-theme' ),
 		'mediaButton' => __( 'Usar como logo', 'oec-theme' ),
 		'noLogo'      => __( 'Sin logo cargado', 'oec-theme' ),
+		'faviconTitle'  => __( 'Seleccionar favicon', 'oec-theme' ),
+		'faviconButton' => __( 'Usar como favicon', 'oec-theme' ),
+		'noFavicon'     => __( 'Sin favicon', 'oec-theme' ),
+		'uploadFavicon' => __( 'Subir favicon', 'oec-theme' ),
+		'changeFavicon' => __( 'Cambiar favicon', 'oec-theme' ),
 		'uploadLabel' => __( 'Subir logo', 'oec-theme' ),
 		'changeLabel' => __( 'Cambiar logo', 'oec-theme' ),
 	] );
@@ -156,17 +251,23 @@ function oec_render_settings_page(): void {
 	}
 
 	$opts = oec_get_options();
-	$tab  = sanitize_key( $_GET['tab'] ?? 'logo' );
+	$tab  = sanitize_key( $_GET['tab'] ?? 'identidad' );
+	// Pestañas viejas (antes separadas) → la nueva que las reúne.
+	if ( in_array( $tab, [ 'logo', 'colores' ], true ) ) {
+		$tab = 'identidad';
+	} elseif ( 'rastreo' === $tab ) {
+		$tab = 'integraciones';
+	}
 	$tabs = [
-		'logo'            => [ 'label' => __( 'Logo', 'oec-theme' ),              'icon' => '🖼' ],
-		'colores'         => [ 'label' => __( 'Paleta de colores', 'oec-theme' ), 'icon' => '🎨' ],
-		'rastreo'         => [ 'label' => __( 'Rastreo', 'oec-theme' ),           'icon' => '📊' ],
+		'identidad'       => [ 'label' => __( 'Identidad gráfica', 'oec-theme' ), 'icon' => '🎨' ],
 		'integraciones'   => [ 'label' => __( 'Integraciones', 'oec-theme' ),     'icon' => '🔌' ],
 		'actualizaciones' => [ 'label' => __( 'Actualizaciones', 'oec-theme' ),   'icon' => '🔄' ],
+		'asistente'       => [ 'label' => __( 'Asistente IA', 'oec-theme' ),       'icon' => '🤖' ],
+		'contenido'       => [ 'label' => __( 'Contenido', 'oec-theme' ),           'icon' => '🧭' ],
 	];
 
 	if ( ! array_key_exists( $tab, $tabs ) ) {
-		$tab = 'logo';
+		$tab = 'identidad';
 	}
 
 	if ( isset( $_GET['settings-updated'] ) ) {
@@ -175,11 +276,11 @@ function oec_render_settings_page(): void {
 
 	// Keys that belong to each tab (for hidden-input preservation)
 	$tab_keys = [
-		'logo'            => [ 'logo_id', 'logo_url' ],
-		'colores'         => [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ],
-		'rastreo'         => [ 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
-		'integraciones'   => [ 'oec_api_token' ],
+		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
+		'integraciones'   => [ 'oec_api_token', 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
+		'asistente'       => [ 'oec_anthropic_key' ],
+		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
 	];
 
 	$all_keys    = array_merge( ...array_values( $tab_keys ) );
@@ -190,16 +291,7 @@ function oec_render_settings_page(): void {
 	?>
 	<div class="wrap oec-settings-wrap">
 
-		<!-- Header -->
-		<div class="oec-page-header">
-			<div class="oec-page-header__left">
-				<span class="oec-page-header__logo">OEC<span>.</span></span>
-				<div>
-					<h1><?php esc_html_e( 'Configuración del tema', 'oec-theme' ); ?></h1>
-					<p><?php esc_html_e( 'Personalizá la apariencia y el rastreo de tu sitio.', 'oec-theme' ); ?></p>
-				</div>
-			</div>
-		</div>
+		<h1><?php esc_html_e( 'Configuración', 'oec-theme' ); ?></h1>
 
 		<?php settings_errors( 'oec_messages' ); ?>
 
@@ -226,13 +318,13 @@ function oec_render_settings_page(): void {
 
 			<div class="oec-settings-body">
 
-				<?php if ( $tab === 'logo' ) : ?>
+				<?php if ( $tab === 'identidad' ) : ?>
 				<!-- ================================================
-				     TAB: LOGO
+				     TAB: IDENTIDAD GRÁFICA (logo, favicon, colores)
 				     ================================================ -->
 				<div class="oec-card">
 					<div class="oec-card__header">
-						<h2><?php esc_html_e( 'Logo del sitio', 'oec-theme' ); ?></h2>
+						<h2><?php esc_html_e( 'Logo', 'oec-theme' ); ?></h2>
 						<p><?php esc_html_e( 'Se mostrará en el header y el footer sobre fondo oscuro.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
@@ -279,6 +371,20 @@ function oec_render_settings_page(): void {
 									<li><?php esc_html_e( 'Tamaño mínimo: 300 × 80 px.', 'oec-theme' ); ?></li>
 									<li><?php esc_html_e( 'El logo se mostrará siempre sobre fondo oscuro.', 'oec-theme' ); ?></li>
 								</ul>
+
+								<div style="margin-top:1.25rem;padding-top:1.25rem;border-top:1px solid #f0f0f1;">
+									<label for="oec-logo-height" style="font-weight:600;font-size:.875rem;display:block;margin-bottom:.5rem;">
+										<?php esc_html_e( 'Alto en el header (px)', 'oec-theme' ); ?>
+									</label>
+									<input type="number" id="oec-logo-height"
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[logo_height]"
+									       value="<?php echo esc_attr( (string) $opts['logo_height'] ); ?>"
+									       min="20" max="120" step="1"
+									       style="width:80px;">
+									<p class="description" style="margin-top:.375rem;">
+										<?php esc_html_e( 'Altura de visualización del logo en el encabezado (entre 20 y 120 px).', 'oec-theme' ); ?>
+									</p>
+								</div>
 							</div>
 
 						</div>
@@ -286,79 +392,94 @@ function oec_render_settings_page(): void {
 					</div>
 				</div>
 
-				<?php elseif ( $tab === 'colores' ) : ?>
-				<!-- ================================================
-				     TAB: COLORES
-				     ================================================ -->
+				<?php
+				$site_icon_id  = (int) get_option( 'site_icon' );
+				$site_icon_url = $site_icon_id ? wp_get_attachment_image_url( $site_icon_id, 'thumbnail' ) : '';
+				?>
 				<div class="oec-card">
 					<div class="oec-card__header">
-						<h2><?php esc_html_e( 'Paleta de colores', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Los cambios se aplican globalmente a todo el sitio mediante variables CSS.', 'oec-theme' ); ?></p>
+						<h2><?php esc_html_e( 'Favicon', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Ícono de la pestaña del navegador, favoritos y accesos directos en el celular.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+						<div class="oec-favicon-row">
+							<div class="oec-favicon-preview" id="oec-favicon-preview">
+								<?php if ( $site_icon_url ) : ?>
+									<img src="<?php echo esc_url( $site_icon_url ); ?>" alt="">
+								<?php else : ?>
+									<span class="oec-favicon-placeholder"><?php esc_html_e( 'Sin favicon', 'oec-theme' ); ?></span>
+								<?php endif; ?>
+							</div>
+							<div class="oec-logo-actions">
+								<input type="hidden" id="oec-favicon-id"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[site_icon]"
+								       value="<?php echo esc_attr( (string) $site_icon_id ); ?>">
+								<div class="oec-btn-row">
+									<button type="button" id="oec-upload-favicon" class="button button-primary">
+										<?php echo $site_icon_url
+											? esc_html__( 'Cambiar favicon', 'oec-theme' )
+											: esc_html__( 'Subir favicon', 'oec-theme' ); ?>
+									</button>
+									<button type="button" id="oec-remove-favicon" class="button"
+									        style="<?php echo $site_icon_url ? '' : 'display:none;'; ?>">
+										<?php esc_html_e( 'Quitar favicon', 'oec-theme' ); ?>
+									</button>
+								</div>
+								<ul class="oec-hint-list">
+									<li><?php esc_html_e( 'Imagen cuadrada, PNG, de al menos 512 × 512 px.', 'oec-theme' ); ?></li>
+								</ul>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Colores', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Cinco colores base. Los tonos secundarios (fondos suaves, bordes, texto secundario, etiquetas) se calculan solos a partir de estos.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
-						<!-- Swatches preview -->
-						<div class="oec-swatches" id="oec-swatches-preview" aria-hidden="true">
-							<?php
-							$swatch_defs = [
-								'color_primary' => __( 'Primario', 'oec-theme' ),
-								'color_dark'    => __( 'Oscuro', 'oec-theme' ),
-								'color_accent'  => __( 'Acento', 'oec-theme' ),
-								'color_light'   => __( 'Claro', 'oec-theme' ),
-								'color_text'    => __( 'Texto', 'oec-theme' ),
-							];
-							foreach ( $swatch_defs as $key => $label ) :
-							?>
-							<div class="oec-swatch">
-								<div class="oec-swatch__color" id="swatch-<?php echo esc_attr( $key ); ?>"
-								     style="background:<?php echo esc_attr( $opts[ $key ] ); ?>;"></div>
-								<span class="oec-swatch__label"><?php echo esc_html( $label ); ?></span>
-								<span class="oec-swatch__hex" id="swatch-hex-<?php echo esc_attr( $key ); ?>">
-									<?php echo esc_html( $opts[ $key ] ); ?>
-								</span>
-							</div>
-							<?php endforeach; ?>
-						</div>
+						<?php
+						$color_fields = [
+							'color_primary' => [
+								'label' => __( 'Primario', 'oec-theme' ),
+								'desc'  => __( 'Links, íconos, bordes en hover. También define el fondo suave de secciones y el color de los bordes.', 'oec-theme' ),
+							],
+							'color_dark' => [
+								'label' => __( 'Oscuro', 'oec-theme' ),
+								'desc'  => __( 'Fondo del header, footer y secciones oscuras.', 'oec-theme' ),
+							],
+							'color_dark_2' => [
+								'label' => __( 'Oscuro secundario', 'oec-theme' ),
+								'desc'  => __( 'Segundo tono de los degradés del hero y menús desplegables.', 'oec-theme' ),
+							],
+							'color_accent' => [
+								'label' => __( 'Acento', 'oec-theme' ),
+								'desc'  => __( 'Botones principales, chips y estrellas. El tono hover se calcula solo.', 'oec-theme' ),
+							],
+							'color_text' => [
+								'label' => __( 'Texto', 'oec-theme' ),
+								'desc'  => __( 'Texto del cuerpo. El texto secundario (fechas, metadatos) se aclara a partir de este.', 'oec-theme' ),
+							],
+						];
+						$palette = oec_palette( $opts );
+						// Derivados que se muestran como referencia: [etiqueta, color base, % hacia blanco].
+						$derived = [
+							'light'  => [ __( 'Fondo suave', 'oec-theme' ),      'color_primary', 97 ],
+							'border' => [ __( 'Bordes', 'oec-theme' ),           'color_primary', 85 ],
+							'muted'  => [ __( 'Texto secundario', 'oec-theme' ), 'color_text',    30 ],
+						];
+						?>
 
-						<!-- Color fields -->
 						<div class="oec-color-fields">
-							<?php
-							$color_fields = [
-								'color_primary' => [
-									'label' => __( 'Color primario', 'oec-theme' ),
-									'desc'  => __( 'Header de navegación, íconos de servicio, bordes en hover.', 'oec-theme' ),
-									'used'  => '--color-primary',
-								],
-								'color_dark' => [
-									'label' => __( 'Color oscuro', 'oec-theme' ),
-									'desc'  => __( 'Fondo del header, footer, sección de testimonios y gradientes.', 'oec-theme' ),
-									'used'  => '--color-dark',
-								],
-								'color_accent' => [
-									'label' => __( 'Color de acento', 'oec-theme' ),
-									'desc'  => __( 'Botones primarios, eyebrow chips, estrellas de testimonios.', 'oec-theme' ),
-									'used'  => '--color-accent',
-								],
-								'color_light' => [
-									'label' => __( 'Color claro / fondo alterno', 'oec-theme' ),
-									'desc'  => __( 'Fondo de secciones alternadas, campos de formulario.', 'oec-theme' ),
-									'used'  => '--color-light',
-								],
-								'color_text' => [
-									'label' => __( 'Color de texto', 'oec-theme' ),
-									'desc'  => __( 'Color base de todo el cuerpo de texto.', 'oec-theme' ),
-									'used'  => '--color-text',
-								],
-							];
-							foreach ( $color_fields as $key => $info ) :
-							?>
+							<?php foreach ( $color_fields as $key => $info ) : ?>
 							<div class="oec-color-row">
 								<div class="oec-color-row__meta">
 									<label class="oec-color-row__label" for="oec-<?php echo esc_attr( $key ); ?>">
 										<?php echo esc_html( $info['label'] ); ?>
 									</label>
 									<p class="oec-color-row__desc"><?php echo esc_html( $info['desc'] ); ?></p>
-									<code class="oec-color-row__var"><?php echo esc_html( $info['used'] ); ?></code>
 								</div>
 								<div class="oec-color-row__picker">
 									<input type="text"
@@ -373,6 +494,17 @@ function oec_render_settings_page(): void {
 							<?php endforeach; ?>
 						</div>
 
+						<div class="oec-derived">
+							<span class="oec-derived__title"><?php esc_html_e( 'Calculados automáticamente', 'oec-theme' ); ?></span>
+							<?php foreach ( $derived as $dkey => [ $dlabel, $from, $mix ] ) : ?>
+							<span class="oec-derived__item">
+								<span class="oec-derived__dot" data-from="<?php echo esc_attr( $from ); ?>" data-mix="<?php echo esc_attr( (string) $mix ); ?>"
+								      style="background:<?php echo esc_attr( $palette[ $dkey ] ); ?>;"></span>
+								<?php echo esc_html( $dlabel ); ?>
+							</span>
+							<?php endforeach; ?>
+						</div>
+
 						<div class="oec-reset-row">
 							<button type="button" id="oec-reset-colors" class="button">
 								<?php esc_html_e( 'Restablecer colores por defecto', 'oec-theme' ); ?>
@@ -382,10 +514,93 @@ function oec_render_settings_page(): void {
 					</div>
 				</div>
 
-				<?php elseif ( $tab === 'rastreo' ) : ?>
+				<?php elseif ( $tab === 'integraciones' ) : ?>
 				<!-- ================================================
-				     TAB: RASTREO
+				     TAB: INTEGRACIONES (APIs + rastreo)
 				     ================================================ -->
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'API de formaciones (OAS)', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Se usa server-side; nunca se expone al navegador.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<div class="oec-tracker-row">
+							<div class="oec-tracker-row__head">
+								<div class="oec-tracker-logo" style="background:#194872;font-size:.6rem;font-weight:900;">OEC</div>
+								<div>
+									<strong><?php esc_html_e( 'Token de la API OAS', 'oec-theme' ); ?></strong>
+									<p><?php esc_html_e( 'Sincroniza el catálogo de formaciones (listado de /formaciones y asistente IA) y trae las próximas formaciones del newsletter.', 'oec-theme' ); ?></p>
+								</div>
+								<div class="oec-tracker-status" id="status-oec_api_token">
+									<?php oec_tracker_badge( $opts['oec_api_token'] ); ?>
+								</div>
+							</div>
+
+							<div class="oec-tracker-row__field">
+								<label for="oec-api-token"><?php esc_html_e( 'API Token', 'oec-theme' ); ?></label>
+								<input type="password"
+								       id="oec-api-token"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_token]"
+								       value="<?php echo esc_attr( $opts['oec_api_token'] ); ?>"
+								       class="regular-text oec-tracker-input"
+								       placeholder="PjTzQpp..."
+								       data-tracker="oec_api_token"
+								       autocomplete="new-password"
+								       spellcheck="false">
+								<p class="description">
+									<?php esc_html_e( 'Token de autenticación para la API de OEC. Lo encontrás en tu panel de administración de Online Education Center.', 'oec-theme' ); ?>
+									<?php if ( $opts['oec_api_token'] ) : ?>
+									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Token configurado.', 'oec-theme' ); ?></span>
+									<?php endif; ?>
+								</p>
+							</div>
+
+						</div>
+
+					</div>
+				</div>
+
+					<!-- Credits API -->
+					<div class="oec-card">
+						<div class="oec-card__header">
+							<h2><?php esc_html_e( 'API de Créditos', 'oec-theme' ); ?></h2>
+							<p><?php esc_html_e( 'Clave para el sistema de créditos. Se usa server-side para verificar y otorgar créditos.', 'oec-theme' ); ?></p>
+						</div>
+						<div class="oec-card__body">
+							<div class="oec-tracker-row">
+								<div class="oec-tracker-row__head">
+									<div class="oec-tracker-logo" style="background:#e8952a;font-size:.6rem;font-weight:900;">OEC</div>
+									<div>
+										<strong><?php esc_html_e( 'Credits API Key', 'oec-theme' ); ?></strong>
+										<p><?php esc_html_e( 'Habilita la página de créditos por descuentos y el otorgamiento de créditos de bienvenida.', 'oec-theme' ); ?></p>
+									</div>
+									<div class="oec-tracker-status">
+										<?php oec_tracker_badge( $opts['credits_api_key'] ); ?>
+									</div>
+								</div>
+								<div class="oec-tracker-row__field">
+									<label for="oec-credits-api-key"><?php esc_html_e( 'API Key', 'oec-theme' ); ?></label>
+									<input type="password"
+									       id="oec-credits-api-key"
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[credits_api_key]"
+									       value="<?php echo esc_attr( $opts['credits_api_key'] ); ?>"
+									       class="regular-text oec-tracker-input"
+									       placeholder="c869e9c4..."
+									       data-tracker="credits_api_key"
+									       autocomplete="new-password"
+									       spellcheck="false">
+									<p class="description">
+										<?php esc_html_e( 'Clave de la API de api.onlineeducation.center/contable. Nunca se expone al navegador.', 'oec-theme' ); ?>
+										<?php if ( $opts['credits_api_key'] ) : ?>
+										<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Clave configurada — sistema de créditos activo.', 'oec-theme' ); ?></span>
+										<?php endif; ?>
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+
 				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Rastreo y analítica', 'oec-theme' ); ?></h2>
@@ -476,60 +691,6 @@ function oec_render_settings_page(): void {
 								<p class="description">
 									<?php esc_html_e( 'Clarity → tu proyecto → Configuración → Instalar manualmente. Formato: ~10 caracteres alfanuméricos.', 'oec-theme' ); ?>
 								</p>
-							</div>
-						</div>
-
-					</div>
-				</div>
-
-				<?php elseif ( $tab === 'integraciones' ) : ?>
-				<!-- ================================================
-				     TAB: INTEGRACIONES
-				     ================================================ -->
-				<div class="oec-card">
-					<div class="oec-card__header">
-						<h2><?php esc_html_e( 'API de Online Education Center', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'El token se usa para conectar el buscador del header con la base de formaciones. Nunca se expone al navegador.', 'oec-theme' ); ?></p>
-					</div>
-					<div class="oec-card__body">
-
-						<div class="oec-tracker-row">
-							<div class="oec-tracker-row__head">
-								<div class="oec-tracker-logo" style="background:#194872;font-size:.6rem;font-weight:900;">OEC</div>
-								<div>
-									<strong><?php esc_html_e( 'OEC Search API', 'oec-theme' ); ?></strong>
-									<p><?php esc_html_e( 'Habilita el autocompletado de formaciones en el buscador del header.', 'oec-theme' ); ?></p>
-								</div>
-								<div class="oec-tracker-status" id="status-oec_api_token">
-									<?php oec_tracker_badge( $opts['oec_api_token'] ); ?>
-								</div>
-							</div>
-
-							<div class="oec-tracker-row__field">
-								<label for="oec-api-token"><?php esc_html_e( 'API Token', 'oec-theme' ); ?></label>
-								<input type="password"
-								       id="oec-api-token"
-								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_token]"
-								       value="<?php echo esc_attr( $opts['oec_api_token'] ); ?>"
-								       class="regular-text oec-tracker-input"
-								       placeholder="PjTzQpp..."
-								       data-tracker="oec_api_token"
-								       autocomplete="new-password"
-								       spellcheck="false">
-								<p class="description">
-									<?php esc_html_e( 'Token de autenticación para la API de OEC. Lo encontrás en tu panel de administración de Online Education Center.', 'oec-theme' ); ?>
-									<?php if ( $opts['oec_api_token'] ) : ?>
-									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Token configurado — el buscador está activo.', 'oec-theme' ); ?></span>
-									<?php endif; ?>
-								</p>
-							</div>
-
-							<div class="oec-tracker-row__field" style="margin-top:1rem;">
-								<label><?php esc_html_e( 'Endpoint REST del buscador', 'oec-theme' ); ?></label>
-								<code style="display:block;padding:.5rem .875rem;background:#f0f4f8;border-radius:6px;font-size:.8125rem;color:#194872;border:1px solid #dce6ef;">
-									<?php echo esc_html( rest_url( 'oec/v1/search?q=genetica' ) ); ?>
-								</code>
-								<p class="description"><?php esc_html_e( 'El JS del header llama a este endpoint interno. Nunca expone el token al navegador.', 'oec-theme' ); ?></p>
 							</div>
 						</div>
 
@@ -692,6 +853,242 @@ function oec_render_settings_page(): void {
 				</div>
 				<?php endif; ?>
 
+				<?php elseif ( $tab === 'asistente' ) : ?>
+				<!-- ================================================
+				     TAB: ASISTENTE IA
+				     ================================================ -->
+				<?php
+				$ai_meta = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_meta() : [];
+				$ai_status = $ai_meta['status'] ?? 'never';
+				$ai_count  = (int) ( $ai_meta['count'] ?? 0 );
+				$ai_date   = $ai_meta['finished_at'] ?? '';
+				$ai_errors = $ai_meta['errors'] ?? [];
+				?>
+
+				<!-- API Key -->
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'API Key de Anthropic', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Necesaria para que el asistente pueda responder. Nunca se expone al navegador.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+						<div class="oec-tracker-row">
+							<div class="oec-tracker-row__head">
+								<div class="oec-tracker-logo" style="background:#d97757;font-size:.6rem;font-weight:900;">ANT</div>
+								<div>
+									<strong><?php esc_html_e( 'Anthropic Claude', 'oec-theme' ); ?></strong>
+									<p><?php esc_html_e( 'El asistente usa Claude Haiku para generar recomendaciones personalizadas.', 'oec-theme' ); ?></p>
+								</div>
+								<div class="oec-tracker-status">
+									<?php oec_tracker_badge( $opts['oec_anthropic_key'] ); ?>
+								</div>
+							</div>
+							<div class="oec-tracker-row__field">
+								<label for="oec-anthropic-key"><?php esc_html_e( 'API Key', 'oec-theme' ); ?></label>
+								<input type="password"
+								       id="oec-anthropic-key"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_anthropic_key]"
+								       value="<?php echo esc_attr( $opts['oec_anthropic_key'] ); ?>"
+								       class="regular-text oec-tracker-input"
+								       placeholder="sk-ant-..."
+								       autocomplete="new-password"
+								       spellcheck="false">
+								<p class="description">
+									<?php esc_html_e( 'Obtenela en console.anthropic.com → API Keys.', 'oec-theme' ); ?>
+									<?php if ( $opts['oec_anthropic_key'] ) : ?>
+									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Configurada — el asistente está activo.', 'oec-theme' ); ?></span>
+									<?php endif; ?>
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Catalog status -->
+				<div class="oec-card" style="margin-top:1rem;">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Catálogo de formaciones', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'El asistente lee un catálogo local que se actualiza diariamente a las 3:00 AM.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<table style="width:100%;border-collapse:collapse;font-size:.9rem;margin-bottom:1.5rem;">
+							<tr style="border-bottom:1px solid #f0f0f1;">
+								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;width:35%;"><?php esc_html_e( 'Estado', 'oec-theme' ); ?></td>
+								<td style="padding:.75rem 0;">
+									<?php
+									$status_map = [
+										'ok'      => '<span style="color:#1e7e34;font-weight:600;">✅ ' . esc_html__( 'Sincronizado', 'oec-theme' ) . '</span>',
+										'running' => '<span style="color:#856404;font-weight:600;">⏳ ' . esc_html__( 'Sincronizando…', 'oec-theme' ) . '</span>',
+										'error'   => '<span style="color:#c00;font-weight:600;">✗ ' . esc_html__( 'Error en última sincronización', 'oec-theme' ) . '</span>',
+										'never'   => '<span style="color:#888;">' . esc_html__( 'Nunca sincronizado', 'oec-theme' ) . '</span>',
+									];
+									echo $status_map[ $ai_status ] ?? esc_html( $ai_status ); // phpcs:ignore
+									?>
+								</td>
+							</tr>
+							<tr style="border-bottom:1px solid #f0f0f1;">
+								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Formaciones almacenadas', 'oec-theme' ); ?></td>
+								<td style="padding:.75rem 0;"><?php echo $ai_count ? '<strong>' . esc_html( number_format( $ai_count ) ) . '</strong> ' . esc_html__( 'abiertas', 'oec-theme' ) : '<span style="color:#888;">—</span>'; // phpcs:ignore ?>
+									<?php if ( isset( $ai_meta['closed_count'] ) ) : ?>
+									· <strong><?php echo esc_html( number_format( (int) $ai_meta['closed_count'] ) ); ?></strong> <?php esc_html_e( 'cerradas', 'oec-theme' ); ?>
+									<?php endif; ?>
+								</td>
+							</tr>
+							<tr style="border-bottom:1px solid #f0f0f1;">
+								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Última sincronización', 'oec-theme' ); ?></td>
+								<td style="padding:.75rem 0;"><?php echo $ai_date ? esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), strtotime( $ai_date ) ) ) : '<span style="color:#888;">—</span>'; // phpcs:ignore ?></td>
+							</tr>
+							<tr>
+								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Próxima sincronización', 'oec-theme' ); ?></td>
+								<td style="padding:.75rem 0;">
+									<?php
+									$next = wp_next_scheduled( 'oec_ai_catalog_sync' );
+									echo $next
+										? esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $next ) )
+										: '<span style="color:#888;">' . esc_html__( 'No programada', 'oec-theme' ) . '</span>';
+									// phpcs:ignore
+									?>
+								</td>
+							</tr>
+						</table>
+
+						<?php if ( ! empty( $ai_errors ) ) : ?>
+						<div style="background:#fff8f0;border:1px solid #ffd285;border-radius:6px;padding:1rem;margin-bottom:1.5rem;">
+							<strong style="color:#856404;"><?php printf( esc_html__( 'Errores en última sincronización (%d):', 'oec-theme' ), count( $ai_errors ) ); ?></strong>
+							<ul style="margin:.5rem 0 0;padding-left:1.25rem;font-size:.8125rem;color:#856404;">
+								<?php foreach ( array_slice( $ai_errors, 0, 5 ) as $err ) : ?>
+								<li><?php echo esc_html( $err ); ?></li>
+								<?php endforeach; ?>
+								<?php if ( count( $ai_errors ) > 5 ) : ?>
+								<li><?php printf( esc_html__( '… y %d más', 'oec-theme' ), count( $ai_errors ) - 5 ); ?></li>
+								<?php endif; ?>
+							</ul>
+						</div>
+						<?php endif; ?>
+
+						<div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+							<button type="button" id="oec-ai-sync-now" class="button button-primary button-large"
+							        data-nonce="<?php echo esc_attr( wp_create_nonce( 'oec_ai_sync' ) ); ?>">
+								🔄 <?php esc_html_e( 'Sincronizar ahora', 'oec-theme' ); ?>
+							</button>
+							<span id="oec-ai-sync-msg" style="font-size:.875rem;color:#646970;"></span>
+						</div>
+
+					</div>
+				</div>
+
+				<?php elseif ( $tab === 'contenido' ) : ?>
+				<!-- ================================================
+				     TAB: CONTENIDO — topbar, redes, footer
+				     ================================================ -->
+
+				<!-- Encabezado superior -->
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Barra superior del encabezado', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Aparece encima del header en todas las páginas. El enlace a Online Education Center es fijo; el Campus Virtual es configurable.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+						<div class="oec-tracker-row__field">
+							<label for="oec-campus-url"><strong><?php esc_html_e( 'URL del Campus Virtual', 'oec-theme' ); ?></strong></label>
+							<input type="url" id="oec-campus-url"
+							       name="<?php echo esc_attr( OEC_OPTION ); ?>[campus_virtual_url]"
+							       value="<?php echo esc_attr( $opts['campus_virtual_url'] ); ?>"
+							       class="regular-text"
+							       placeholder="https://campus.example.com">
+							<p class="description"><?php esc_html_e( 'Si está vacío, el botón "Campus Virtual" no se muestra en la barra.', 'oec-theme' ); ?></p>
+						</div>
+					</div>
+				</div>
+
+				<!-- Redes sociales -->
+				<div class="oec-card" style="margin-top:1rem;">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Redes sociales', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Se muestran como íconos en el pie de página. Dejá en blanco las que no uses.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+						<?php
+						$social_fields = [
+							'social_linkedin'  => [ 'label' => 'LinkedIn',    'icon' => '🔗', 'placeholder' => 'https://linkedin.com/company/...' ],
+							'social_instagram' => [ 'label' => 'Instagram',   'icon' => '📷', 'placeholder' => 'https://instagram.com/...' ],
+							'social_facebook'  => [ 'label' => 'Facebook',    'icon' => '👥', 'placeholder' => 'https://facebook.com/...' ],
+							'social_youtube'   => [ 'label' => 'YouTube',     'icon' => '▶', 'placeholder' => 'https://youtube.com/@...' ],
+							'social_x'         => [ 'label' => 'X (Twitter)', 'icon' => '𝕏', 'placeholder' => 'https://x.com/...' ],
+						];
+						foreach ( $social_fields as $skey => $sdata ) : ?>
+						<div class="oec-tracker-row__field" style="margin-bottom:1rem;">
+							<label for="oec-<?php echo esc_attr( $skey ); ?>">
+								<strong><?php echo esc_html( $sdata['icon'] . ' ' . $sdata['label'] ); ?></strong>
+							</label>
+							<input type="url" id="oec-<?php echo esc_attr( $skey ); ?>"
+							       name="<?php echo esc_attr( OEC_OPTION . '[' . $skey . ']' ); ?>"
+							       value="<?php echo esc_attr( $opts[ $skey ] ?? '' ); ?>"
+							       class="regular-text"
+							       placeholder="<?php echo esc_attr( $sdata['placeholder'] ); ?>">
+						</div>
+						<?php endforeach; ?>
+					</div>
+				</div>
+
+				<!-- Footer -->
+				<div class="oec-card" style="margin-top:1rem;">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'Pie de página', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Texto bajo el logo y columnas de enlaces.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<!-- Description -->
+						<div class="oec-tracker-row__field" style="margin-bottom:1.5rem;">
+							<label for="oec-footer-desc"><strong><?php esc_html_e( 'Descripción bajo el logo', 'oec-theme' ); ?></strong></label>
+							<input type="text" id="oec-footer-desc"
+							       name="<?php echo esc_attr( OEC_OPTION ); ?>[footer_desc]"
+							       value="<?php echo esc_attr( $opts['footer_desc'] ); ?>"
+							       class="large-text">
+						</div>
+
+						<hr class="oec-divider" style="margin-bottom:1.5rem;">
+
+						<!-- CTA organizaciones -->
+						<div class="oec-tracker-row__field" style="margin-bottom:1.5rem;">
+							<label for="oec-footer-cta-url"><strong><?php esc_html_e( 'Invitación a organizaciones educativas (URL)', 'oec-theme' ); ?></strong></label>
+							<input type="url" id="oec-footer-cta-url"
+							       name="<?php echo esc_attr( OEC_OPTION ); ?>[footer_cta_url]"
+							       value="<?php echo esc_attr( $opts['footer_cta_url'] ); ?>"
+							       class="regular-text"
+							       placeholder="https://onlineeducation.center/es/organizaciones">
+							<p class="description"><?php esc_html_e( 'URL del botón "Más información" en el banner de organizaciones. Si está vacío, el banner no se muestra.', 'oec-theme' ); ?></p>
+						</div>
+
+						<hr class="oec-divider" style="margin-bottom:1.5rem;">
+
+						<!-- Landings -->
+						<div class="oec-tracker-row__field" style="margin-bottom:1.5rem;">
+							<label for="oec-footer-landings"><strong><?php esc_html_e( 'Temáticas', 'oec-theme' ); ?></strong></label>
+							<textarea id="oec-footer-landings"
+							          name="<?php echo esc_attr( OEC_OPTION ); ?>[footer_landings]"
+							          rows="6" class="large-text"
+							          placeholder="Nutrición Deportiva|/nutricion-deportiva|bi-heart-pulse&#10;Entrenamiento de la Fuerza|/entrenamiento-fuerza|bi-activity&#10;Fisiología del Ejercicio|/fisiologia|bi-lungs"><?php echo esc_textarea( $opts['footer_landings'] ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Un enlace por línea: Nombre|URL o Nombre|URL|bi-icono (ícono Bootstrap opcional). Ejemplo: Nutrición|/nutricion|bi-heart-pulse', 'oec-theme' ); ?></p>
+						</div>
+
+						<hr class="oec-divider" style="margin-bottom:1.5rem;">
+
+						<!-- Legal -->
+						<div class="oec-tracker-row__field">
+							<label for="oec-footer-legal"><strong><?php esc_html_e( 'Información', 'oec-theme' ); ?></strong></label>
+							<textarea id="oec-footer-legal"
+							          name="<?php echo esc_attr( OEC_OPTION ); ?>[footer_legal]"
+							          rows="5" class="large-text"
+							          placeholder="Quiénes somos|/quienes-somos&#10;Privacidad|/privacidad&#10;Términos de uso|/terminos"><?php echo esc_textarea( $opts['footer_legal'] ); ?></textarea>
+							<p class="description"><?php esc_html_e( 'Un enlace por línea, en formato: Nombre del enlace|URL. Si está vacío, no se muestra la columna.', 'oec-theme' ); ?></p>
+						</div>
+
+					</div>
+				</div>
+
 				<?php endif; ?>
 
 			</div><!-- .oec-settings-body -->
@@ -724,35 +1121,6 @@ function oec_page_inline_styles(): void {
 	<style>
 	/* ---- Layout ---- */
 	.oec-settings-wrap { max-width: 860px; }
-
-	/* ---- Page header ---- */
-	.oec-page-header {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 1.5rem 2rem;
-		background: #071b2d;
-		border-radius: 10px;
-		margin-bottom: 1.5rem;
-		color: #fff;
-	}
-	.oec-page-header__left { display: flex; align-items: center; gap: 1.25rem; }
-	.oec-page-header__logo {
-		font-size: 2rem;
-		font-weight: 900;
-		color: #fff;
-		letter-spacing: -.03em;
-		line-height: 1;
-	}
-	.oec-page-header__logo span { color: #e8952a; }
-	.oec-page-header h1 {
-		font-size: 1.25rem;
-		color: #fff;
-		margin: 0 0 .25rem;
-		padding: 0;
-		border: none;
-	}
-	.oec-page-header p { color: rgba(255,255,255,.55); margin: 0; font-size: .875rem; }
 
 	/* ---- Tabs ---- */
 	.oec-tabs {
@@ -803,6 +1171,7 @@ function oec_page_inline_styles(): void {
 	.oec-card__header h2 { font-size: 1.0625rem; margin: 0 0 .375rem; padding: 0; }
 	.oec-card__header p  { margin: 0; color: #646970; font-size: .875rem; }
 	.oec-card__body { padding: 2rem; }
+	.oec-card + .oec-card { margin-top: 1.5rem; }
 
 	/* ---- Logo tab ---- */
 	.oec-logo-row { display: grid; grid-template-columns: auto 1fr; gap: 2rem; align-items: start; }
@@ -824,23 +1193,19 @@ function oec_page_inline_styles(): void {
 	.oec-hint-list li { font-size: .8125rem; color: #646970; padding-left: 1rem; position: relative; margin-bottom: .25rem; }
 	.oec-hint-list li::before { content: '✓'; position: absolute; left: 0; color: #194872; }
 
-	/* ---- Colors tab ---- */
-	.oec-swatches {
-		display: flex;
-		gap: 1rem;
-		margin-bottom: 2rem;
-		padding: 1.5rem;
-		background: #f6f7f7;
-		border-radius: 8px;
-		border: 1px solid #e5e7eb;
+	/* ---- Favicon ---- */
+	.oec-favicon-row { display: flex; gap: 2rem; align-items: flex-start; }
+	.oec-favicon-preview {
+		width: 96px; height: 96px; flex-shrink: 0;
+		border: 1px solid #dcdcde; border-radius: 12px; background: #f6f7f7;
+		display: flex; align-items: center; justify-content: center; overflow: hidden;
 	}
-	.oec-swatch         { text-align: center; flex: 1; }
-	.oec-swatch__color  { height: 56px; border-radius: 8px; margin-bottom: .5rem; border: 1px solid rgba(0,0,0,.08); box-shadow: 0 1px 3px rgba(0,0,0,.1); transition: transform .2s; }
-	.oec-swatch__color:hover { transform: scale(1.06); }
-	.oec-swatch__label  { display: block; font-size: .6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: #646970; margin-bottom: .125rem; }
-	.oec-swatch__hex    { display: block; font-size: .75rem; color: #333; font-family: monospace; }
+	.oec-favicon-preview img { width: 64px; height: 64px; object-fit: contain; }
+	.oec-favicon-placeholder { font-size: .75rem; color: #8c8f94; text-align: center; }
+	.oec-btn-row { display: flex; gap: .5rem; flex-wrap: wrap; }
 
-	.oec-color-fields { display: flex; flex-direction: column; gap: 0; }
+	/* ---- Colores ---- */
+	.oec-color-fields { display: flex; flex-direction: column; gap: 0; margin-bottom: .5rem; }
 	.oec-color-row {
 		display: grid;
 		grid-template-columns: 1fr auto;
@@ -852,8 +1217,11 @@ function oec_page_inline_styles(): void {
 	.oec-color-row:last-child { border-bottom: none; }
 	.oec-color-row__label { font-weight: 600; font-size: .9375rem; display: block; margin-bottom: .25rem; }
 	.oec-color-row__desc  { font-size: .8125rem; color: #646970; margin: 0 0 .375rem; }
-	.oec-color-row__var   { font-size: .75rem; background: #f0f4f8; color: #194872; padding: .125rem .5rem; border-radius: 4px; font-family: monospace; }
 	.oec-color-row__picker .wp-picker-container { display: flex; align-items: center; gap: .5rem; }
+	.oec-derived { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.25rem; margin-top: 1rem; padding: 1rem 1.25rem; background: #f6f7f7; border-radius: 8px; font-size: .8125rem; color: #50575e; }
+	.oec-derived__title { font-weight: 600; margin-right: .25rem; }
+	.oec-derived__item { display: inline-flex; align-items: center; gap: .375rem; }
+	.oec-derived__dot { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
 	.oec-reset-row { margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px solid #f0f0f1; }
 
 	/* ---- Tracker tab ---- */
@@ -922,7 +1290,7 @@ function oec_page_inline_styles(): void {
 	@media (max-width: 600px) {
 		.oec-logo-row  { grid-template-columns: 1fr; }
 		.oec-logo-canvas { width: 100%; }
-		.oec-swatches  { flex-wrap: wrap; }
+		.oec-favicon-row { flex-direction: column; }
 		.oec-color-row { grid-template-columns: 1fr; }
 	}
 	</style>
@@ -936,28 +1304,45 @@ function oec_output_dynamic_css(): void {
 	$opts     = oec_get_options();
 	$defaults = oec_get_defaults();
 
-	$vars = [
-		'--color-primary'      => $opts['color_primary'],
-		'--color-dark'         => $opts['color_dark'],
-		'--color-accent'       => $opts['color_accent'],
-		'--color-accent-hover' => oec_darken_hex( $opts['color_accent'] ),
-		'--color-light'        => $opts['color_light'],
-		'--color-text'         => $opts['color_text'],
-	];
-
 	$changed = false;
-	foreach ( [ 'color_primary', 'color_dark', 'color_accent', 'color_light', 'color_text' ] as $k ) {
-		if ( $opts[ $k ] !== $defaults[ $k ] ) {
+	foreach ( oec_color_keys() as $k ) {
+		if ( strtolower( $opts[ $k ] ) !== $defaults[ $k ] ) {
 			$changed = true;
 			break;
 		}
 	}
-
 	if ( ! $changed ) {
 		return;
 	}
 
-	$css = ':root{';
+	$p    = oec_palette( $opts );
+	$vars = [
+		'--color-primary'      => $p['primary'],
+		'--color-dark'         => $p['dark'],
+		'--color-dark-2'       => $p['dark_2'],
+		'--color-accent'       => $p['accent'],
+		'--color-accent-hover' => $p['accent_hover'],
+		'--color-light'        => $p['light'],
+		'--color-border'       => $p['border'],
+		'--color-text'         => $p['text'],
+		'--color-muted'        => $p['muted'],
+		'--color-badge-articulo'    => $p['badge_articulo'],
+		'--color-badge-articulo-bg' => $p['badge_articulo_bg'],
+		'--color-badge-blog'        => $p['badge_blog'],
+		'--color-badge-blog-bg'     => $p['badge_blog_bg'],
+		// Canales R,G,B de los colores que se usan con alpha (rgba(var(--x-rgb),N)).
+		'--color-primary-rgb' => oec_hex_to_rgb_list( $p['primary'] ),
+		'--color-dark-rgb'    => oec_hex_to_rgb_list( $p['dark'] ),
+		'--color-accent-rgb'  => oec_hex_to_rgb_list( $p['accent'] ),
+		'--color-text-rgb'    => oec_hex_to_rgb_list( $p['text'] ),
+	];
+
+	// Selector más específico que ":root" a secas (que usa style.css) para
+	// que este override gane el cascade SIN depender de en qué orden se
+	// impriman los <style>/<link> — antes salía a prioridad 5 (antes que
+	// el <link> de style.css) y el ":root" del archivo, al imprimirse
+	// después, terminaba pisando estos valores silenciosamente.
+	$css = 'html:root{';
 	foreach ( $vars as $prop => $val ) {
 		$css .= esc_attr( $prop ) . ':' . esc_attr( $val ) . ';';
 	}
@@ -965,7 +1350,7 @@ function oec_output_dynamic_css(): void {
 
 	echo "\n<style id=\"oec-dynamic-colors\">" . $css . "</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput
 }
-add_action( 'wp_head', 'oec_output_dynamic_css', 5 );
+add_action( 'wp_head', 'oec_output_dynamic_css', 100 );
 
 /* ============================================================
    FRONTEND: Tracker scripts
@@ -1012,3 +1397,40 @@ function oec_output_gtm_body(): void {
 	echo "<!-- End Google Tag Manager (noscript) -->\n";
 }
 add_action( 'wp_body_open', 'oec_output_gtm_body', 1 );
+
+/* ============================================================
+   HELPER: parse "Label|URL|icon" textarea → array
+   Defined here (not footer.php) so it's available globally
+   before footer.php is ever included.
+   Formato: Etiqueta|URL   o   Etiqueta|URL|bi-nombre-icono
+   ============================================================ */
+if ( ! function_exists( 'oec_parse_link_list' ) ) {
+	function oec_parse_link_list( string $raw ): array {
+		$links = [];
+		if ( ! $raw ) {
+			return $links;
+		}
+		foreach ( explode( "\n", $raw ) as $line ) {
+			$line = trim( $line );
+			if ( ! $line ) {
+				continue;
+			}
+			$parts = explode( '|', $line, 3 );
+			if ( count( $parts ) < 2 ) {
+				continue;
+			}
+			$label = trim( $parts[0] );
+			$href  = trim( $parts[1] );
+			$icon  = isset( $parts[2] ) ? trim( $parts[2] ) : '';
+			if ( $label && $href ) {
+				$links[] = [
+					'label'    => $label,
+					'href'     => $href,
+					'external' => str_starts_with( $href, 'http' ),
+					'icon'     => $icon,
+				];
+			}
+		}
+		return $links;
+	}
+}

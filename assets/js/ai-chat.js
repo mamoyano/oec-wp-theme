@@ -1,0 +1,629 @@
+/* OEC Theme — ai-chat.js */
+(function () {
+  'use strict';
+
+  const cfg            = window.oecAiChat || {};
+  const endpoint       = cfg.endpoint || '';
+  const streamEndpoint = cfg.streamEndpoint || '';
+  const nonce          = cfg.nonce || '';
+  const botName        = 'Asistente OEC';
+
+  let country  = '';
+  let currency = '';
+  let history  = [];
+  let mentionedFormationIds = []; // últimos 5 IDs vistos, para persistir contexto sin saturar
+  let busy     = false;
+  let overlayOpen = false;
+  let locationFetched = false;
+
+  /* ── Helpers ─────────────────────────────────────────────── */
+  function escAttr(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+  function escText(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function scrollBody() {
+    const b = document.getElementById('oec-overlay-body');
+    if (b) b.scrollTop = b.scrollHeight;
+  }
+
+  /* ── Country/currency (browser-side, uses user IP) ──────── */
+  async function detectLocation() {
+    try {
+      const res = await fetch('https://api.g-se.com/v2/initialPreferences', { cache: 'default' });
+      if (res.ok) {
+        const d = await res.json();
+        country  = d.country  || '';
+        currency = d.currency || '';
+      }
+    } catch (_) {}
+  }
+
+  function ensureLocation() {
+    if (!locationFetched) {
+      locationFetched = true;
+      detectLocation();
+    }
+  }
+
+  /* ── Build full-screen overlay ───────────────────────────── */
+  function buildOverlay() {
+    const el = document.createElement('div');
+    el.id = 'oec-ai-overlay';
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', botName);
+    el.setAttribute('aria-modal', 'true');
+
+    // Use site header logo if available, fall back to initials
+    const siteLogo = document.querySelector('#site-header .site-logo img, #site-header .custom-logo-link img, #site-header img.custom-logo');
+    const logoHtml = siteLogo
+      ? `<img src="${escAttr(siteLogo.src)}" class="oec-overlay-site-logo" alt="${escAttr(siteLogo.alt || botName)}">`
+      : `<div class="oec-overlay-avatar" aria-hidden="true">IA</div>`;
+
+    el.innerHTML = `
+      <div id="oec-overlay-topbar">
+        <button class="oec-overlay-brand" id="oec-overlay-logo-close" aria-label="Cerrar asistente">
+          ${logoHtml}
+        </button>
+        <button id="oec-overlay-close" aria-label="Cerrar asistente">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+
+      <div id="oec-overlay-body">
+        <div id="oec-overlay-messages" role="log" aria-live="polite"></div>
+      </div>
+
+      <div id="oec-overlay-footer">
+        <div id="oec-overlay-input-wrap">
+          <textarea id="oec-overlay-input"
+                    rows="1"
+                    placeholder="Continuá la conversación…"
+                    aria-label="Tu mensaje"></textarea>
+          <button id="oec-overlay-send" aria-label="Enviar" disabled>
+            <i class="bi bi-arrow-up" aria-hidden="true"></i>
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(el);
+  }
+
+  /* ── Open: animación "header se expande" ─────────────────── */
+  function openWithMorph(firstMessage) {
+    if (overlayOpen) return;
+    overlayOpen = true;
+
+    const overlay = document.getElementById('oec-ai-overlay');
+
+    const hi = document.getElementById('oec-ai-header-input');
+    if (hi) hi.value = '';
+    const hiBtn = document.getElementById('oec-ai-header-send');
+    if (hiBtn) hiBtn.disabled = true;
+    const mi = document.getElementById('oec-ai-mobile-input');
+    if (mi) mi.value = '';
+    const miBtn = document.getElementById('oec-ai-mobile-send');
+    if (miBtn) miBtn.disabled = true;
+
+    overlay.classList.add('oec-overlay--active');
+    document.body.classList.add('oec-chat-open');
+    overlay.offsetHeight; // force reflow → CSS transition starts
+    overlay.classList.add('oec-overlay--open');
+
+    setTimeout(() => {
+      appendMsg('user', firstMessage);
+      setBusy(true);
+      fetchReply(firstMessage);
+      const input = document.getElementById('oec-overlay-input');
+      if (input) input.focus();
+    }, 560);
+  }
+
+  /* ── Close overlay ───────────────────────────────────────── */
+  function closeOverlay() {
+    if (!overlayOpen) return;
+    overlayOpen = false;
+
+    const overlay = document.getElementById('oec-ai-overlay');
+    overlay.classList.remove('oec-overlay--open');
+
+    setTimeout(() => {
+      overlay.classList.remove('oec-overlay--active');
+      document.body.classList.remove('oec-chat-open');
+      const messages = document.getElementById('oec-overlay-messages');
+      if (messages) messages.innerHTML = '';
+      const hi = document.getElementById('oec-ai-header-input');
+      if (hi) hi.focus();
+    }, 580);
+  }
+
+  /* ── Markdown renderer ───────────────────────────────────── */
+  function renderMarkdown(raw, streaming = false) {
+    // 1. Escape HTML
+    let html = raw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    // 2. Markdown images — skip during streaming to avoid layout jumps when image loads
+    html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, src) => {
+      if (streaming) return '';
+      const caption = alt.trim()
+        ? `<span class="oec-md-img-caption">${alt}</span>`
+        : '';
+      return `<figure class="oec-md-figure"><img src="${src}" alt="${alt}" class="oec-md-img" loading="lazy">${caption}</figure>`;
+    });
+    // 3. Markdown links [text](url)
+    html = html.replace(
+      /\[([^\]]+)\]\(([^)]+)\)/g,
+      '<a href="$2" class="oec-md-link" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    // 2b. Auto-link bare https:// URLs not already inside an <a> tag
+    html = html.replace(
+      /(?<![="'])(https?:\/\/[^\s<"']+)/g,
+      '<a href="$1" class="oec-md-link" target="_blank" rel="noopener noreferrer">$1</a>'
+    );
+    // 3. Block: headings
+    html = html
+      .replace(/^### (.+)$/gm, '<strong class="oec-md-h3">$1</strong>')
+      .replace(/^## (.+)$/gm,  '<strong class="oec-md-h2">$1</strong>')
+      .replace(/^# (.+)$/gm,   '<strong class="oec-md-h1">$1</strong>');
+    // 4. Block: HR
+    html = html.replace(/^---+$/gm, '<hr class="oec-md-hr">');
+    // 5. Block: numbered list
+    html = html.replace(/^(\d+)\. (.+)$/gm,
+      '<span class="oec-md-ol"><em class="oec-md-num">$1.</em>$2</span>');
+    // 6. Block: bullet list
+    html = html.replace(/^[*-] (.+)$/gm,
+      '<span class="oec-md-li"><span class="oec-md-li__dot" aria-hidden="true"></span>$1</span>');
+    // 7. Inline: bold & italic
+    html = html
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g,     '<em>$1</em>');
+    // 7c. Collapse \n between consecutive list items so they don't get a <br> between them
+    html = html.replace(/<\/span>\n(<span class="oec-md-(?:li|ol)")/g, '</span>$1');
+    // 8. Line breaks
+    return html.replace(/\n/g, '<br>');
+  }
+
+  /* ── Create an assistant bubble in the messages list ────── */
+  function createAssistantBubble() {
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list) return null;
+    const wrap   = document.createElement('div');
+    wrap.className = 'oec-msg-row oec-msg-row--assistant';
+    const bubble = document.createElement('div');
+    bubble.className = 'oec-msg oec-msg--assistant';
+    wrap.appendChild(bubble);
+    list.appendChild(wrap);
+    scrollBody();
+    return bubble;
+  }
+
+  /* ── Message rendering ───────────────────────────────────── */
+  function appendMsg(role, text) {
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'oec-msg-row oec-msg-row--' + role;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'oec-msg oec-msg--' + role;
+    bubble.innerHTML = renderMarkdown(text);
+
+    wrap.appendChild(bubble);
+    list.appendChild(wrap);
+    scrollBody();
+  }
+
+  /* ── Course cards ────────────────────────────────────────── */
+  function renderCards(formations) {
+    if (!formations || formations.length === 0) return;
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list) return;
+
+    // Wrap in an assistant row so cards sit inside the conversation flow
+    const row = document.createElement('div');
+    row.className = 'oec-msg-row oec-msg-row--assistant';
+
+    const wrap = document.createElement('div');
+    wrap.className = 'oec-course-cards';
+
+    formations.forEach(f => {
+      const card = document.createElement('a');
+      card.href = f.path || f.url || '#';
+      card.className = 'oec-course-card';
+      card.setAttribute('aria-label', f.title || '');
+
+      const imgHtml = f.image
+        ? `<img src="${escAttr(f.image)}" class="oec-course-card__img" alt="" loading="lazy">`
+        : `<div class="oec-course-card__img oec-course-card__img--empty"></div>`;
+
+      card.innerHTML = `
+        ${imgHtml}
+        <div class="oec-course-card__body">
+          <span class="oec-course-card__type">${escText(f.type || '')}</span>
+          <strong class="oec-course-card__title">${escText(f.title || '')}</strong>
+          <span class="oec-course-card__org">${escText(f.org || '')}</span>
+        </div>
+        <svg class="oec-course-card__arrow" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      `;
+
+      wrap.appendChild(card);
+    });
+
+    row.appendChild(wrap);
+    list.appendChild(row);
+    scrollBody();
+  }
+
+  /* ── Typing indicator ────────────────────────────────────── */
+  function showTyping() {
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list || document.getElementById('oec-typing')) return;
+    const row = document.createElement('div');
+    row.className = 'oec-msg-row oec-msg-row--assistant';
+    row.innerHTML = '<div id="oec-typing" class="oec-msg oec-msg--assistant oec-typing">'
+                  + '<span></span><span></span><span></span>'
+                  + '<em class="oec-typing-status" hidden></em></div>';
+    list.appendChild(row);
+    scrollBody();
+  }
+
+  function hideTyping() {
+    document.getElementById('oec-typing')?.closest('.oec-msg-row')?.remove();
+  }
+
+  function updateTypingStatus(text) {
+    const el     = document.getElementById('oec-typing');
+    if (!el) return;
+    const status = el.querySelector('.oec-typing-status');
+    if (!status) return;
+
+    const show = () => {
+      status.textContent = text;
+      status.hidden = false;
+      requestAnimationFrame(() => status.classList.add('oec-typing-status--in'));
+    };
+
+    if (status.classList.contains('oec-typing-status--in')) {
+      status.classList.remove('oec-typing-status--in');
+      setTimeout(show, 220);
+    } else {
+      show();
+    }
+  }
+
+  function setBusy(state) {
+    busy = state;
+    const send  = document.getElementById('oec-overlay-send');
+    const input = document.getElementById('oec-overlay-input');
+    if (send)  send.disabled  = state || !(input?.value.trim());
+    if (input) input.disabled = state;
+    if (state) showTyping(); else hideTyping();
+  }
+
+  /* ── Upgrade plain formation URLs to inline cards ───────── */
+  function upgradeFormationLinks(bubbles, formations) {
+    if (!formations || !formations.length || !bubbles.length) return;
+    bubbles.forEach(function (bubble) {
+      bubble.querySelectorAll('a.oec-md-link').forEach(function (link) {
+        const href = (link.getAttribute('href') || '').trim();
+        const f = formations.find(function (f) { return f.url && f.url.trim() === href; });
+        if (!f) return;
+        const card = document.createElement('a');
+        card.href      = f.path || f.url;
+        card.className = 'oec-inline-card';
+        card.innerHTML = '<strong class="oec-inline-card__title">' + escText(f.title) + '</strong>'
+                       + '<span class="oec-inline-card__meta">'
+                       + escText(f.type || '')
+                       + (f.org ? ' · ' + escText(f.org) : '')
+                       + '</span>';
+        link.replaceWith(card);
+      });
+    });
+  }
+
+  /* ── Fetch AI reply via SSE streaming ───────────────────── */
+  async function fetchReply(message) {
+    try {
+      const res = await fetch(streamEndpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+        body:    JSON.stringify({ message, history, country, currency, mentioned_ids: mentionedFormationIds }),
+      });
+
+      if (!res.ok || !res.body) throw new Error('stream_unavailable');
+
+      const reader  = res.body.getReader();
+      const decoder = new TextDecoder();
+      let sseBuf    = '';
+      let fullText  = '';   // complete reply text for history
+      let bubText   = '';   // text for the current bubble only
+      let bubble    = null;
+      let allBubbles = [];  // track every bubble for post-stream URL upgrade
+      let started   = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        sseBuf += decoder.decode(value, { stream: true });
+
+        const lines = sseBuf.split('\n');
+        sseBuf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          let data;
+          try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+          /* ── status update ── */
+          if (data.status !== undefined) {
+            updateTypingStatus(data.status);
+          }
+
+          /* ── text chunk ── */
+          if (data.t !== undefined) {
+            fullText += data.t;
+            bubText  += data.t;
+
+            if (!started) {
+              started = true;
+              hideTyping();
+              bubble = createAssistantBubble();
+              allBubbles.push(bubble);
+            }
+
+            // Split bubbles in real time — no post-stream erase/rerender
+            while (bubText.includes('|||')) {
+              const sepIdx = bubText.indexOf('|||');
+              const before = bubText.slice(0, sepIdx).trim();
+              bubText      = bubText.slice(sepIdx + 3).trimStart();
+
+              // Finalize current bubble without cursor
+              if (bubble) {
+                try { bubble.innerHTML = renderMarkdown(before); }
+                catch (_) { bubble.textContent = before; }
+              }
+              // Open fresh bubble for the next part
+              bubble = createAssistantBubble();
+              allBubbles.push(bubble);
+            }
+
+            // Update current bubble with remaining text + streaming cursor (skip images while streaming)
+            if (bubble) {
+              try {
+                bubble.innerHTML = renderMarkdown(bubText, true) +
+                  '<span class="oec-cursor" aria-hidden="true">▌</span>';
+              } catch (_) {
+                bubble.textContent = bubText;
+              }
+              scrollBody();
+            }
+          }
+
+          /* ── stream complete ── */
+          if (data.done !== undefined) {
+            setBusy(false);
+
+            // Just remove the cursor — no rerender, bubbles already split
+            if (bubble) {
+              try { bubble.innerHTML = renderMarkdown(bubText.trim()); }
+              catch (_) { bubble.textContent = bubText.trim(); }
+              scrollBody();
+            }
+
+            // Upgrade formation URLs inside bubbles to inline cards, then show card strip
+            if (data.formations && data.formations.length) {
+              data.formations.forEach(f => {
+                const id = String(f.id);
+                mentionedFormationIds = [id, ...mentionedFormationIds.filter(x => x !== id)].slice(0, 5);
+              });
+              upgradeFormationLinks(allBubbles, data.formations);
+              await new Promise(r => setTimeout(r, 300));
+              renderCards(data.formations);
+            }
+
+            // Update conversation history
+            const cleanReply = fullText.replace(/\|\|\|/g, '\n\n').trim();
+            history.push({ role: 'user',      content: message    });
+            history.push({ role: 'assistant', content: cleanReply });
+            if (history.length > 10) history = history.slice(-10);
+          }
+
+          /* ── error event ── */
+          if (data.message !== undefined && !data.done) {
+            setBusy(false);
+            appendMsg('assistant', data.message);
+          }
+        }
+      }
+
+      // Guard: if stream ended without a 'done' event
+      if (!started) setBusy(false);
+
+    } catch (_) {
+      setBusy(false);
+      appendMsg('assistant', 'Ocurrió un error de conexión. Por favor, intentá de nuevo.');
+    }
+  }
+
+  /* ── Send from overlay input ─────────────────────────────── */
+  function sendOverlayMessage() {
+    if (busy) return;
+    const input = document.getElementById('oec-overlay-input');
+    if (!input) return;
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    document.getElementById('oec-overlay-send').disabled = true;
+
+    appendMsg('user', msg);
+    setBusy(true);
+    fetchReply(msg);
+  }
+
+  /* ── Trigger from header input ───────────────────────────── */
+  function triggerFromInput(inputEl) {
+    const msg = inputEl.value.trim();
+    if (!msg || busy) return;
+    openWithMorph(msg);
+  }
+
+  /* ── Hero "¿Qué quieres aprender?" → tipea "Hola" y abre el chat ── */
+  let helloRunning = false;
+
+  function typeInto(inputEl, text, done) {
+    let i = 0;
+    inputEl.value = '';
+    (function next() {
+      if (i < text.length) {
+        inputEl.value += text.charAt(i++);
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        setTimeout(next, 90);
+      } else {
+        setTimeout(done, 300);
+      }
+    })();
+  }
+
+  // Espera a que la página llegue arriba (el header no es sticky) o 900 ms.
+  function scrollToTop(done) {
+    if (window.scrollY <= 0) { done(); return; }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    const start = Date.now();
+    (function check() {
+      if (window.scrollY <= 0 || Date.now() - start > 900) { done(); return; }
+      requestAnimationFrame(check);
+    })();
+  }
+
+  function startHello(text) {
+    if (helloRunning || overlayOpen || busy) return;
+    helloRunning = true;
+    const finish = (inputEl) => typeInto(inputEl, text, () => {
+      helloRunning = false;
+      triggerFromInput(inputEl);
+    });
+
+    // Desktop: el input del header está visible
+    const desktop = document.getElementById('oec-ai-header-input');
+    if (desktop && desktop.getClientRects().length) {
+      desktop.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      desktop.focus();
+      finish(desktop);
+      return;
+    }
+
+    // Mobile: subir, desplegar el input mobile y recién ahí tipear
+    const bar    = document.getElementById('header-search-mobile');
+    const toggle = document.getElementById('search-toggle');
+    const mobile = document.getElementById('oec-ai-mobile-input');
+    if (!bar || !mobile) { helloRunning = false; return; }
+    scrollToTop(() => {
+      if (bar.hidden && toggle) toggle.click();
+      setTimeout(() => { mobile.focus(); finish(mobile); }, 250);
+    });
+  }
+
+  /* ── Event wiring ────────────────────────────────────────── */
+  function wireEvents() {
+    document.addEventListener('keydown', (e) => {
+      const id = e.target?.id;
+      if ((id === 'oec-ai-header-input' || id === 'oec-ai-mobile-input') && e.key === 'Enter') {
+        e.preventDefault();
+        triggerFromInput(e.target);
+        return;
+      }
+      if (id === 'oec-overlay-input' && e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendOverlayMessage();
+        return;
+      }
+      if (e.key === 'Escape' && overlayOpen) {
+        closeOverlay();
+      }
+    });
+
+    document.addEventListener('click', (e) => {
+      const hero = e.target.closest('#oec-ai-hero-trigger');
+      if (hero) {
+        startHello(hero.dataset.aiText || 'Hola');
+        return;
+      }
+      if (e.target.closest('#oec-ai-header-send')) {
+        const input = document.getElementById('oec-ai-header-input');
+        if (input) triggerFromInput(input);
+        return;
+      }
+      if (e.target.closest('#oec-ai-mobile-send')) {
+        const input = document.getElementById('oec-ai-mobile-input');
+        if (input) triggerFromInput(input);
+        return;
+      }
+      if (e.target.closest('#oec-overlay-close') || e.target.closest('#oec-overlay-logo-close')) { closeOverlay(); return; }
+      if (e.target.closest('#oec-overlay-send'))  { sendOverlayMessage(); return; }
+    });
+
+    document.addEventListener('input', (e) => {
+      const id = e.target?.id;
+      if (id === 'oec-ai-header-input' || id === 'oec-ai-mobile-input') {
+        ensureLocation();
+        const hasText = !!e.target.value.trim();
+        if (id === 'oec-ai-header-input') {
+          const btn = document.getElementById('oec-ai-header-send');
+          if (btn) btn.disabled = !hasText;
+        } else {
+          const btn = document.getElementById('oec-ai-mobile-send');
+          if (btn) btn.disabled = !hasText;
+        }
+        return;
+      }
+      if (id === 'oec-overlay-input') { ensureLocation(); }
+      if (id === 'oec-overlay-input') {
+        const el  = e.target;
+        const btn = document.getElementById('oec-overlay-send');
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+        if (btn) btn.disabled = busy || !el.value.trim();
+      }
+    });
+
+    // Mobile search toggle → focus mobile AI input
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('#search-toggle')) {
+        const mobileBar = document.getElementById('header-search-mobile');
+        if (mobileBar && !mobileBar.hidden) {
+          setTimeout(() => {
+            const inp = document.getElementById('oec-ai-mobile-input');
+            if (inp) inp.focus();
+          }, 50);
+        }
+      }
+    });
+  }
+
+  /* ── Init ────────────────────────────────────────────────── */
+  function init() {
+    buildOverlay();
+    wireEvents();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

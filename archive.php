@@ -2,6 +2,11 @@
 
 <div class="page-hero">
 	<div class="container">
+		<?php
+		oec_breadcrumb( [
+			[ __( 'Archivo', 'oec-theme' ) ],
+		] );
+		?>
 		<h1>
 			<?php
 			if ( is_category() ) {
@@ -11,17 +16,12 @@
 			} elseif ( is_author() ) {
 				the_author();
 			} elseif ( is_year() ) {
-				get_the_date( 'Y' );
+				echo esc_html( get_the_date( 'Y' ) );
 			} else {
 				esc_html_e( 'Archivo', 'oec-theme' );
 			}
 			?>
 		</h1>
-		<nav class="breadcrumb" aria-label="<?php esc_attr_e( 'Ruta de navegación', 'oec-theme' ); ?>">
-			<a href="<?php echo esc_url( home_url( '/' ) ); ?>"><?php esc_html_e( 'Inicio', 'oec-theme' ); ?></a>
-			<span class="sep" aria-hidden="true">/</span>
-			<span><?php esc_html_e( 'Archivo', 'oec-theme' ); ?></span>
-		</nav>
 	</div>
 </div>
 

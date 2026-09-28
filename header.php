@@ -32,38 +32,29 @@
 				<?php endif; ?>
 			</a>
 
-			<!-- ── BUSCADOR (desktop) ─────────────────────── -->
-			<div class="header-search" role="search">
-				<form class="header-search__form" id="oec-search-form"
-				      action="<?php echo esc_url( home_url( '/' ) ); ?>"
-				      method="get">
-					<div class="header-search__box">
-						<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
-						     fill="none" stroke="currentColor" stroke-width="2"
-						     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<circle cx="11" cy="11" r="8"/>
-							<path d="m21 21-4.35-4.35"/>
-						</svg>
-
-						<input type="search"
-						       id="oec-search-input"
-						       name="s"
-						       class="header-search__input"
-						       placeholder="<?php esc_attr_e( 'Buscar formaciones...', 'oec-theme' ); ?>"
-						       autocomplete="off"
-						       spellcheck="false"
-						       aria-label="<?php esc_attr_e( 'Buscar formaciones', 'oec-theme' ); ?>"
-						       aria-expanded="false"
-						       aria-controls="oec-search-dropdown"
-						       value="<?php echo esc_attr( get_search_query() ); ?>">
-
-						<div class="header-search__dropdown"
-						     id="oec-search-dropdown"
-						     role="listbox"
-						     aria-label="<?php esc_attr_e( 'Sugerencias de búsqueda', 'oec-theme' ); ?>">
-						</div>
-					</div>
-				</form>
+			<!-- ── ASISTENTE IA (desktop) ───────────────────── -->
+			<div class="header-search" role="search" id="oec-ai-zone">
+				<div class="header-search__box" id="oec-ai-box">
+					<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
+					     fill="none" stroke="currentColor" stroke-width="2"
+					     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+						<circle cx="11" cy="11" r="8"/>
+						<path d="m21 21-4.35-4.35"/>
+					</svg>
+					<input type="text"
+					       id="oec-ai-header-input"
+					       class="header-search__input"
+					       placeholder="<?php esc_attr_e( '¿Qué quieres aprender?', 'oec-theme' ); ?>"
+					       autocomplete="off"
+					       spellcheck="false"
+					       aria-label="<?php esc_attr_e( 'Pregunta al asistente OEC', 'oec-theme' ); ?>">
+					<button type="button" id="oec-ai-header-send"
+					        class="header-search__send-btn"
+					        aria-label="<?php esc_attr_e( 'Preguntar', 'oec-theme' ); ?>"
+					        disabled>
+						<i class="bi bi-arrow-down" aria-hidden="true"></i>
+					</button>
+				</div>
 			</div>
 
 			<!-- ── NAVEGACIÓN ─────────────────────────────── -->
@@ -101,21 +92,25 @@
 		</div><!-- .header-inner -->
 	</div><!-- .container -->
 
-	<!-- Buscador mobile (se muestra al tocar el ícono) -->
+	<!-- Asistente IA mobile (se muestra al tocar el ícono) -->
 	<div class="header-search-mobile" id="header-search-mobile" hidden>
 		<div class="container">
-			<form action="<?php echo esc_url( home_url( '/' ) ); ?>" method="get">
-				<div class="header-search__box">
-					<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
-					     fill="none" stroke="currentColor" stroke-width="2"
-					     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-					</svg>
-					<input type="search" name="s" class="header-search__input"
-					       placeholder="<?php esc_attr_e( 'Buscar formaciones...', 'oec-theme' ); ?>"
-					       autocomplete="off" autofocus>
-				</div>
-			</form>
+			<div class="header-search__box">
+				<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
+				     fill="none" stroke="currentColor" stroke-width="2"
+				     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+					<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+				</svg>
+				<input type="text" id="oec-ai-mobile-input" class="header-search__input"
+				       placeholder="<?php esc_attr_e( '¿Qué quieres aprender?', 'oec-theme' ); ?>"
+				       autocomplete="off" autofocus>
+				<button type="button" id="oec-ai-mobile-send"
+				        class="header-search__send-btn"
+				        aria-label="<?php esc_attr_e( 'Preguntar', 'oec-theme' ); ?>"
+				        disabled>
+					<i class="bi bi-arrow-down" aria-hidden="true"></i>
+				</button>
+			</div>
 		</div>
 	</div>
 </header>
@@ -128,9 +123,41 @@
    ================================================================ */
 class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 
+	/** URL del ítem de primer nivel que se está armando (para start_lvl). */
+	private string $oec_parent_url = '';
+
+	/**
+	 * Accesos rápidos arriba del mega-menú de "Formaciones" (el ítem cuya URL
+	 * es /formaciones): se agregan solos, sin cargarlos en Apariencia > Menús,
+	 * así el tema funciona igual en cada plataforma. Van más chicos que las
+	 * temáticas para que se note la jerarquía. Filtrable con
+	 * 'oec_mega_quick_links' ([ [label, url, icono bi-*], … ], $parent_url).
+	 */
+	private function quick_links_html( string $parent_url ): string {
+		$path   = untrailingslashit( (string) wp_parse_url( $parent_url, PHP_URL_PATH ) );
+		$target = untrailingslashit( (string) wp_parse_url( home_url( '/formaciones' ), PHP_URL_PATH ) );
+		$links  = ( '' !== $path && $path === $target ) ? [
+			[ __( 'Todas las formaciones', 'oec-theme' ), $parent_url, 'bi-grid-3x3-gap' ],
+			[ __( 'Todos los docentes', 'oec-theme' ), function_exists( 'oec_docentes_url' ) ? oec_docentes_url() : home_url( '/docentes/' ), 'bi-person-video3' ],
+		] : [];
+		$links = apply_filters( 'oec_mega_quick_links', $links, $parent_url );
+		if ( ! $links ) {
+			return '';
+		}
+
+		$html = '<div class="mega-menu__quick">';
+		foreach ( $links as [ $label, $url, $icon ] ) {
+			$html .= '<a class="mega-menu__quick-link" href="' . esc_url( $url ) . '">'
+			       . '<i class="bi ' . esc_attr( $icon ) . '" aria-hidden="true"></i>' . esc_html( $label ) . '</a>';
+		}
+		return $html . '</div><span class="mega-menu__label">' . esc_html__( 'Por temática', 'oec-theme' ) . '</span>';
+	}
+
 	public function start_lvl( &$output, $depth = 0, $args = null ): void {
 		if ( 0 === $depth ) {
-			$output .= '<div class="mega-menu" role="region"><div class="mega-menu__grid">';
+			$output .= '<div class="mega-menu" role="region">'
+			         . $this->quick_links_html( $this->oec_parent_url )
+			         . '<div class="mega-menu__grid">';
 		}
 	}
 
@@ -147,29 +174,45 @@ class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 		             || in_array( 'current-menu-ancestor', (array) $item->classes, true );
 
 		if ( 0 === $depth ) {
+			$this->oec_parent_url = (string) $item->url;
+			$is_muted = in_array( 'nav-item--muted', (array) $item->classes, true );
+
 			$classes = 'nav-item';
 			if ( $has_children ) $classes .= ' nav-item--has-sub';
 			if ( $is_current )   $classes .= ' nav-item--current';
+			if ( $is_muted )     $classes .= ' nav-item--muted';
 
 			$output .= '<li class="' . esc_attr( $classes ) . '">';
 
 			if ( $has_children ) {
-				$output .= '<button type="button" class="nav-trigger" '
+				// Único <a>: navega en desktop (hover abre el mega-menu),
+				// en mobile el primer tap abre el submenu y el segundo navega.
+				$href = ( ! empty( $item->url ) && '#' !== $item->url ) ? esc_url( $item->url ) : '#';
+				$output .= '<a href="' . $href . '" class="nav-trigger" '
 				         . 'aria-expanded="false" aria-haspopup="true">'
 				         . esc_html( $item->title )
 				         . '<svg class="nav-chevron" width="11" height="11" viewBox="0 0 24 24" '
 				         . 'fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">'
 				         . '<polyline points="6 9 12 15 18 9"/></svg>'
-				         . '</button>';
+				         . '</a>';
 			} else {
-				$output .= '<a href="' . esc_url( $item->url ) . '">'
-				         . esc_html( $item->title ) . '</a>';
+				$is_external = '_blank' === ( $item->target ?? '' );
+				$output .= '<a href="' . esc_url( $item->url ) . '"'
+				         . ( $is_external ? ' target="_blank" rel="noopener noreferrer"' : '' ) . '>'
+				         . esc_html( $item->title )
+				         . ( $is_external ? ' <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>' : '' )
+				         . '</a>';
 			}
 
 		} else {
 			// Items dentro del mega-menú
-			$output .= '<a href="' . esc_url( $item->url ) . '" class="mega-menu__item">'
-			         . esc_html( $item->title ) . '</a>';
+			$is_external = '_blank' === ( $item->target ?? '' );
+
+			$output .= '<a href="' . esc_url( $item->url ) . '" class="mega-menu__item"'
+			         . ( $is_external ? ' target="_blank" rel="noopener noreferrer"' : '' ) . '>'
+			         . esc_html( $item->title )
+			         . ( $is_external ? ' <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>' : '' )
+			         . '</a>';
 		}
 	}
 
@@ -180,13 +223,72 @@ class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 	}
 }
 
+/* ================================================================
+   CREDITS BADGE: lee localStorage y actualiza el nav en tiempo real.
+   Se ejecuta después del DOMContentLoaded para no bloquear render.
+   ================================================================ */
+?>
+<script>
+(function () {
+	function oecApplyCredits( balance ) {
+		document.querySelectorAll( '.nav-list a, .mega-menu__item' ).forEach( function ( a ) {
+			const text = a.textContent.trim().toLowerCase();
+			if ( text === 'créditos' || text === 'creditos' ) {
+				a.classList.add( 'nav-credits-link' );
+				a.innerHTML =
+					'<span class="nav-credits-badge">' +
+					parseInt( balance, 10 ).toLocaleString( 'es-AR' ) +
+					'</span> Créditos';
+			}
+		} );
+	}
+	function oecClearCredits() {
+		document.querySelectorAll( '.nav-credits-link' ).forEach( function ( a ) {
+			a.classList.remove( 'nav-credits-link' );
+			a.textContent = 'Créditos';
+		} );
+	}
+	function oecWhenReady( fn ) {
+		if ( document.readyState === 'loading' ) {
+			document.addEventListener( 'DOMContentLoaded', fn );
+		} else {
+			fn();
+		}
+	}
+	try {
+		// Mismo criterio que el bloque de créditos ([oec-credits-widget]): el
+		// usuario se identifica por el EMAIL (localStorage "userEmail"). Sin
+		// email no hay saldo que mostrar: si quedó uno guardado (p. ej. el
+		// "Cambiar email" de la ficha del plugin borra el email y el saldo de
+		// sesión pero no el respaldo del tema), se limpia. Así el header y el
+		// bloque nunca se contradicen.
+		// Saldo: sessionStorage del plugin (igual que oec-formacion.js) o, si no,
+		// el respaldo en localStorage del tema.
+		var email = localStorage.getItem( 'userEmail' );
+		var b     = sessionStorage.getItem( 'userCredits' ) || localStorage.getItem( 'oec_credits_balance' );
+		if ( ! email ) {
+			sessionStorage.removeItem( 'userCredits' );
+			localStorage.removeItem( 'oec_credits_balance' );
+		} else if ( b !== null && b !== '' ) {
+			oecWhenReady( function () { oecApplyCredits( b ); } );
+		}
+	} catch ( _e ) {}
+	// Actualización en tiempo real (bloque de créditos, newsletter, etc.)
+	window.addEventListener( 'oec:credits-updated', function ( e ) {
+		oecApplyCredits( e.detail.balance );
+	} );
+	window.addEventListener( 'oec:credits-reset', oecClearCredits );
+}());
+</script>
+<?php
+
 function oec_header_fallback_nav(): void {
 	echo '<ul class="nav-list">';
 	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/formaciones' ) ) . '">'
 	   . esc_html__( 'Formaciones', 'oec-theme' ) . '</a></li>';
 	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/articulos' ) ) . '">'
-	   . esc_html__( 'Artículos', 'oec-theme' ) . '</a></li>';
-	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/creditos' ) ) . '">'
+	   . esc_html__( 'Artículos y Blogs', 'oec-theme' ) . '</a></li>';
+	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/creditos-por-descuentos' ) ) . '">'
 	   . esc_html__( 'Créditos', 'oec-theme' ) . '</a></li>';
 	echo '</ul>';
 }

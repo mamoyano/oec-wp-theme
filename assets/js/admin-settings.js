@@ -7,27 +7,38 @@
   /* ============================================================
      COLOR PICKERS
      ============================================================ */
+  // Mismo cálculo que oec_lighten_hex() en PHP: mezcla hacia blanco.
+  function lighten(hex, percent) {
+    hex = String(hex || '').replace('#', '');
+    if (hex.length === 3) hex = hex.replace(/(.)/g, '$1$1');
+    if (!/^[0-9a-f]{6}$/i.test(hex)) return null;
+    var f = percent / 100, out = '#';
+    for (var i = 0; i < 6; i += 2) {
+      var c = parseInt(hex.substr(i, 2), 16);
+      out += ('0' + Math.round(c + (255 - c) * f).toString(16)).slice(-2);
+    }
+    return out;
+  }
+
+  function updateDerived(key, color) {
+    $('.oec-derived__dot[data-from="' + key + '"]').each(function () {
+      var c = lighten(color, +$(this).data('mix'));
+      if (c) $(this).css('background', c);
+    });
+  }
+
   $('.oec-color-picker').wpColorPicker({
     change: function (event, ui) {
-      var key   = $(this).data('key');
-      var color = ui.color.toString();
-      updateSwatch(key, color);
+      updateDerived($(this).data('key'), ui.color.toString());
     },
     clear: function () {
-      var $input    = $(this).closest('.wp-picker-container').find('.oec-color-picker');
-      var key       = $input.data('key');
-      var defColor  = $input.data('default-color');
+      var $input = $(this).closest('.wp-picker-container').find('.oec-color-picker');
       // After clear, WP sets the input back to default; wait a tick
       setTimeout(function () {
-        updateSwatch(key, defColor);
+        updateDerived($input.data('key'), $input.data('default-color'));
       }, 10);
     },
   });
-
-  function updateSwatch(key, color) {
-    $('#swatch-' + key).css('background', color);
-    $('#swatch-hex-' + key).text(color);
-  }
 
   /* ============================================================
      RESET COLORS
@@ -38,8 +49,48 @@
       var def    = $input.data('default-color');
       // Update the WP color picker widget
       $input.wpColorPicker('color', def);
-      updateSwatch($input.data('key'), def);
+      updateDerived($input.data('key'), def);
     });
+  });
+
+  /* ============================================================
+     FAVICON MEDIA UPLOADER
+     ============================================================ */
+  var faviconFrame;
+
+  $('#oec-upload-favicon').on('click', function (e) {
+    e.preventDefault();
+
+    if (!faviconFrame) {
+      faviconFrame = wp.media({
+        title:    config.faviconTitle  || 'Seleccionar favicon',
+        button:   { text: config.faviconButton || 'Usar como favicon' },
+        library:  { type: 'image' },
+        multiple: false,
+      });
+
+      faviconFrame.on('select', function () {
+        var attachment = faviconFrame.state().get('selection').first().toJSON();
+        var url = (attachment.sizes && attachment.sizes.thumbnail) ? attachment.sizes.thumbnail.url : attachment.url;
+
+        $('#oec-favicon-id').val(attachment.id);
+        $('#oec-favicon-preview').empty().append($('<img alt="">').attr('src', url));
+        $('#oec-upload-favicon').text(config.changeFavicon || 'Cambiar favicon');
+        $('#oec-remove-favicon').show();
+      });
+    }
+
+    faviconFrame.open();
+  });
+
+  $('#oec-remove-favicon').on('click', function (e) {
+    e.preventDefault();
+    $('#oec-favicon-id').val('0');
+    $('#oec-favicon-preview').html(
+      '<span class="oec-favicon-placeholder">' + (config.noFavicon || 'Sin favicon') + '</span>'
+    );
+    $('#oec-upload-favicon').text(config.uploadFavicon || 'Subir favicon');
+    $(this).hide();
   });
 
   /* ============================================================
@@ -108,6 +159,45 @@
     } else {
       $badge.html('<span class="oec-badge oec-badge--off">Inactivo</span>');
     }
+  });
+
+  /* ============================================================
+     AI CATALOG SYNC
+     ============================================================ */
+  $(document).on('click', '#oec-ai-sync-now', function () {
+    var $btn  = $(this);
+    var $msg  = $('#oec-ai-sync-msg');
+    var nonce = $btn.data('nonce');
+
+    $btn.prop('disabled', true).text('Sincronizando…');
+    $msg.text('');
+
+    // Cada llamada corre una tanda del sync (ver OEC_AI_Catalog::ajax_sync);
+    // se repite mientras siga en curso, mostrando el avance.
+    var tick = function (start) {
+      $.post(ajaxurl, { action: 'oec_ai_sync_catalog', nonce: nonce, start: start ? 1 : 0 }, function (res) {
+        var data = (res && res.data) || {};
+        if (!res.success) {
+          $msg.css('color', '#c00').text('Error: ' + (res.data || 'Falló la sincronización.'));
+          done();
+        } else if (data.status === 'running') {
+          $msg.css('color', '#646970').text(data.progress || 'Sincronizando…');
+          setTimeout(function () { tick(false); }, 1500);
+        } else if (data.status === 'ok') {
+          var closed = data.closed_count ? ' y ' + data.closed_count + ' cerradas' : '';
+          $msg.css('color', '#1e7e34').text('✓ Sincronizado — ' + (data.count || 0) + ' formaciones abiertas' + closed + '.');
+          done();
+        } else {
+          $msg.css('color', '#c00').text('Error: ' + ((data.errors || []).slice(-1)[0] || 'Falló la sincronización.'));
+          done();
+        }
+      }).fail(function () {
+        // Un corte de una tanda no frena el trabajo: se reintenta.
+        setTimeout(function () { tick(false); }, 5000);
+      });
+    };
+    var done = function () { $btn.prop('disabled', false).text('🔄 Sincronizar ahora'); };
+    tick(true);
   });
 
 })(jQuery);

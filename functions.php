@@ -1,9 +1,21 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.0' );
+define( 'OEC_THEME_VERSION', '1.0.50' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
+
+/**
+ * Versión para el ?ver= de un CSS/JS del tema: versión del tema + fecha
+ * de modificación del archivo. Cada vez que el archivo cambia, cambia la
+ * URL y el navegador (o Cloudflare) deja de usar la copia vieja, sin tener
+ * que acordarse de subir OEC_THEME_VERSION en cada entrega.
+ * $path: relativo a la carpeta del tema (ej. 'assets/js/main.js').
+ */
+function oec_asset_version( string $path ): string {
+	$file = OEC_THEME_DIR . '/' . ltrim( $path, '/' );
+	return OEC_THEME_VERSION . ( file_exists( $file ) ? '.' . filemtime( $file ) : '' );
+}
 
 /* ============================================================
    SETUP
@@ -39,36 +51,58 @@ add_action( 'after_setup_theme', 'oec_setup' );
    ============================================================ */
 function oec_enqueue_assets(): void {
 	wp_enqueue_style(
+		'bootstrap-icons',
+		'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css',
+		[],
+		null
+	);
+	wp_enqueue_style(
 		'oec-style',
 		get_stylesheet_uri(),
-		[],
-		OEC_THEME_VERSION
+		[ 'bootstrap-icons' ],
+		oec_asset_version( 'style.css' )
 	);
 
 	wp_enqueue_script(
 		'oec-main',
 		OEC_THEME_URI . '/assets/js/main.js',
 		[],
-		OEC_THEME_VERSION,
+		oec_asset_version( 'assets/js/main.js' ),
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
 
-	// Buscador del header (solo si hay token configurado)
-	if ( ! empty( oec_get_options()['oec_api_token'] ) ) {
+	// Asistente IA — TODO: re-condicionar a oec_anthropic_key tras pruebas de UI
+	wp_enqueue_script(
+		'oec-ai-chat',
+		OEC_THEME_URI . '/assets/js/ai-chat.js',
+		[],
+		oec_asset_version( 'assets/js/ai-chat.js' ),
+		[ 'strategy' => 'defer', 'in_footer' => true ]
+	);
+	wp_localize_script( 'oec-ai-chat', 'oecAiChat', [
+		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
+		'streamEndpoint' => esc_url( rest_url( 'oec/v1/chat-stream' ) ),
+		'nonce'          => wp_create_nonce( 'wp_rest' ),
+	] );
+
+	// Barra de compartir — solo en artículos/blogs individuales.
+	if ( is_singular( 'post' ) ) {
 		wp_enqueue_script(
-			'oec-header-search',
-			OEC_THEME_URI . '/assets/js/header-search.js',
+			'oec-share',
+			OEC_THEME_URI . '/assets/js/share.js',
 			[],
-			OEC_THEME_VERSION,
+			oec_asset_version( 'assets/js/share.js' ),
 			[ 'strategy' => 'defer', 'in_footer' => true ]
 		);
-		wp_localize_script( 'oec-header-search', 'oecSearch', [
-			'endpoint'  => esc_url( rest_url( 'oec/v1/search' ) ),
-			'searchUrl' => esc_url( home_url( '/?s=' ) ),
-		] );
 	}
 }
 add_action( 'wp_enqueue_scripts', 'oec_enqueue_assets' );
+
+function oec_logo_dynamic_css(): void {
+	$h = (int) ( oec_get_options()['logo_height'] ?? 40 );
+	wp_add_inline_style( 'oec-style', ".site-logo img, .oec-overlay-site-logo { max-height: {$h}px; }" );
+}
+add_action( 'wp_enqueue_scripts', 'oec_logo_dynamic_css', 20 );
 
 /* ============================================================
    CONTENT WIDTH
@@ -285,12 +319,134 @@ function oec_customize_register( WP_Customize_Manager $wp_customize ): void {
 add_action( 'customize_register', 'oec_customize_register' );
 
 /* ============================================================
+   NAV — SUBMENÚ TEMÁTICAS
+   Inyecta los footer_landings del admin como hijos del item
+   "Formaciones" en el menú primario.
+   ============================================================ */
+add_filter( 'wp_nav_menu_objects', function ( array $items, $args ): array {
+	if ( ( $args->theme_location ?? '' ) !== 'primary' ) {
+		return $items;
+	}
+
+	$opts       = function_exists( 'oec_get_options' )     ? oec_get_options()                                        : [];
+	$raw        = trim( $opts['footer_landings'] ?? '' );
+	$landings   = function_exists( 'oec_parse_link_list' ) ? oec_parse_link_list( $raw ) : [];
+	$campus_url = trim( $opts['campus_virtual_url'] ?? '' );
+
+	// --- Submenú de temáticas dentro de "Formaciones" ---
+	if ( ! empty( $landings ) ) {
+		$parent_id = null;
+		foreach ( $items as &$item ) {
+			$by_title = mb_strtolower( $item->title ?? '' ) === 'formaciones';
+			$by_url   = str_contains( $item->url ?? '', '/formaciones' );
+			if ( $by_title || $by_url ) {
+				$parent_id = (int) $item->ID;
+				// Necesario para que el walker mega-menú muestre el trigger
+				if ( ! in_array( 'menu-item-has-children', (array) $item->classes, true ) ) {
+					$item->classes[] = 'menu-item-has-children';
+				}
+				break;
+			}
+		}
+		unset( $item );
+
+		if ( $parent_id ) {
+			$fake_id   = 98000;
+			$new_items = [];
+			foreach ( $landings as $landing ) {
+				$obj                        = new stdClass();
+				$obj->ID                    = ++$fake_id;
+				$obj->db_id                 = $fake_id;
+				$obj->menu_item_parent      = $parent_id;
+				$obj->object_id             = $fake_id;
+				$obj->object                = 'custom';
+				$obj->type                  = 'custom';
+				$obj->type_label            = '';
+				$obj->title                 = $landing['label'];
+				$obj->url                   = $landing['href'];
+				$obj->target                = $landing['external'] ? '_blank' : '';
+				$obj->attr_title            = '';
+				$obj->description           = '';
+				$obj->icon                  = $landing['icon'] ?? '';
+				$obj->classes               = [ 'menu-item', 'menu-item-type-custom', 'menu-item-object-custom' ];
+				$obj->xfn                   = $landing['external'] ? 'noopener noreferrer' : '';
+				$obj->menu_order            = $fake_id;
+				$obj->post_parent           = 0;
+				$obj->current               = false;
+				$obj->current_item_ancestor = false;
+				$obj->current_item_parent   = false;
+				$new_items[]                = $obj;
+			}
+
+			// Inserta los nuevos items justo después del parent
+			$merged = [];
+			foreach ( $items as $item ) {
+				$merged[] = $item;
+				if ( (int) $item->ID === $parent_id ) {
+					foreach ( $new_items as $ni ) {
+						$merged[] = $ni;
+					}
+				}
+			}
+			$items = $merged;
+		}
+	}
+
+	// --- Enlace "Campus Virtual": último ítem del menú principal, tono apagado ---
+	if ( $campus_url ) {
+		$campus                        = new stdClass();
+		$campus->ID                    = 98999;
+		$campus->db_id                 = 98999;
+		$campus->menu_item_parent      = 0;
+		$campus->object_id             = 98999;
+		$campus->object                = 'custom';
+		$campus->type                  = 'custom';
+		$campus->type_label            = '';
+		$campus->title                 = __( 'Campus', 'oec-theme' );
+		$campus->url                   = $campus_url;
+		$campus->target                = '_blank';
+		$campus->attr_title            = '';
+		$campus->description           = '';
+		$campus->icon                  = '';
+		$campus->classes               = [ 'menu-item', 'menu-item-type-custom', 'menu-item-object-custom', 'nav-item--muted' ];
+		$campus->xfn                   = 'noopener noreferrer';
+		$campus->menu_order            = 98999;
+		$campus->post_parent           = 0;
+		$campus->current               = false;
+		$campus->current_item_ancestor = false;
+		$campus->current_item_parent   = false;
+		$items[]                       = $campus;
+	}
+
+	return $items;
+}, 10, 2 );
+
+/* ============================================================
    INCLUDE FILES
    ============================================================ */
 require OEC_THEME_DIR . '/inc/performance.php';
+require OEC_THEME_DIR . '/inc/root-redirect.php';
 require OEC_THEME_DIR . '/inc/template-functions.php';
+require OEC_THEME_DIR . '/inc/urls.php';
+require OEC_THEME_DIR . '/inc/seo.php';
+require OEC_THEME_DIR . '/inc/sitemap.php';
+require OEC_THEME_DIR . '/inc/crawlers.php';
+require OEC_THEME_DIR . '/inc/indexnow.php';
 require OEC_THEME_DIR . '/inc/admin-settings.php';
-require OEC_THEME_DIR . '/inc/search-api.php';
+require OEC_THEME_DIR . '/inc/credits.php';
+require OEC_THEME_DIR . '/inc/ai-catalog.php';
+require OEC_THEME_DIR . '/inc/organizations.php';
+require OEC_THEME_DIR . '/inc/tematica-landing.php';
+require OEC_THEME_DIR . '/inc/docentes.php';
+require OEC_THEME_DIR . '/inc/opiniones.php';
+require OEC_THEME_DIR . '/inc/clases.php';
+require OEC_THEME_DIR . '/inc/blog-home.php';
+require OEC_THEME_DIR . '/inc/sitios.php';
+require OEC_THEME_DIR . '/inc/tiras.php';
+require OEC_THEME_DIR . '/inc/formaciones.php';
+require OEC_THEME_DIR . '/inc/ai-chat.php';
+require OEC_THEME_DIR . '/inc/newsletter.php';
+require OEC_THEME_DIR . '/inc/seed.php';
 require OEC_THEME_DIR . '/inc/theme-updater.php';
 
 /* ============================================================

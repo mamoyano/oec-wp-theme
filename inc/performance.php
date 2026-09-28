@@ -183,7 +183,8 @@ remove_action( 'wp_head', 'rsd_link' );
       servidores y CDNs. Los eliminamos de recursos estáticos.
    ============================================================ */
 function oec_remove_query_strings( string $src ): string {
-	if ( strpos( $src, '?ver=' ) ) {
+	// Keep ver param for theme JS/CSS so version bumps bust browser cache
+	if ( strpos( $src, '?ver=' ) && strpos( $src, '/themes/oec-wp-theme/' ) === false ) {
 		$src = remove_query_arg( 'ver', $src );
 	}
 	return $src;
@@ -204,3 +205,86 @@ function oec_no_self_ping( array &$links ): void {
 	}
 }
 add_action( 'pre_ping', 'oec_no_self_ping' );
+
+/* ============================================================
+   11. ROBOTS META — AEO / LLMs
+       max-snippet:-1 y max-video-preview:-1 permiten que Google
+       y crawlers de IA muestren fragmentos largos del contenido,
+       mejorando la visibilidad en respuestas de LLMs y SGE.
+   ============================================================ */
+add_filter( 'wp_robots', function ( array $robots ): array {
+	$robots['max-snippet']       = '-1';
+	$robots['max-video-preview'] = '-1';
+	return $robots;
+} );
+
+/* ============================================================
+   12. PRECONNECT — cdn.jsdelivr.net
+       Upgrade de dns-prefetch a preconnect: establece el TCP +
+       TLS handshake antes de que el browser necesite los fonts
+       de Bootstrap Icons, ahorrando ~150-300 ms en la primera carga.
+   ============================================================ */
+add_filter( 'wp_resource_hints', function ( array $hints, string $relation_type ): array {
+	if ( 'preconnect' === $relation_type ) {
+		$hints[] = [
+			'href'        => 'https://cdn.jsdelivr.net',
+			'crossorigin' => 'anonymous',
+		];
+	}
+	return $hints;
+}, 10, 2 );
+
+/* ============================================================
+   13. CACHE-CONTROL — para que Cloudflare pueda cachear en el
+       borde con stale-while-revalidate.
+       Solo en el frontend público y para visitantes NO logueados:
+       - Nunca en wp-admin ni en la API REST (esos endpoints son
+         POST igualmente, así que Cloudflare no los cachearía, pero
+         mejor no mandar la señal de "cacheable" ahí ni por error).
+       - Nunca para un usuario logueado: esa respuesta puede traer
+         admin bar, enlaces de edición o contenido de vista previa
+         que NO debe terminar cacheado y servido a otra persona.
+         (Además, del lado de Cloudflare conviene una Cache Rule que
+         haga bypass cuando viaja la cookie wordpress_logged_in_*,
+         como doble seguro.)
+       - Un 404 recibe un TTL corto en vez de 24 h: si mañana esa URL
+         pasa a existir (o era un typo pasajero), no queda "pegado"
+         un 404 cacheado todo un día.
+       - HTML: 5 minutos en el navegador (max-age) y 10 en el borde de
+         Cloudflare (s-maxage), + stale-while-revalidate de 10 min. Antes
+         eran 24 h: con cuentas regresivas, cierres de inscripción,
+         descuentos que vencen y el catálogo que se actualiza a diario,
+         un visitante que volvía podía ver datos de ayer. CSS/JS/imágenes
+         no pasan por acá (los sirve el servidor web con su propia caché
+         larga, y el ?ver= del enqueue invalida cuando cambian).
+   ============================================================ */
+function oec_send_cache_headers(): void {
+	if ( is_admin() || defined( 'REST_REQUEST' ) || is_user_logged_in() ) {
+		return;
+	}
+	if ( is_404() ) {
+		header( 'Cache-Control: public, max-age=60' );
+		return;
+	}
+	header( 'Cache-Control: public, max-age=300, s-maxage=600, stale-while-revalidate=600' );
+}
+// En 'wp' y no en 'send_headers': send_headers corre ANTES de la consulta,
+// cuando is_404() todavía es siempre false (los 404 se cacheaban 10 min).
+// 'wp' corre después de handle_404() y antes de template_redirect, así que
+// los nocache_headers() de las plantillas (docente/organización
+// inexistente, newsletter…) siguen pisando este header.
+add_action( 'wp', 'oec_send_cache_headers' );
+
+/* ============================================================
+   14. OCULTAR VERSIÓN DE PHP — el header X-Powered-By lo agrega el
+       propio PHP (ini "expose_php"), no WordPress; header_remove()
+       lo saca de la respuesta sin necesitar tocar el php.ini del
+       hosting. Se llama directo (sin action hook) porque este archivo
+       ya se incluye desde functions.php en TODA request — frontend,
+       wp-admin, wp-login.php — antes de que exista ningún redirect
+       temprano (p. ej. auth_redirect() en wp-admin) que corte la
+       ejecución antes de que un hook como admin_init llegue a disparar.
+   ============================================================ */
+if ( ! headers_sent() ) {
+	header_remove( 'X-Powered-By' );
+}
