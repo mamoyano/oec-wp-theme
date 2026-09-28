@@ -385,9 +385,42 @@ function oec_render_trust_logos_shortcode( $atts ): string {
  * que se crea sola si no existe (oec_nl_ensure_especiales_lists()), y
  * "categoria" es la categoría del blog cuyos artículos lleva ese newsletter
  * (por defecto, la de slug = tematica). Para sumar una nueva (Fútbol, etc.)
- * alcanza con agregar una entrada acá, una vez que su landing exista.
+ * alcanza con agregar una entrada acá: mientras su página no esté publicada
+ * la entrada se ignora (sin links rotos en el home ni en /especiales/, y la
+ * lista de Elastic Email recién se crea cuando la landing existe). "image"
+ * y "video" son opcionales y se pueden cargar desde la página, sin tocar el
+ * tema: la imagen destacada es la portada y el campo personalizado
+ * "hero_video" (URL del .mp4) el video. Sin video, el hero queda con el
+ * degradé de la temática y el home no la suma a la rotación.
+ *
+ * Videos del hero: en la biblioteca del sitio principal de la red,
+ * comprimidos para fondo (960 px, 24 fps, sin audio, faststart — van detrás
+ * de un overlay casi opaco). network_home_url() arma la URL con el dominio
+ * vigente (hoy nuevo.g-se.com, mañana g-se.com).
  */
 function oec_get_especiales_list(): array {
+	static $cache = [];
+	$blog = get_current_blog_id();
+	if ( isset( $cache[ $blog ] ) ) {
+		return $cache[ $blog ];
+	}
+	$base = untrailingslashit( (string) wp_parse_url( home_url( '/' ), PHP_URL_PATH ) );
+	$out = [];
+	foreach ( oec_especiales_registradas() as $e ) {
+		$path = trim( substr( (string) wp_parse_url( $e['url'], PHP_URL_PATH ), strlen( $base ) ), '/' );
+		$page = get_page_by_path( $path );
+		if ( ! $page || 'publish' !== $page->post_status ) {
+			continue;
+		}
+		$e['image'] = $e['image'] ?: (string) get_the_post_thumbnail_url( $page, 'full' );
+		$e['video'] = $e['video'] ?: esc_url_raw( trim( (string) get_post_meta( $page->ID, 'hero_video', true ) ) );
+		$out[]      = $e;
+	}
+	return $cache[ $blog ] = $out;
+}
+
+/** Todas las landings declaradas (publicadas o no): ver oec_get_especiales_list(). */
+function oec_especiales_registradas(): array {
 	return [
 		[
 			'tematica' => 'nutricion-deportiva',
@@ -395,7 +428,7 @@ function oec_get_especiales_list(): array {
 			'desc'     => 'Cursos, talleres y posgrados sobre alimentación, hidratación y suplementación aplicadas al rendimiento físico y la recuperación.',
 			'url'      => home_url( user_trailingslashit( '/especiales/nutricion-deportiva' ) ),
 			'image'    => home_url( '/wp-content/uploads/sites/2/2026/09/Portada-Nutricion-Deportiva-1.png' ),
-			'video'    => 'https://g-se.com/wp-content/uploads/2026/09/Portada-Nutricion-Deportiva-1.mp4',
+			'video'    => network_home_url( '/wp-content/uploads/2026/09/hero-nutricion-deportiva.mp4' ),
 			'accent'   => '#c1ff72',
 			'lista'    => 'G-SE - Nutrición Deportiva',
 		],
@@ -405,10 +438,21 @@ function oec_get_especiales_list(): array {
 			'desc'      => 'Cursos, talleres y posgrados sobre desarrollo de la fuerza muscular, sobrecarga progresiva y planificación del entrenamiento.',
 			'url'       => home_url( user_trailingslashit( '/especiales/entrenamiento-de-la-fuerza' ) ),
 			'image'     => home_url( '/wp-content/uploads/sites/2/2026/09/Portada-Entrenamiento-de-la-Fuerza-1.png' ),
-			'video'     => 'https://g-se.com/wp-content/uploads/2026/09/Portada-Entrenamiento-de-la-Fuerza-2-1.mp4',
+			'video'     => network_home_url( '/wp-content/uploads/2026/09/hero-entrenamiento-de-la-fuerza.mp4' ),
 			'accent'    => '#ff5a3c',
 			'lista'     => 'G-SE - Entrenamiento de la Fuerza',
 			'categoria' => 'entrenamiento-de-la-fuerza',
+		],
+		[
+			'tematica'  => 'fisiologia',
+			'title'     => 'Fisiología del Ejercicio',
+			'desc'      => 'Cursos y especializaciones sobre las respuestas y adaptaciones del organismo al ejercicio: metabolismo energético, ergometría, análisis de gases y control motor.',
+			'url'       => home_url( user_trailingslashit( '/especiales/fisiologia-del-ejercicio' ) ),
+			'image'     => network_home_url( '/wp-content/uploads/2026/09/Portada-de-Fisiologia-del-Ejercicio-1.png' ),
+			'video'     => network_home_url( '/wp-content/uploads/2026/09/hero-fisiologia-del-ejercicio.mp4' ),
+			'accent'    => '#b794ff',
+			'lista'     => 'G-SE - Fisiología del Ejercicio',
+			'categoria' => 'fisiologia-del-ejercicio',
 		],
 	];
 }
