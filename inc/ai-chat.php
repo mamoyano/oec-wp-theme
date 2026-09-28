@@ -8,6 +8,14 @@ class OEC_AI_Chat {
 	const MAX_RESULTS  = 8;
 	const RATE_LIMIT   = 20; // requests per minute per IP
 
+	// Stream detrás de proxies que bufferizan (Cloudways: Nginx → Apache → FPM):
+	// cada envío se rellena con un comentario SSE de este tamaño para llenar el
+	// buffer del proxy y obligarlo a soltar la respuesta, y el texto se agrupa en
+	// tandas para no mandar el relleno por cada token (el tipeo lo hace el JS).
+	// Si el servidor deja de bufferizar: 0 y 0 vuelve al stream normal.
+	const SSE_PAD_BYTES = 8192;
+	const SSE_BATCH_SEC = 0.3;
+
 	/* ── Bootstrap ─────────────────────────────────────────── */
 
 	public static function init(): void {
@@ -485,10 +493,8 @@ class OEC_AI_Chat {
 		header( 'X-Accel-Buffering: no' );
 		header( 'X-LiteSpeed-Cache-Control: no-cache' );
 
-		// Relleno inicial (comentario SSE, el cliente lo ignora) para desbordar
-		// los buffers de 4–8 KB de proxies/FastCGI y forzar el primer envío.
-		echo ':' . str_repeat( ' ', 8192 ) . "\n\n"; // phpcs:ignore
-		flush();
+		// Relleno inicial: fuerza el envío de las cabeceras
+		self::sse_flush( '' );
 
 		$opts    = oec_get_options();
 		$api_key = $opts['oec_anthropic_key'] ?? '';
@@ -558,7 +564,16 @@ class OEC_AI_Chat {
 	}
 
 	private static function sse_data( array $data ): void {
-		echo 'data: ' . wp_json_encode( $data ) . "\n\n";
+		self::sse_flush( 'data: ' . wp_json_encode( $data ) . "\n\n" );
+	}
+
+	/* Envía un bloque SSE y lo empuja fuera del buffer del proxy con relleno
+	 * (comentario SSE: línea que empieza con ":", el cliente la ignora). */
+	private static function sse_flush( string $payload ): void {
+		if ( self::SSE_PAD_BYTES > 0 ) {
+			$payload .= ':' . str_repeat( ' ', self::SSE_PAD_BYTES ) . "\n\n";
+		}
+		echo $payload; // phpcs:ignore
 		if ( ob_get_level() ) {
 			ob_flush();
 		}
@@ -570,6 +585,20 @@ class OEC_AI_Chat {
 	}
 
 	private static function expand_query( string $key, string $query ): string {
+		// Saludos y mensajes sin palabras de búsqueda: no hay nada que expandir
+		$norm = trim( preg_replace( '/\s+/u', ' ', mb_strtolower( $query ) ) );
+		if ( preg_match( '/^(hola|buen[oa]s?( d[ií]as| tardes| noches)?|hey|gracias|muchas gracias|ok|dale|genial|perfecto|chau|adi[oó]s)[\s!.,¡¿?]*$/u', $norm )
+			|| ! preg_match( '/\p{L}{4,}/u', $norm ) ) {
+			return $query;
+		}
+
+		// Misma consulta → misma expansión: se guarda para no repetir la llamada
+		$cache_key = 'oec_chat_exp_' . md5( $norm );
+		$cached    = get_transient( $cache_key );
+		if ( false !== $cached ) {
+			return $cached ? $query . ' ' . $cached : $query;
+		}
+
 		$body = wp_json_encode( [
 			'model'      => 'claude-haiku-4-5-20251001',
 			'max_tokens' => 80,
@@ -578,7 +607,7 @@ class OEC_AI_Chat {
 		] );
 
 		$response = wp_remote_post( 'https://api.anthropic.com/v1/messages', [
-			'timeout' => 8,
+			'timeout' => 3,
 			'headers' => [
 				'x-api-key'         => $key,
 				'anthropic-version' => '2023-06-01',
@@ -591,8 +620,13 @@ class OEC_AI_Chat {
 			return $query;
 		}
 
+		if ( 200 !== wp_remote_retrieve_response_code( $response ) ) {
+			return $query;
+		}
+
 		$data     = json_decode( wp_remote_retrieve_body( $response ), true );
 		$expanded = trim( $data['content'][0]['text'] ?? '' );
+		set_transient( $cache_key, $expanded, 30 * DAY_IN_SECONDS );
 		return $expanded ? $query . ' ' . $expanded : $query;
 	}
 
@@ -622,6 +656,8 @@ class OEC_AI_Chat {
 
 		$sse_buf   = '';
 		$full_text = '';
+		$batch     = '';       // texto recibido aún no enviado al navegador
+		$last_send = microtime( true );
 
 		$ch = curl_init( 'https://api.anthropic.com/v1/messages' );
 		curl_setopt_array( $ch, [
@@ -634,7 +670,7 @@ class OEC_AI_Chat {
 				'content-type: application/json',
 			],
 			CURLOPT_TIMEOUT       => 60,
-			CURLOPT_WRITEFUNCTION => static function ( $ch, $raw ) use ( &$sse_buf, &$full_text ): int {
+			CURLOPT_WRITEFUNCTION => static function ( $ch, $raw ) use ( &$sse_buf, &$full_text, &$batch, &$last_send ): int {
 				$sse_buf .= $raw;
 				while ( ( $pos = strpos( $sse_buf, "\n\n" ) ) !== false ) {
 					$block   = substr( $sse_buf, 0, $pos );
@@ -659,10 +695,14 @@ class OEC_AI_Chat {
 					) {
 						$chunk      = $evt['delta']['text'];
 						$full_text .= $chunk;
-						echo 'data: ' . json_encode( [ 't' => $chunk ] ) . "\n\n"; // phpcs:ignore
-						if ( ob_get_level() ) ob_flush();
-						flush();
+						$batch     .= $chunk;
 					}
+				}
+
+				if ( '' !== $batch && microtime( true ) - $last_send >= self::SSE_BATCH_SEC ) {
+					self::sse_flush( 'data: ' . wp_json_encode( [ 't' => $batch ] ) . "\n\n" );
+					$batch     = '';
+					$last_send = microtime( true );
 				}
 				return strlen( $raw );
 			},
@@ -670,6 +710,10 @@ class OEC_AI_Chat {
 
 		curl_exec( $ch );
 		curl_close( $ch );
+
+		if ( '' !== $batch ) {
+			self::sse_data( [ 't' => $batch ] );
+		}
 
 		return $full_text;
 	}

@@ -289,15 +289,22 @@
     const status = el.querySelector('.oec-typing-status');
     if (!status) return;
 
+    // Si llegan varios estados seguidos, gana el último (sin fundidos viejos pendientes)
+    const swapping = !!status._swapTimer;
+    clearTimeout(status._swapTimer);
+    status._swapTimer = null;
+    status._nextText  = text;
+
     const show = () => {
-      status.textContent = text;
+      status._swapTimer = null;
+      status.textContent = status._nextText;
       status.hidden = false;
       requestAnimationFrame(() => status.classList.add('oec-typing-status--in'));
     };
 
-    if (status.classList.contains('oec-typing-status--in')) {
+    if (swapping || status.classList.contains('oec-typing-status--in')) {
       status.classList.remove('oec-typing-status--in');
-      setTimeout(show, 220);
+      status._swapTimer = setTimeout(show, 220);
     } else {
       show();
     }
