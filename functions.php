@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.61' );
+define( 'OEC_THEME_VERSION', '1.0.62' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -425,6 +425,7 @@ add_filter( 'wp_nav_menu_objects', function ( array $items, $args ): array {
    INCLUDE FILES
    ============================================================ */
 require OEC_THEME_DIR . '/inc/performance.php';
+require OEC_THEME_DIR . '/inc/images.php';
 require OEC_THEME_DIR . '/inc/root-redirect.php';
 require OEC_THEME_DIR . '/inc/template-functions.php';
 require OEC_THEME_DIR . '/inc/urls.php';
