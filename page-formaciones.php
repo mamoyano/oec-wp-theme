@@ -13,6 +13,13 @@ $grupos     = oec_formaciones_grupos();
 $ordenes    = oec_formaciones_ordenes();
 $res        = oec_formaciones_query( $estado );
 $paged      = $res['page'];
+
+// Página fuera de rango (el catálogo se achica y quedan links viejos a
+// /formaciones/page/N): a la última que existe, con los mismos filtros.
+if ( $estado['pg'] > $res['pages'] ) {
+	wp_safe_redirect( oec_formaciones_url( [ 'pg' => $res['pages'] ] ), 302 );
+	exit;
+}
 $hero_title = oec_formaciones_titulo( $estado );
 
 // Bajadas por tipo de formación (criterio editorial). Sin tipo, o un tipo

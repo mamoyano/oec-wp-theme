@@ -11,8 +11,10 @@ defined( 'ABSPATH' ) || exit;
 
    Los parámetros de la URL son los mismos que usaba el plugin
    (oec_subject, oec_type, oec_sync, oec_modality, oec_month,
-   oec_enrollment, oec_order, oec_pg), así siguen andando los links que
-   ya hay en el sitio, en los mails y en Google. Nuevo: ?q= (búsqueda).
+   oec_enrollment, oec_order), así siguen andando los links que ya hay
+   en el sitio, en los mails y en Google. Nuevo: ?q= (búsqueda).
+   La página va en la ruta, igual que en /articulos: /formaciones/page/N.
+   El ?oec_pg=N viejo del plugin redirige (301) a esa URL.
    ============================================================ */
 
 const OEC_FORMACIONES_POR_PAGINA = 12;
@@ -148,7 +150,9 @@ function oec_formaciones_estado(): array {
 	$orden           = $get( 'oec_order' );
 	$estado['orden'] = isset( oec_formaciones_ordenes()[ $orden ] ) ? $orden : '';
 	$estado['q']     = mb_substr( $get( 'q' ), 0, 80 );
-	$estado['pg']    = max( 1, absint( $_GET['oec_pg'] ?? 1 ) );
+	// /formaciones/page/N (WordPress la pone en la query var 'paged');
+	// ?oec_pg=N es el formato viejo, solo para la redirección de abajo.
+	$estado['pg']    = max( 1, absint( get_query_var( 'paged' ) ?: ( $_GET['oec_pg'] ?? 1 ) ) );
 	return $estado;
 }
 
@@ -175,10 +179,33 @@ function oec_formaciones_url( array $cambios = [] ): string {
 		$params['q'] = $estado['q'];
 	}
 	if ( ( $estado['pg'] ?? 1 ) > 1 ) {
-		$params['oec_pg'] = (int) $estado['pg'];
+		$base = user_trailingslashit( trailingslashit( $base ) . 'page/' . (int) $estado['pg'], 'paged' );
 	}
 	return $params ? $base . '?' . http_build_query( $params, '', '&', PHP_QUERY_RFC3986 ) : $base;
 }
+
+// Canonical de /formaciones/page/N sin filtros: a sí misma, como /articulos
+// (WordPress apunta todas a la página 1). Con filtros sigue yendo al
+// listado general.
+add_filter( 'get_canonical_url', function ( $url, $post ) {
+	if ( 'formaciones' !== $post->post_name ) {
+		return $url;
+	}
+	$estado = oec_formaciones_estado();
+	if ( $estado['pg'] > 1 && oec_formaciones_url( [ 'pg' => $estado['pg'] ] ) === oec_formaciones_url( [ 'pg' => $estado['pg'], 'tematica' => [], 'tipo' => '', 'inscripcion' => '', 'mes' => '', 'sync' => '', 'modalidad' => '', 'orden' => '', 'q' => '' ] ) ) {
+		return oec_formaciones_url( [ 'pg' => $estado['pg'] ] );
+	}
+	return $url;
+}, 10, 2 );
+
+// ?oec_pg=N (links viejos del plugin, mails, Google) → /formaciones/page/N
+// con los mismos filtros.
+add_action( 'template_redirect', function () {
+	if ( isset( $_GET['oec_pg'] ) && is_page( 'formaciones' ) ) {
+		wp_safe_redirect( oec_formaciones_url( [ 'pg' => oec_formaciones_estado()['pg'] ] ), 301 );
+		exit;
+	}
+} );
 
 /**
  * La búsqueda nativa de WordPress (?s=) no tiene plantilla: el buscador del

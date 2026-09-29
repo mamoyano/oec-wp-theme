@@ -87,6 +87,15 @@ if ( $f_q !== '' ) {
 
 $art_query = new WP_Query( $args );
 
+// Página fuera de rango (/articulos/page/99, links viejos): a la última que
+// existe, con los mismos filtros — no un 200 vacío (soft 404 para Google).
+// (Con la página vacía WP no calcula found_posts: se cuenta aparte.)
+if ( $paged > 1 && ! $art_query->have_posts() ) {
+	$oec_total = ( new WP_Query( array_merge( $args, [ 'paged' => 1, 'posts_per_page' => 1, 'fields' => 'ids' ] ) ) )->found_posts;
+	wp_safe_redirect( oec_articulos_page_url( max( 1, (int) ceil( $oec_total / $args['posts_per_page'] ) ) ), 302 );
+	exit;
+}
+
 // ── Categorías TEMÁTICA para la sidebar ──────────────────────────────────
 $excluir_slugs = array_merge( $tipo_slugs, [ 'general' ] );
 $excluir_ids   = array_filter( array_map(
