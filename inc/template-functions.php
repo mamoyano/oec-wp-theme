@@ -171,6 +171,19 @@ function oec_articulos_page_url( int $page, array $params = [] ): string {
 	return '' !== $query ? $base . '?' . $query : $base;
 }
 
+/**
+ * Tablas del contenido de los posts: envueltas en .table-scroll, que hace el
+ * scroll horizontal en mobile (ver style.css) y deja a la tabla ocupar todo
+ * el ancho con su estilo.
+ */
+add_filter( 'the_content', function ( string $content ): string {
+	if ( ! is_singular( 'post' ) || false === stripos( $content, '<table' ) ) {
+		return $content;
+	}
+	$content = preg_replace( '/<table\b/i', '<div class="table-scroll"><table', $content );
+	return preg_replace( '#</table>#i', '</table></div>', $content );
+}, 20 );
+
 /** Texto buscado en /articulos (?q=), limpio y acotado. */
 function oec_articulos_q(): string {
 	return mb_substr( trim( sanitize_text_field( wp_unslash( $_GET['q'] ?? '' ) ) ), 0, 80 );
