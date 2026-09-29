@@ -59,6 +59,14 @@ function oec_render_tematica_stats_shortcode( $atts ): string {
 		$stats[] = [ (int) current_time( 'Y' ) - (int) $atts['desde'], __( 'Años en la industria', 'oec-theme' ) ];
 	}
 	$stats[] = [ count( $abiertas ), __( 'Formaciones abiertas', 'oec-theme' ) ];
+	// Mismo recuento que /docentes: una persona por slug normalizado (sin
+	// "Dr.", ", MSc", acentos…). Contar nombres crudos duplicaba a quien
+	// figura escrito distinto en dos formaciones (1931 vs 1880).
+	if ( function_exists( 'oec_docentes_catalog' ) && ( $catalogo = oec_docentes_catalog() ) ) {
+		$docentes = '' === $atts['tematica']
+			? $catalogo
+			: array_filter( $catalogo, fn( $d ) => in_array( $atts['tematica'], $d['tags'] ?? [], true ) );
+	}
 	$stats[] = [ count( $docentes ), __( 'Docentes especializados', 'oec-theme' ) ];
 	$stats[] = [ $horas,             __( 'Horas de contenido', 'oec-theme' ) ];
 	$stats[] = [ $alumnos,           __( 'Alumnos egresados', 'oec-theme' ) ];

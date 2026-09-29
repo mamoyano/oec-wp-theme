@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.56
+Version: 1.0.57
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -68,6 +68,7 @@ GitHub Theme URI: mamoyano/oec-wp-theme
   --shadow-lg: 0 8px 32px rgba(var(--color-dark-rgb),.16);
 
   --container:   1280px;
+  --gutter-mobile: 18px; /* margen lateral del sitio en mobile */
   --transition: .2s ease;
 }
 
@@ -968,7 +969,7 @@ section { padding-block: 4rem; }
 
 /* Header: pasa a versión mobile un poco antes que el resto del layout */
 @media (max-width: 900px) {
-  .site-header .container { padding-inline: 14px; }
+  .site-header .container { padding-inline: var(--gutter-mobile); }
   .header-inner { grid-template-columns: 1fr auto; }
   .header-search, .header-nav { display: none; }
   .header-mobile-btns { display: flex; }
@@ -1045,13 +1046,13 @@ section { padding-block: 4rem; }
 @media (max-width: 768px) {
   section { padding-block: 3rem; }
 
-  .container { width: 100%; padding: 0 14px; }
-  /* Heroes y bloques del home y las landings: mismo margen de 14px que el
+  .container { width: 100%; padding: 0 var(--gutter-mobile); }
+  /* Heroes y bloques del home y las landings: mismo margen lateral que el
      header y el resto del sitio (el CSS de cada página los deja en 88% y el
      hero suma 24px de padding). Dos selectores para ganarle a ese CSS,
      que va inline más abajo en el documento. */
-  .oec-tematica-hero .oec-tematica-hero__grid { width: 100%; padding-inline: 14px; }
-  body .oec-landing-container { width: 100%; padding-inline: 14px; }
+  .oec-tematica-hero .oec-tematica-hero__grid { width: 100%; padding-inline: var(--gutter-mobile); }
+  body .oec-landing-container { width: 100%; padding-inline: var(--gutter-mobile); }
 
   /* Posts */
   .posts-grid { grid-template-columns: 1fr; }
