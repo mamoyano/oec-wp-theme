@@ -17,6 +17,14 @@ $qs_articulos   = (int) wp_count_posts( 'post' )->publish;
 $qs_whatsapp    = 'https://api.whatsapp.com/send?phone=5493512584960';
 $qs_contact     = sanitize_key( wp_unslash( $_GET['contact'] ?? '' ) );
 
+// Description / Open Graph (inc/seo.php): el título y la bajada del hero.
+add_filter( 'oec_seo', function ( $c ) {
+	return is_array( $c ) ? array_merge( $c, [
+		'title'       => __( 'La comunidad de las ciencias del ejercicio en español', 'oec-theme' ),
+		'description' => __( 'G-SE es una comunidad de profesionales de las ciencias del ejercicio físico con publicaciones recientes de journals, blogs, redes sociales y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+	] ) : $c;
+} );
+
 get_header();
 ?>
 

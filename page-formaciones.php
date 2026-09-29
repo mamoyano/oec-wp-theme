@@ -56,8 +56,10 @@ if ( '' !== $estado['q'] ) {
 }
 $clear_url = oec_formaciones_url( [ 'tematica' => [], 'tipo' => '', 'inscripcion' => '', 'mes' => '', 'sync' => '', 'modalidad' => '', 'q' => '' ] );
 
-// og:image / twitter:image con el logo del tema (después de los meta del plugin).
-add_action( 'wp_head', 'oec_output_og_image_meta', 20 );
+// Título y bajada para description / Open Graph (inc/seo.php).
+add_filter( 'oec_seo', function ( $c ) use ( $hero_title, $hero_lead ) {
+	return is_array( $c ) ? array_merge( $c, [ 'title' => $hero_title, 'description' => $hero_lead ] ) : $c;
+} );
 
 // ItemList de la página actual (lo que antes armaba el Twig del plugin).
 add_action( 'wp_head', function () use ( $res, $paged, $hero_title ): void {

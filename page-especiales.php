@@ -13,39 +13,15 @@ $oec_especiales = oec_get_especiales_list();
 
 $oec_seo_desc = 'Landings de temática de OEC: cursos, talleres y diplomados agrupados por especialidad, con formaciones, docentes y organizaciones de referencia en cada área.';
 
-add_action( 'wp_head', function () use ( $oec_seo_desc, $oec_especiales ) {
-	$url   = home_url( user_trailingslashit( '/especiales' ) );
-	$title = 'Especiales';
-	$img   = $oec_especiales[0]['image'] ?? '';
-	echo "\n\n";
-	echo '<meta name="description" content="' . esc_attr( $oec_seo_desc ) . '">' . "\n";
-	echo '<meta property="og:type" content="website">' . "\n";
-	echo '<meta property="og:locale" content="es_ES">' . "\n";
-	echo '<meta property="og:site_name" content="' . esc_attr( get_bloginfo( 'name' ) ) . '">' . "\n";
-	echo '<meta property="og:url" content="' . esc_url( $url ) . '">' . "\n";
-	echo '<meta property="og:title" content="' . esc_html( $title ) . '">' . "\n";
-	echo '<meta property="og:description" content="' . esc_attr( $oec_seo_desc ) . '">' . "\n";
-	if ( $img ) {
-		echo '<meta property="og:image" content="' . esc_url( $img ) . '">' . "\n";
-		echo '<meta name="twitter:image" content="' . esc_url( $img ) . '">' . "\n";
-	}
-	echo '<meta name="twitter:card" content="summary_large_image">' . "\n";
-	echo '<meta name="twitter:title" content="' . esc_html( $title ) . '">' . "\n";
-	echo '<meta name="twitter:description" content="' . esc_attr( $oec_seo_desc ) . '">' . "\n";
-	?>
-	<script type="application/ld+json">
-	{
-		"@context": "https://schema.org",
-		"@type": "BreadcrumbList",
-		"itemListElement": [
-			{ "@type": "ListItem", "position": 1, "name": "Inicio", "item": "<?php echo esc_url( home_url( '/' ) ); ?>" },
-			{ "@type": "ListItem", "position": 2, "name": "Especiales", "item": "<?php echo esc_url( $url ); ?>" }
-		]
-	}
-	</script>
-	<?php
-	echo "\n\n";
-}, 5 );
+// Metadatos (description, Open Graph, Twitter): inc/seo.php. El
+// BreadcrumbList lo emite oec_breadcrumb() junto al breadcrumb visible.
+add_filter( 'oec_seo', function ( $c ) use ( $oec_seo_desc, $oec_especiales ) {
+	return array_merge( $c, array_filter( [
+		'title'       => __( 'Especiales', 'oec-theme' ),
+		'description' => $oec_seo_desc,
+		'image'       => $oec_especiales[0]['image'] ?? '',
+	] ) );
+} );
 
 get_header();
 ?>
@@ -55,7 +31,7 @@ get_header();
 		<?php
 		oec_breadcrumb( [
 			[ __( 'Especiales', 'oec-theme' ) ],
-		], false );
+		] );
 		?>
 		<h1><?php esc_html_e( 'Especiales', 'oec-theme' ); ?></h1>
 		<p class="page-hero__lead"><?php esc_html_e( 'Formaciones agrupadas por especialidad, con docentes, opiniones y organizaciones de referencia en cada área.', 'oec-theme' ); ?></p>

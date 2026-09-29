@@ -12,8 +12,6 @@ $tipo_labels = oec_tipo_labels();
 $is_tipo     = ( $term instanceof WP_Term ) && in_array( $term->slug, $tipo_slugs, true );
 $term_label  = $is_tipo ? ( $tipo_labels[ $term->slug ] ?? $term->name ) : $term->name;
 
-add_action( 'wp_head', 'oec_output_og_image_meta', 20 );
-
 get_header();
 ?>
 

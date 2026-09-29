@@ -124,53 +124,42 @@ usort( $autores_con_posts, fn( $a, $b ) => $b->post_count <=> $a->post_count );
 $autores_top = array_slice( $autores_con_posts, 0, 10 );
 
 // ── SEO: canonical / robots según combinación de filtros ──────────────────
-// WordPress emite su propio canonical por defecto (rel_canonical) apuntando
-// siempre a /articulos/ sin importar los filtros — lo sacamos para no duplicar
-// la etiqueta y controlar nosotros el canonical real según el filtro activo.
-remove_action( 'wp_head', 'rel_canonical' );
-
 // Sin filtros -> canonical a sí misma. Un solo filtro tipo/temática -> canonical
 // a la página de categoría nativa (/category/slug/), que es la URL indexable.
-// Cualquier combinación de 2+ filtros, o año/autor solos -> noindex (no aportan
-// contenido único para el buscador, evitan contenido duplicado).
-add_action( 'wp_head', function () use ( $f_tipo, $f_tematica, $f_anio, $f_autor, $f_q, $paged ): void {
-	$active_filters = array_filter( [
-		'tipo'     => $f_tipo,
-		'tematica' => $f_tematica,
-		'anio'     => $f_anio,
-		'autor'    => $f_autor,
-		'q'        => $f_q,
-	] );
-	$active_count = count( $active_filters );
-
-	if ( 0 === $active_count ) {
-		// Armada, no copiada de REQUEST_URI: en multisitio home_url() ya trae
-		// /es (quedaba /es/es/…) y así no se cuelan parámetros ajenos (?utm…).
-		echo '<link rel="canonical" href="' . esc_url( oec_articulos_page_url( $paged ) ) . '">' . "\n";
-		return;
+// Cualquier combinación de 2+ filtros, o año/autor/búsqueda solos -> noindex
+// (no aportan contenido único para el buscador, evitan contenido duplicado).
+// El resto de los metadatos (description, Open Graph…) sale de inc/seo.php.
+$oec_art_filters = array_filter( [
+	'tipo'     => $f_tipo,
+	'tematica' => $f_tematica,
+	'anio'     => $f_anio,
+	'autor'    => $f_autor,
+	'q'        => $f_q,
+] );
+$oec_art_canonical = false;
+if ( ! $oec_art_filters ) {
+	// Armada, no copiada de REQUEST_URI: en multisitio home_url() ya trae
+	// /es (quedaba /es/es/…) y así no se cuelan parámetros ajenos (?utm…).
+	$oec_art_canonical = oec_articulos_page_url( $paged );
+} elseif ( 1 === count( $oec_art_filters ) && ( $f_tipo || $f_tematica ) ) {
+	$oec_art_term = get_term_by( 'slug', $f_tipo ?: $f_tematica, 'category' );
+	if ( $oec_art_term instanceof WP_Term ) {
+		$oec_art_canonical = get_term_link( $oec_art_term );
 	}
-
-	if ( 1 === $active_count && isset( $active_filters['tipo'] ) ) {
-		$term = get_term_by( 'slug', $f_tipo, 'category' );
-		if ( $term instanceof WP_Term ) {
-			echo '<link rel="canonical" href="' . esc_url( get_term_link( $term ) ) . '">' . "\n";
-			return;
-		}
-	}
-
-	if ( 1 === $active_count && isset( $active_filters['tematica'] ) ) {
-		$term = get_term_by( 'slug', $f_tematica, 'category' );
-		if ( $term instanceof WP_Term ) {
-			echo '<link rel="canonical" href="' . esc_url( get_term_link( $term ) ) . '">' . "\n";
-			return;
-		}
-	}
-
-	echo '<meta name="robots" content="noindex,follow">' . "\n";
-}, 5 );
-
-// ── OG image con logo del tema ────────────────────────────────────────────
-add_action( 'wp_head', 'oec_output_og_image_meta', 20 );
+}
+add_filter( 'oec_seo', function ( $c ) use ( $oec_art_canonical, $hero_title, $hero_lead, $paged ) {
+	return is_array( $c ) ? array_merge( $c, [
+		'title'       => $hero_title,
+		'description' => $hero_lead,
+		'url'         => oec_articulos_page_url( $paged ),
+		'canonical'   => $oec_art_canonical,
+	] ) : $c;
+} );
+if ( ! $oec_art_canonical ) {
+	add_filter( 'wp_robots', function ( $robots ) {
+		return array_merge( $robots, [ 'noindex' => true, 'follow' => true ] );
+	} );
+}
 
 get_header();
 ?>

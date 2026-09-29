@@ -16,6 +16,14 @@
  * cambian según la formación y la época.
  */
 
+// Description / Open Graph (inc/seo.php): el título y la bajada del hero.
+add_filter( 'oec_seo', function ( $c ) {
+	return is_array( $c ) ? array_merge( $c, [
+		'title'       => __( 'Sumá créditos y pagá menos por tu próxima formación', 'oec-theme' ),
+		'description' => __( 'Por cada dólar que invertís en formaciones sumás 1 crédito, y con tus créditos «comprás» descuentos para las próximas. Para que acumules más rápido, te regalamos créditos de bienvenida y con el newsletter.', 'oec-theme' ),
+	] ) : $c;
+} );
+
 get_header();
 
 $oec_nl_on   = function_exists( 'oec_nl_api_key' ) && oec_nl_api_key();

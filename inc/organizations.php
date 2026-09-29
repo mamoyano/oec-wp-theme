@@ -150,31 +150,33 @@ add_filter( 'document_title_parts', function ( array $parts ): array {
 	return $parts;
 } );
 
-add_action( 'wp_head', function () {
+// Metadatos de la landing y del listado (description, Open Graph): inc/seo.php.
+add_filter( 'oec_seo', function ( $c ) {
+	if ( ! is_array( $c ) ) {
+		return $c;
+	}
 	$org = oec_current_organizacion();
-	if ( empty( $org['name'] ) ) {
-		return;
+	if ( ! empty( $org['name'] ) ) {
+		$desc = ( $org['short_description'] ?? '' ) ?: sprintf(
+			/* translators: %s: nombre de la organización */
+			__( 'Formaciones abiertas de %s: cursos, diplomados y posgrados online.', 'oec-theme' ),
+			$org['name']
+		);
+		return array_merge( $c, array_filter( [
+			'title'       => $org['name'],
+			'description' => oec_seo_trim( $desc ),
+			'image'       => ! empty( $org['logo'] ) ? oec_cdn_resize( $org['logo'], 1200, 90 ) : '',
+		] ) );
 	}
-	$desc = ( $org['short_description'] ?? '' ) ?: sprintf(
-		/* translators: %s: nombre de la organización */
-		__( 'Formaciones abiertas de %s: cursos, diplomados y posgrados online.', 'oec-theme' ),
-		$org['name']
-	);
-	printf( '<meta name="description" content="%s">' . "\n", esc_attr( wp_trim_words( wp_strip_all_tags( $desc ), 30, '…' ) ) );
-}, 5 );
-
-// Listado: meta description.
-add_action( 'wp_head', function () {
-	if ( ! is_page( 'organizaciones' ) || ! class_exists( 'OEC_AI_Catalog' ) ) {
-		return;
+	if ( is_page( 'organizaciones' ) && class_exists( 'OEC_AI_Catalog' ) ) {
+		$c['description'] = sprintf(
+			/* translators: %s: cantidad de organizaciones */
+			__( '%s universidades, instituciones y centros de formación publican sus cursos, diplomados y posgrados con nosotros. Conocé sus formaciones abiertas.', 'oec-theme' ),
+			number_format_i18n( count( OEC_AI_Catalog::get_organizations( 1 ) ) )
+		);
 	}
-	$desc = sprintf(
-		/* translators: %s: cantidad de organizaciones */
-		__( '%s universidades, instituciones y centros de formación publican sus cursos, diplomados y posgrados con nosotros. Conocé sus formaciones abiertas.', 'oec-theme' ),
-		number_format_i18n( count( OEC_AI_Catalog::get_organizations( 1 ) ) )
-	);
-	printf( '<meta name="description" content="%s">' . "\n", esc_attr( $desc ) );
-}, 5 );
+	return $c;
+} );
 
 /* ============================================================
    VITRINA DE ORGANIZACIONES — [oec-org-spotlight limit="8" tematica="" title=""]

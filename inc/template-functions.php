@@ -280,19 +280,6 @@ function oec_pluralize_es( string $singular ): string {
 	return in_array( $last, [ 'a', 'e', 'i', 'o', 'u' ], true ) ? $singular . 's' : $singular . 'es';
 }
 
-/**
- * Emite las meta tags og:image / twitter:image con el logo del tema.
- * Enganchar a wp_head en las plantillas de listado (articulos, category, etc.).
- */
-function oec_output_og_image_meta(): void {
-	$opts = function_exists( 'oec_get_options' ) ? oec_get_options() : [];
-	$img  = $opts['logo_url'] ?? '';
-	if ( $img ) {
-		echo '<meta property="og:image" content="' . esc_url( $img ) . '">' . "\n";
-		echo '<meta name="twitter:image" content="' . esc_url( $img ) . '">' . "\n";
-	}
-}
-
 /* ============================================================
    CONTACT FORM HANDLER
    ============================================================ */

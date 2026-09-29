@@ -331,18 +331,21 @@ add_action( 'wp_enqueue_scripts', function () {
 }, 20 );
 
 /* ── SEO de las landings: la primera [oec-tira] con seo-description le da
-   a la página su meta description, Open Graph/Twitter y BreadcrumbList —
-   lo que antes hacía el plugin con [oec-list seo-description]. ── */
-add_action( 'wp_head', 'oec_tira_seo_meta', 5 );
-function oec_tira_seo_meta(): void {
-	if ( is_admin() || is_front_page() || ! is_singular() ) {
-		return;
-	}
-	$post = get_queried_object();
-	if ( ! ( $post instanceof WP_Post ) || ! has_shortcode( $post->post_content, 'oec-tira' ) ) {
-		return;
+   a la página su meta description e imagen para compartir (inc/seo.php,
+   filtro oec_seo) y acá se emite su BreadcrumbList — lo que antes hacía
+   el plugin con [oec-list seo-description]. ── */
+
+/** Atributos de la primera [oec-tira] con seo-description de la página actual, o null. */
+function oec_tira_seo_atts(): ?array {
+	static $atts = false;
+	if ( false !== $atts ) {
+		return $atts;
 	}
 	$atts = null;
+	$post = get_queried_object();
+	if ( is_admin() || is_front_page() || ! is_singular() || ! ( $post instanceof WP_Post ) || ! has_shortcode( $post->post_content, 'oec-tira' ) ) {
+		return $atts;
+	}
 	if ( preg_match_all( '/' . get_shortcode_regex( [ 'oec-tira' ] ) . '/s', $post->post_content, $m ) ) {
 		foreach ( $m[3] as $raw ) {
 			$a = shortcode_parse_atts( $raw );
@@ -352,28 +355,29 @@ function oec_tira_seo_meta(): void {
 			}
 		}
 	}
-	if ( ! $atts ) {
+	return $atts;
+}
+
+add_filter( 'oec_seo', function ( $c ) {
+	$atts = oec_tira_seo_atts();
+	if ( ! $atts || ! is_array( $c ) ) {
+		return $c;
+	}
+	$c['description'] = oec_seo_trim( $atts['seo-description'], 300 );
+	if ( ! empty( $atts['seo-image'] ) ) {
+		$c['image'] = $atts['seo-image'];
+	}
+	return $c;
+} );
+
+add_action( 'wp_head', 'oec_tira_seo_meta', 5 );
+function oec_tira_seo_meta(): void {
+	if ( ! oec_tira_seo_atts() ) {
 		return;
 	}
+	$post  = get_queried_object();
 	$title = get_the_title( $post );
 	$url   = get_permalink( $post );
-	$desc  = wp_strip_all_tags( $atts['seo-description'] );
-	$img   = $atts['seo-image'] ?? get_site_icon_url();
-
-	printf( '<meta name="description" content="%s">' . "\n", esc_attr( $desc ) );
-	printf( '<meta property="og:type" content="website">' . "\n" );
-	printf( '<meta property="og:locale" content="%s">' . "\n", esc_attr( get_locale() ) );
-	printf( '<meta property="og:site_name" content="%s">' . "\n", esc_attr( get_bloginfo( 'name' ) ) );
-	printf( '<meta property="og:url" content="%s">' . "\n", esc_url( $url ) );
-	printf( '<meta property="og:title" content="%s">' . "\n", esc_attr( $title ) );
-	printf( '<meta property="og:description" content="%s">' . "\n", esc_attr( $desc ) );
-	if ( $img ) {
-		printf( '<meta property="og:image" content="%s">' . "\n", esc_url( $img ) );
-		printf( '<meta name="twitter:image" content="%s">' . "\n", esc_url( $img ) );
-	}
-	printf( '<meta name="twitter:card" content="summary_large_image">' . "\n" );
-	printf( '<meta name="twitter:title" content="%s">' . "\n", esc_attr( $title ) );
-	printf( '<meta name="twitter:description" content="%s">' . "\n", esc_attr( $desc ) );
 
 	// Breadcrumb con la jerarquía real de páginas (Inicio → Especiales → …).
 	$items = [ [ '@type' => 'ListItem', 'position' => 1, 'name' => __( 'Inicio', 'oec-theme' ), 'item' => home_url( '/' ) ] ];

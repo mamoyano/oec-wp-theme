@@ -347,24 +347,31 @@ add_filter( 'get_canonical_url', function ( $url, $post ) {
 	return $url;
 }, 10, 2 );
 
+// Metadatos de la landing (description, Open Graph, Twitter): inc/seo.php.
+add_filter( 'oec_seo', function ( $c ) {
+	$d = is_array( $c ) ? oec_current_docente() : null;
+	if ( ! $d ) {
+		return $c;
+	}
+	return array_merge( $c, [
+		'type'        => 'profile',
+		'title'       => $d['name'],
+		'description' => oec_seo_trim( $d['bio'] ?: ( $d['background'] ?: '' ) ),
+		'url'         => oec_docente_url( $d['slug'] ),
+		// 500 px: el proxy sirve PNG a quien no acepta WebP (bots de
+		// WhatsApp y otros) y a 800 px pasa los ~300 KB que toleran.
+		'image'       => oec_docente_photo_url( $d['photo'], 500 ),
+	] );
+} );
+
+// Person + BreadcrumbList.
 add_action( 'wp_head', function () {
 	$d = oec_current_docente();
 	if ( ! $d ) {
 		return;
 	}
-	$desc = $d['bio'] ?: ( $d['background'] ?: '' );
-	$desc = wp_trim_words( $desc, 30, '…' );
-	$img  = oec_docente_photo_url( $d['photo'], 800 );
-	$url  = oec_docente_url( $d['slug'] );
-
-	if ( $desc ) {
-		printf( '<meta name="description" content="%s">' . "\n", esc_attr( $desc ) );
-		printf( '<meta property="og:description" content="%s">' . "\n", esc_attr( $desc ) );
-	}
-	printf( '<meta property="og:type" content="profile">' . "\n" );
-	printf( '<meta property="og:title" content="%s">' . "\n", esc_attr( $d['name'] ) );
-	printf( '<meta property="og:url" content="%s">' . "\n", esc_url( $url ) );
-	printf( '<meta property="og:image" content="%s">' . "\n", esc_url( $img ) );
+	$img = oec_docente_photo_url( $d['photo'], 800 );
+	$url = oec_docente_url( $d['slug'] );
 
 	$person = array_filter( [
 		'@context'    => 'https://schema.org',
@@ -405,18 +412,22 @@ function oec_docentes_breadcrumb_jsonld( array $last = [] ): void {
 	], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . "</script>\n";
 }
 
-// Listado: descripción + breadcrumb estructurado.
-add_action( 'wp_head', function () {
-	if ( ! is_page( 'docentes' ) ) {
-		return;
+// Listado: descripción (inc/seo.php) + breadcrumb estructurado.
+add_filter( 'oec_seo', function ( $c ) {
+	if ( ! is_array( $c ) || ! is_page( 'docentes' ) ) {
+		return $c;
 	}
-	$desc = sprintf(
+	$c['description'] = sprintf(
 		/* translators: %s: cantidad de docentes */
 		__( 'Conocé a los %s docentes, investigadores y preparadores que enseñan en nuestras formaciones: su trayectoria, sus formaciones abiertas y lo que dicen sus alumnos.', 'oec-theme' ),
 		number_format_i18n( count( oec_docentes_catalog() ) )
 	);
-	printf( '<meta name="description" content="%s">' . "\n", esc_attr( $desc ) );
-	oec_docentes_breadcrumb_jsonld();
+	return $c;
+} );
+add_action( 'wp_head', function () {
+	if ( is_page( 'docentes' ) ) {
+		oec_docentes_breadcrumb_jsonld();
+	}
 }, 5 );
 
 /**

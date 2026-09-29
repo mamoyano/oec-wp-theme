@@ -9,8 +9,6 @@
 $term       = get_queried_object();
 $term_label = ( $term instanceof WP_Term ) ? $term->name : single_tag_title( '', false );
 
-add_action( 'wp_head', 'oec_output_og_image_meta', 20 );
-
 get_header();
 ?>
 
