@@ -183,8 +183,10 @@ remove_action( 'wp_head', 'rsd_link' );
       servidores y CDNs. Los eliminamos de recursos estáticos.
    ============================================================ */
 function oec_remove_query_strings( string $src ): string {
-	// Keep ver param for theme JS/CSS so version bumps bust browser cache
-	if ( strpos( $src, '?ver=' ) && strpos( $src, '/themes/oec-wp-theme/' ) === false ) {
+	// Se conserva ?ver= en el tema Y en el plugin OEC: los dos versionan sus assets
+	// (el plugin con filemtime()) para que, al actualizar, el navegador baje los
+	// archivos nuevos en vez de mezclar JS viejo con HTML nuevo.
+	if ( strpos( $src, '?ver=' ) && strpos( $src, '/themes/oec-wp-theme/' ) === false && strpos( $src, '/plugins/oec-wordpress-plugin/' ) === false ) {
 		$src = remove_query_arg( 'ver', $src );
 	}
 	return $src;
