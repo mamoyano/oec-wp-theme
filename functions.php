@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.64' );
+define( 'OEC_THEME_VERSION', '1.0.65' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -450,6 +450,7 @@ require OEC_THEME_DIR . '/inc/newsletter.php';
 require OEC_THEME_DIR . '/inc/seed.php';
 require OEC_THEME_DIR . '/inc/redirects.php';
 require OEC_THEME_DIR . '/inc/mail.php';
+require OEC_THEME_DIR . '/inc/pubmed-feed.php';
 require OEC_THEME_DIR . '/inc/theme-updater.php';
 
 /* ============================================================
