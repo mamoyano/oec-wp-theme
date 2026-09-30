@@ -1420,7 +1420,8 @@ if ( ! function_exists( 'oec_parse_link_list' ) ) {
 				continue;
 			}
 			$label = trim( $parts[0] );
-			$href  = trim( $parts[1] );
+			// "/https://…" (barra de más al cargarlo) también cuenta como externo.
+			$href  = preg_replace( '#^/+(?=https?://)#i', '', trim( $parts[1] ) );
 			$icon  = isset( $parts[2] ) ? trim( $parts[2] ) : '';
 			if ( $label && $href ) {
 				$links[] = [
