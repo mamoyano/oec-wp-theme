@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Notas para el desarrollo: fuera del zip del tema
+CLAUDE.md export-ignore
