@@ -220,7 +220,25 @@ function oec_nl_subscribe_ref( array $lists ): string {
  * @return int|WP_Error Cantidad de listas registradas.
  */
 function oec_nl_ensure_especiales_lists() {
-	$opts    = oec_nl_opts();
+	$opts = oec_nl_opts();
+
+	// Ya registradas pero sin categoría del blog (la categoría no existía al
+	// registrarla, p. ej. un slug que cambió): se completa apenas exista.
+	// Sin esto, el newsletter de esa temática llevaría artículos de todas.
+	$fixed = 0;
+	foreach ( oec_nl_especiales_lists() as $name => $e ) {
+		if ( ! empty( $opts['lists'][ $name ]['especial'] ) && empty( $opts['lists'][ $name ]['cats'] ) ) {
+			$cat = get_category_by_slug( $e['categoria'] );
+			if ( $cat ) {
+				$opts['lists'][ $name ]['cats'] = [ (int) $cat->term_id ];
+				++$fixed;
+			}
+		}
+	}
+	if ( $fixed ) {
+		oec_config_update_option( OEC_NL_OPTION, $opts );
+	}
+
 	$pending = array_filter(
 		oec_nl_especiales_lists(),
 		fn( $name ) => empty( $opts['lists'][ $name ]['especial'] ),

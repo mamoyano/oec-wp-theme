@@ -477,7 +477,7 @@ function oec_especiales_registradas(): array {
 			'accent'    => '#2ee6c5',
 			'tinte'     => '#0b5a50',
 			'lista'     => 'G-SE - Salud y Ejercicio',
-			'categoria' => 'actividad-fisica-y-salud',
+			'categoria' => 'salud-fitness',
 		],
 		[
 			'tematica'  => 'deportes',
