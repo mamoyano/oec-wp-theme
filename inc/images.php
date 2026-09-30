@@ -8,7 +8,10 @@ defined( 'ABSPATH' ) || exit;
       o PNG se achica a MAX_SIDE px de lado mayor, se guarda como
       WebP y se borra el archivo original. WordPress genera los
       tamaños intermedios a partir del WebP, así que salen WebP.
-   2. Medios → Optimizar imágenes convierte los adjuntos que ya
+   2. Los adjuntos creados sin esa subida (wp-automatic y otros
+      importadores) se convierten por cron unos minutos después, y
+      una pasada diaria revisa cualquier JPG/PNG pendiente.
+   3. Medios → Optimizar imágenes convierte los adjuntos que ya
       estaban subidos: reemplaza los archivos, regenera los
       tamaños y actualiza las URLs en el contenido de los posts.
    ============================================================ */
@@ -32,10 +35,24 @@ class OEC_Images {
 	/** Segundos de trabajo por pedido AJAX del conversor masivo. */
 	const SLICE_SECONDS = 15;
 
+	/** Pasada diaria de respaldo, y pasada puntual tras un adjunto nuevo. */
+	const CRON_HOOK = 'oec_images_daily';
+	const RUN_HOOK  = 'oec_images_run';
+
+	/** Espera antes de convertir un adjunto que no pasó por la subida normal. */
+	const RUN_DELAY = 5 * MINUTE_IN_SECONDS;
+
 	public static function init(): void {
 		add_filter( 'wp_handle_upload', [ __CLASS__, 'on_upload' ], 10, 2 );
+		add_action( 'add_attachment', [ __CLASS__, 'on_add_attachment' ] );
+		add_action( self::CRON_HOOK, [ __CLASS__, 'run_pending' ] );
+		add_action( self::RUN_HOOK, [ __CLASS__, 'run_pending' ] );
 		add_action( 'admin_menu', [ __CLASS__, 'admin_menu' ] );
 		add_action( 'wp_ajax_oec_images_batch', [ __CLASS__, 'ajax_batch' ] );
+
+		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
+			wp_schedule_event( strtotime( 'tomorrow 04:00:00' ), 'daily', self::CRON_HOOK );
+		}
 	}
 
 	private static function webp_supported(): bool {
@@ -114,6 +131,55 @@ class OEC_Images {
 		return $upload;
 	}
 
+	/**
+	 * Plugins como wp-automatic bajan la imagen por su cuenta y crean el
+	 * adjunto directo, sin pasar por 'wp_handle_upload'. Se convierte unos
+	 * minutos después, cuando el plugin ya terminó de armar el post (así
+	 * la URL ya está en el contenido y se reemplaza).
+	 */
+	public static function on_add_attachment( int $id ): void {
+		if ( in_array( get_post_mime_type( $id ), self::CONVERT_MIMES, true ) ) {
+			self::schedule_run();
+		}
+	}
+
+	private static function schedule_run(): void {
+		if ( ! wp_next_scheduled( self::RUN_HOOK ) ) {
+			wp_schedule_single_event( time() + self::RUN_DELAY, self::RUN_HOOK );
+		}
+	}
+
+	/** Cron: convierte una tanda y, si quedan pendientes, agenda otra. */
+	public static function run_pending(): void {
+		if ( ! self::webp_supported() ) {
+			return;
+		}
+		self::process_slice();
+		if ( self::pending_ids( 1 ) ) {
+			self::schedule_run();
+		}
+	}
+
+	/** Convierte pendientes durante SLICE_SECONDS como máximo. */
+	private static function process_slice(): array {
+		wp_raise_memory_limit( 'image' );
+
+		$start  = microtime( true );
+		$result = [ 'processed' => 0, 'converted' => 0, 'saved' => 0 ];
+		foreach ( self::pending_ids( 50 ) as $id ) {
+			$bytes = self::convert_attachment( (int) $id );
+			$result['processed']++;
+			if ( null !== $bytes ) {
+				$result['converted']++;
+				$result['saved'] += $bytes;
+			}
+			if ( microtime( true ) - $start > self::SLICE_SECONDS ) {
+				break;
+			}
+		}
+		return $result;
+	}
+
 	/* ── 2. Adjuntos ya subidos ─────────────────────────────── */
 
 	/** IDs de adjuntos JPG/PNG que el conversor todavía no revisó. */
@@ -164,6 +230,8 @@ class OEC_Images {
 	 * null si se dejó como estaba.
 	 */
 	public static function convert_attachment( int $id ): ?int {
+		require_once ABSPATH . 'wp-admin/includes/image.php'; // en el cron no está cargado
+
 		$mime = (string) get_post_mime_type( $id );
 		$file = (string) get_attached_file( $id );
 		$src  = (string) ( wp_get_original_image_path( $id ) ?: $file ); // el original sin "-scaled" da mejor calidad
@@ -199,7 +267,8 @@ class OEC_Images {
 		foreach ( $old_urls as $size => $url ) {
 			$map[ self::url_needle( $url ) ] = self::url_needle( $new_urls[ $size ] ?? $new_urls['full'] );
 		}
-		self::replace_in_content( $map );
+		$changed = self::replace_in_content( $map );
+		self::purge_posts( array_merge( $changed, self::posts_with_thumbnail( $id ) ) );
 
 		return max( 0, $old_bytes - (int) filesize( $webp ) );
 	}
@@ -207,14 +276,14 @@ class OEC_Images {
 	/**
 	 * Reemplaza las URLs viejas en post_content. Se escribe directo en la
 	 * tabla (sin wp_update_post) para no pasar el HTML por kses/wpautop
-	 * ni generar revisiones.
+	 * ni generar revisiones. Devuelve los IDs de los posts cambiados.
 	 */
-	private static function replace_in_content( array $map ): void {
+	private static function replace_in_content( array $map ): array {
 		global $wpdb;
 
 		$map = array_filter( $map, fn( $to, $from ) => $from !== $to, ARRAY_FILTER_USE_BOTH );
 		if ( ! $map ) {
-			return;
+			return [];
 		}
 		// Los nombres más largos primero: "foto-800x500.jpg" antes que "foto.jpg".
 		uksort( $map, fn( $a, $b ) => strlen( $b ) <=> strlen( $a ) );
@@ -226,11 +295,37 @@ class OEC_Images {
 			$args
 		) );
 
+		$changed = [];
 		foreach ( $rows as $row ) {
 			$content = strtr( $row->post_content, $map );
 			if ( $content !== $row->post_content ) {
 				$wpdb->update( $wpdb->posts, [ 'post_content' => $content ], [ 'ID' => $row->ID ] );
-				clean_post_cache( (int) $row->ID );
+				$changed[] = (int) $row->ID;
+			}
+		}
+		return $changed;
+	}
+
+	/** Posts que usan el adjunto como imagen destacada. */
+	private static function posts_with_thumbnail( int $att_id ): array {
+		global $wpdb;
+		return array_map( 'intval', $wpdb->get_col( $wpdb->prepare(
+			"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_thumbnail_id' AND meta_value = %d",
+			$att_id
+		) ) );
+	}
+
+	/**
+	 * Limpia la caché de objetos y avisa que los posts cambiaron: con
+	 * 'edit_post' el plugin de Cloudflare purga esas URLs de APO, que si no
+	 * seguirían sirviendo HTML con las imágenes viejas (ya borradas).
+	 */
+	private static function purge_posts( array $ids ): void {
+		foreach ( array_unique( $ids ) as $post_id ) {
+			clean_post_cache( $post_id );
+			$post = get_post( $post_id );
+			if ( $post && 'publish' === $post->post_status ) {
+				do_action( 'edit_post', $post_id, $post );
 			}
 		}
 	}
@@ -312,30 +407,9 @@ class OEC_Images {
 		if ( ! self::webp_supported() ) {
 			wp_send_json_error( 'El servidor no soporta WebP' );
 		}
-		wp_raise_memory_limit( 'image' );
-
-		$start     = microtime( true );
-		$processed = 0;
-		$converted = 0;
-		$saved     = 0;
-		foreach ( self::pending_ids( 50 ) as $id ) {
-			$bytes = self::convert_attachment( (int) $id );
-			$processed++;
-			if ( null !== $bytes ) {
-				$converted++;
-				$saved += $bytes;
-			}
-			if ( microtime( true ) - $start > self::SLICE_SECONDS ) {
-				break;
-			}
-		}
-
-		wp_send_json_success( [
-			'processed' => $processed,
-			'converted' => $converted,
-			'saved'     => $saved,
-			'pending'   => count( self::pending_ids() ),
-		] );
+		$result            = self::process_slice();
+		$result['pending'] = count( self::pending_ids() );
+		wp_send_json_success( $result );
 	}
 }
 
