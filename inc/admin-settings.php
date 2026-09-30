@@ -604,7 +604,7 @@ function oec_render_settings_page(): void {
 				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Rastreo y analítica', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Los scripts se inyectan automáticamente en el frontend. Dejá en blanco los que no uses.', 'oec-theme' ); ?></p>
+						<p><?php esc_html_e( 'Los scripts se cargan en diferido (primera interacción o 4 s después de cargar la página) para no afectar el rendimiento. Dejá en blanco los que no uses. Para navegar sin rastreo: agregá ?trackers=false a la URL.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
@@ -1355,48 +1355,118 @@ add_action( 'wp_head', 'oec_output_dynamic_css', 100 );
 /* ============================================================
    FRONTEND: Tracker scripts
    ============================================================ */
+// Los tres se cargan en diferido: en la primera interacción (mover el mouse,
+// tocar, scrollear, teclear) o 4 s después del load, lo que llegue antes, igual
+// que en el g-se.com anterior. Así no compiten con el LCP ni suman TBT. Los stubs
+// (dataLayer, fbq, clarity) se crean al toque, así que lo que se registre antes
+// queda en cola y se envía al cargar. Con ?trackers=false no se carga ninguno
+// (para medir con PageSpeed o navegar sin ensuciar las estadísticas).
 function oec_output_trackers_head(): void {
 	$opts = oec_get_options();
-
-	// Google Tag Manager — <head>
-	if ( ! empty( $opts['gtm_id'] ) ) {
-		$id = esc_js( $opts['gtm_id'] );
-		echo "\n<!-- Google Tag Manager -->\n";
-		echo "<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','" . $id . "');</script>\n";
-		echo "<!-- End Google Tag Manager -->\n";
+	$cfg  = array_filter( [
+		'gtm'     => $opts['gtm_id'],
+		'pixel'   => $opts['meta_pixel_id'],
+		'clarity' => $opts['ms_clarity_id'],
+	] );
+	if ( ! $cfg ) {
+		return;
 	}
 
-	// Meta Pixel — <head>
-	if ( ! empty( $opts['meta_pixel_id'] ) ) {
-		$id = esc_js( $opts['meta_pixel_id'] );
-		echo "\n<!-- Meta Pixel Code -->\n";
-		echo "<script>!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','" . $id . "');fbq('track','PageView');</script>\n";
-		echo "<noscript><img height=\"1\" width=\"1\" style=\"display:none\" src=\"https://www.facebook.com/tr?id=" . urlencode( $opts['meta_pixel_id'] ) . "&ev=PageView&noscript=1\"/></noscript>\n";
-		echo "<!-- End Meta Pixel Code -->\n";
-	}
-
-	// Microsoft Clarity — <head>
-	if ( ! empty( $opts['ms_clarity_id'] ) ) {
-		$id = esc_js( $opts['ms_clarity_id'] );
-		echo "\n<!-- Microsoft Clarity -->\n";
-		echo "<script type=\"text/javascript\">(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src=\"https://www.clarity.ms/tag/\" + i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,'clarity','script','" . $id . "');</script>\n";
-		echo "<!-- End Microsoft Clarity -->\n";
-	}
+	echo "\n<!-- Rastreo (carga diferida) -->\n";
+	echo '<script>(function(w,d,c){'
+		. "if(new URLSearchParams(location.search).get('trackers')==='false')return;"
+		. 'var src=[];'
+		. 'if(c.gtm){w.dataLayer=w.dataLayer||[];src.push("https://www.googletagmanager.com/gtm.js?id="+encodeURIComponent(c.gtm));}'
+		. 'if(c.pixel&&!w.fbq){var n=w.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};'
+		. 'if(!w._fbq)w._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[];'
+		. 'fbq("init",c.pixel);fbq("track","PageView");src.push("https://connect.facebook.net/en_US/fbevents.js");}'
+		. 'if(c.clarity){w.clarity=w.clarity||function(){(w.clarity.q=w.clarity.q||[]).push(arguments)};src.push("https://www.clarity.ms/tag/"+encodeURIComponent(c.clarity));}'
+		. 'var ev=["mousemove","pointerdown","touchstart","keydown","scroll"],o={passive:true},done=0;'
+		. 'function load(){if(done)return;done=1;ev.forEach(function(e){w.removeEventListener(e,load,o)});'
+		. 'if(c.gtm)w.dataLayer.push({"gtm.start":Date.now(),event:"gtm.js"});'
+		. 'src.forEach(function(u){var s=d.createElement("script");s.async=true;s.src=u;d.head.appendChild(s)});}'
+		. 'ev.forEach(function(e){w.addEventListener(e,load,o)});'
+		. 'w.addEventListener("load",function(){setTimeout(load,4000)});'
+		. '})(window,document,' . wp_json_encode( $cfg ) . ");</script>\n";
 }
 add_action( 'wp_head', 'oec_output_trackers_head', 1 );
 
-// Google Tag Manager — <body> noscript
+// GTM y Meta Pixel — <body> noscript (en el <head> un <img> es inválido)
 function oec_output_gtm_body(): void {
 	$opts = oec_get_options();
-	if ( empty( $opts['gtm_id'] ) ) {
-		return;
+	if ( ! empty( $opts['gtm_id'] ) ) {
+		echo "\n<noscript><iframe src=\"https://www.googletagmanager.com/ns.html?id=" . urlencode( $opts['gtm_id'] ) . "\" height=\"0\" width=\"0\" style=\"display:none;visibility:hidden\"></iframe></noscript>\n";
 	}
-	$id = urlencode( $opts['gtm_id'] );
-	echo "\n<!-- Google Tag Manager (noscript) -->\n";
-	echo "<noscript><iframe src=\"https://www.googletagmanager.com/ns.html?id=" . $id . "\" height=\"0\" width=\"0\" style=\"display:none;visibility:hidden\"></iframe></noscript>\n";
-	echo "<!-- End Google Tag Manager (noscript) -->\n";
+	if ( ! empty( $opts['meta_pixel_id'] ) ) {
+		echo "<noscript><img height=\"1\" width=\"1\" style=\"display:none\" alt=\"\" src=\"https://www.facebook.com/tr?id=" . urlencode( $opts['meta_pixel_id'] ) . "&ev=PageView&noscript=1\"/></noscript>\n";
+	}
 }
 add_action( 'wp_body_open', 'oec_output_gtm_body', 1 );
+
+/* ============================================================
+   FRONTEND: fbclid hacia onlineeducation.center
+   Meta atribuye las ventas del checkout (*.onlineeducation.center) al
+   anuncio solo si el fbclid llega hasta allá. Se agrega a todo enlace a
+   onlineeducation.center o sus subdominios, en todos los sitios que usan
+   el tema (pedido del administrador de onlineeducation.center). Va siempre,
+   haya o no Pixel configurado en este sitio.
+   El fbclid sale de la URL, de la cookie _fbc del Pixel o, si no, del que
+   guardamos al llegar (el Pixel carga en diferido y puede no haber dejado
+   la cookie todavía).
+   ============================================================ */
+function oec_output_fbclid_links(): void {
+	?>
+<script>
+(function () {
+	var DOMAIN = 'onlineeducation.center', KEY = 'oec_fbclid', TTL = 90 * 864e5;
+	var fromUrl = new URLSearchParams(location.search).get('fbclid');
+	if (fromUrl) {
+		try { localStorage.setItem(KEY, JSON.stringify({ id: fromUrl, t: Date.now() })); } catch (e) {}
+	}
+	function getFbclid() {
+		if (fromUrl) return fromUrl;
+		var m = document.cookie.match(/(?:^|; )_fbc=([^;]*)/);
+		if (m) {
+			var parts = decodeURIComponent(m[1]).split('.');
+			if (parts.length >= 4) return parts.slice(3).join('.');
+		}
+		try {
+			var v = JSON.parse(localStorage.getItem(KEY));
+			if (v && v.id && Date.now() - v.t < TTL) return v.id;
+		} catch (e) {}
+		return null;
+	}
+	function decorate(a, id) {
+		var h = a.hostname;
+		if (!h || (h !== DOMAIN && h.slice(-DOMAIN.length - 1) !== '.' + DOMAIN)) return;
+		try {
+			var url = new URL(a.href);
+			if (url.searchParams.has('fbclid')) return;
+			url.searchParams.set('fbclid', id);
+			a.href = url.toString();
+		} catch (e) {}
+	}
+	function decorateAll() {
+		var id = getFbclid();
+		if (!id) return;
+		document.querySelectorAll('a[href*="' + DOMAIN + '"]').forEach(function (a) { decorate(a, id); });
+	}
+	// Enlaces creados después (listados por JS, chat, etc.): al hacer clic,
+	// clic del medio o abrir el menú contextual ("abrir en otra pestaña").
+	function onClick(e) {
+		var a = e.target.closest && e.target.closest('a[href]');
+		if (!a) return;
+		var id = getFbclid();
+		if (id) decorate(a, id);
+	}
+	['click', 'auxclick', 'contextmenu'].forEach(function (t) { document.addEventListener(t, onClick, true); });
+	if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', decorateAll);
+	else decorateAll();
+})();
+</script>
+	<?php
+}
+add_action( 'wp_footer', 'oec_output_fbclid_links', 20 );
 
 /* ============================================================
    HELPER: parse "Label|URL|icon" textarea → array
