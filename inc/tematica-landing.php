@@ -605,3 +605,45 @@ function oec_render_tematica_nav_shortcode(): string {
 	<?php
 	return ob_get_clean();
 }
+
+/* ============================================================
+   CHAT ANÓNIMO (Botmaker) en el home y las landings
+
+   Las páginas traían en su contenido un <script> que inyectaba el widget
+   de Botmaker en CADA visita (~300 KB de JS + fuentes). Ahora lo maneja
+   assets/js/botmaker.js, que lo pide recién cuando el usuario se acerca
+   a un botón .oec-botmaker-trigger (igual que la ficha del plugin).
+   El <script> viejo se saca al vuelo del contenido: así alcanza con
+   actualizar el tema, sin tener que editar cada página a mano. La ficha
+   de formación (/formacion) la resuelve el plugin con su propio JS.
+   ============================================================ */
+
+/** URL del widget: el mismo proyecto que usa el plugin, o el que traiga la página. */
+function oec_botmaker_src( string $content = '' ): string {
+	if ( defined( 'OEC_BOTMAKER_PROJECT_ID' ) && OEC_BOTMAKER_PROJECT_ID ) {
+		return 'https://go.botmaker.com/rest/webchat/p/' . rawurlencode( OEC_BOTMAKER_PROJECT_ID ) . '/init.js';
+	}
+	return preg_match( '#https://go\.botmaker\.com/rest/webchat/p/[A-Za-z0-9]+/init\.js#', $content, $m ) ? $m[0] : '';
+}
+
+add_action( 'wp_enqueue_scripts', function (): void {
+	$post = is_singular() ? get_queried_object() : null;
+	if ( ! $post instanceof WP_Post || is_page( 'formacion' ) || false === strpos( $post->post_content, 'oec-botmaker-trigger' ) ) {
+		return;
+	}
+	$src = oec_botmaker_src( $post->post_content );
+	if ( ! $src ) {
+		return;
+	}
+	wp_enqueue_script( 'oec-botmaker', OEC_THEME_URI . '/assets/js/botmaker.js', [], oec_asset_version( 'assets/js/botmaker.js' ), [ 'strategy' => 'defer', 'in_footer' => true ] );
+	wp_add_inline_script( 'oec-botmaker', 'window.oecBotmaker = ' . wp_json_encode( [ 'src' => $src ] ) . ';', 'before' );
+} );
+
+add_filter( 'the_content', function ( $content ) {
+	if ( is_page( 'formacion' ) || false === strpos( (string) $content, 'go.botmaker.com/rest/webchat' ) ) {
+		return $content;
+	}
+	// El <script> que inyectaba el widget (y su comentario "Botmaker — mismo widget…").
+	$content = preg_replace( '#<script\b[^>]*>(?:(?!</script>).)*?go\.botmaker\.com/rest/webchat(?:(?!</script>).)*</script>#s', '', $content );
+	return preg_replace( '#<!--\s*──\s*Botmaker — mismo widget.*?-->#su', '', $content );
+}, 20 );
