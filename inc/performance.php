@@ -221,20 +221,103 @@ add_filter( 'wp_robots', function ( array $robots ): array {
 } );
 
 /* ============================================================
-   12. PRECONNECT — cdn.jsdelivr.net
-       Upgrade de dns-prefetch a preconnect: establece el TCP +
-       TLS handshake antes de que el browser necesite los fonts
-       de Bootstrap Icons, ahorrando ~150-300 ms en la primera carga.
+   12. PRECONNECT — imgrsize.oe-img.center
+       Las fotos de las formaciones y los docentes salen de ahí; abrir
+       la conexión temprano ahorra ~200 ms a la primera imagen.
+       Bootstrap Icons ya no sale de jsdelivr (va en el tema), así que
+       tampoco hace falta conectarse a ese CDN.
    ============================================================ */
 add_filter( 'wp_resource_hints', function ( array $hints, string $relation_type ): array {
 	if ( 'preconnect' === $relation_type ) {
-		$hints[] = [
-			'href'        => 'https://cdn.jsdelivr.net',
-			'crossorigin' => 'anonymous',
-		];
+		$hints[] = 'https://imgrsize.oe-img.center';
 	}
 	return $hints;
 }, 10, 2 );
+
+/* ============================================================
+   12b. BOOTSTRAP ICONS — siempre la copia del tema
+       El plugin OEC encola el mismo handle desde jsdelivr en la ficha de
+       formación, y como carga antes que el tema, su URL gana. Se pisa acá
+       para que en todo el sitio sea la misma hoja (una sola en caché).
+   ============================================================ */
+add_action( 'wp_enqueue_scripts', function (): void {
+	$styles = wp_styles();
+	if ( isset( $styles->registered['bootstrap-icons'] ) ) {
+		$styles->registered['bootstrap-icons']->src = OEC_THEME_URI . '/assets/fonts/bootstrap-icons/bootstrap-icons.min.css';
+		$styles->registered['bootstrap-icons']->ver = '1.11.3';
+	}
+}, 100 );
+
+/* ============================================================
+   12c. JQUERY — fuera de las páginas que no lo usan
+       Llegaba en el <head> (bloqueando el render) a todas las páginas
+       porque wp-automatic encola su galería en todo el sitio, aunque
+       solo sirve en los posts que traen .wp_automatic_gallery. El
+       tema no usa jQuery; el plugin OEC solo en /formacion.
+       Si después de esto queda jQuery sin ningún script que dependa
+       de él, se saca también.
+   ============================================================ */
+add_action( 'wp_enqueue_scripts', function (): void {
+	if ( is_page( 'formacion' ) ) {
+		return;
+	}
+	$post = is_singular() ? get_queried_object() : null;
+	if ( ! $post instanceof WP_Post || false === strpos( $post->post_content, 'wp_automatic_gallery' ) ) {
+		wp_dequeue_script( 'wp_automatic_gallery' );
+		wp_dequeue_style( 'wp_automatic_gallery_style' );
+	}
+
+	$scripts = wp_scripts();
+	if ( ! in_array( 'jquery', $scripts->queue, true ) ) {
+		return;
+	}
+	$needs = function ( string $handle, int $depth = 0 ) use ( &$needs, $scripts ): bool {
+		$deps = $scripts->registered[ $handle ]->deps ?? [];
+		if ( array_intersect( $deps, [ 'jquery', 'jquery-core' ] ) ) {
+			return true;
+		}
+		foreach ( $deps as $dep ) {
+			if ( $depth < 5 && $needs( $dep, $depth + 1 ) ) {
+				return true;
+			}
+		}
+		return false;
+	};
+	foreach ( $scripts->queue as $handle ) {
+		if ( ! in_array( $handle, [ 'jquery', 'jquery-core' ], true ) && $needs( $handle ) ) {
+			return;
+		}
+	}
+	wp_dequeue_script( 'jquery' );
+}, 999 );
+
+/* ============================================================
+   12d. CSS/JS SIN EL PREFIJO DEL SUBSITIO
+       En el multisite por carpeta, los assets salen como
+       /es/wp-content/… y /es/wp-includes/…: el Nginx de Cloudways solo
+       pone Cache-Control largo en /wp-content/… y /wp-includes/…, así que
+       con el prefijo el navegador no los cacheaba. Es el mismo archivo
+       físico; sin el prefijo además /es y /en comparten la caché.
+   ============================================================ */
+function oec_unprefix_asset_src( string $src ): string {
+	static $from = null, $to = null;
+	if ( null === $from ) {
+		$from = $to = '';
+		if ( is_multisite() && ! is_subdomain_install() && ! is_main_site() ) {
+			$from = untrailingslashit( site_url() ) . '/';
+			$to   = untrailingslashit( network_site_url() ) . '/';
+		}
+	}
+	if ( $from && $from !== $to && str_starts_with( $src, $from ) ) {
+		$rest = substr( $src, strlen( $from ) );
+		if ( str_starts_with( $rest, 'wp-content/' ) || str_starts_with( $rest, 'wp-includes/' ) ) {
+			return $to . $rest;
+		}
+	}
+	return $src;
+}
+add_filter( 'style_loader_src',  'oec_unprefix_asset_src', 20 );
+add_filter( 'script_loader_src', 'oec_unprefix_asset_src', 20 );
 
 /* ============================================================
    13. CACHE-CONTROL — para que Cloudflare pueda cachear en el

@@ -108,7 +108,9 @@ function oec_tira_capitalize( string $s ): string {
  * usan su CSS/JS tal cual. La usan las tiras y el listado de /formaciones.
  * $r: fila de oec_tira_catalogo() u OEC_AI_Catalog::get_listing().
  * $o: almanaque (hoja con la fecha de inicio en la foto), countdown
- * (cuenta regresiva del cierre), org (organización bajo el título).
+ * (cuenta regresiva del cierre), org (organización bajo el título),
+ * eager (foto sin lazy y con prioridad: las primeras de /formaciones,
+ * que son el LCP).
  */
 function oec_formacion_card( array $r, array $o = [] ): string {
 	static $hoy = null;
@@ -129,8 +131,12 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 	$modality = false !== strpos( $r['modality'], 'BLEND' ) ? 'Mixta' : oec_tira_capitalize( $r['modality'] );
 	$sync     = [ 'SYNC' => 'Sincrónica', 'MIXED' => 'Mixta', 'ASYNC-F' => 'Asincrónica c/foros' ][ $r['synchronicity'] ] ?? 'Asincrónica';
 	$rev_n    = (int) ( $r['reviews']['count'] ?? 0 );
-	$img      = $r['image'] ? 'https://imgrsize.oe-img.center/campus/capacitacion/imagen/' . basename( (string) wp_parse_url( $r['image'], PHP_URL_PATH ) ) . '?w=640&q=89' : '';
+	// imgrsize elige AVIF/WebP según el Accept del navegador; q=80 pesa ~40 % menos que 89 sin diferencia visible a este tamaño.
+	$img      = $r['image'] ? 'https://imgrsize.oe-img.center/campus/capacitacion/imagen/' . basename( (string) wp_parse_url( $r['image'], PHP_URL_PATH ) ) . '?w=640&q=80' : '';
 	$title    = mb_strlen( $r['title'] ) > 100 ? mb_substr( $r['title'], 0, 97 ) . '...' : $r['title'];
+	// La card muestra ~8 renglones y el resto lo tapa el degradé: la descripción
+	// completa (a veces 3000+ caracteres) solo engordaba el HTML (~250 KB en el home).
+	$desc     = mb_strlen( $r['description'] ) > 420 ? rtrim( mb_substr( $r['description'], 0, 420 ) ) . '…' : $r['description'];
 	$org      = ! empty( $o['org'] ) ? (string) ( $r['org'] ?? '' ) : '';
 	// Cierre al terminar el día, en la hora del sitio (mismo criterio que el plugin).
 	$cierre_iso = $r['enrollment_end'] ? ( new DateTime( $r['enrollment_end'] . ' 23:59:59', wp_timezone() ) )->format( 'c' ) : '';
@@ -145,14 +151,14 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 					<div class="oec-badges-container">
 						<?php foreach ( $r['badges'] as $b ) : ?><div class="oec-badge-item"><?php echo esc_html( $b ); ?></div><?php endforeach; ?>
 					</div>
-					<?php if ( $img ) : ?><img src="<?php echo esc_url( $img ); ?>" class="oec-image" alt="<?php echo esc_attr( $r['title'] ); ?>" loading="lazy"><?php endif; ?>
+					<?php if ( $img ) : ?><img src="<?php echo esc_url( $img ); ?>" class="oec-image" alt="<?php echo esc_attr( $r['title'] ); ?>" width="640" height="350" <?php echo empty( $o['eager'] ) ? 'loading="lazy" decoding="async"' : 'fetchpriority="high"'; ?>><?php endif; ?>
 				</div>
 				<div class="oec-body">
 					<div class="oec-title"><?php echo esc_html( $title ); ?></div>
 					<?php if ( $org ) : ?>
 					<div class="oec-organization"><i class="bi bi-building"></i> <?php echo esc_html( mb_strlen( $org ) > 35 ? mb_substr( $org, 0, 32 ) . '...' : $org ); ?></div>
 					<?php endif; ?>
-					<div class="oec-description-container"><div class="oec-description"><?php echo esc_html( $r['description'] ); ?></div></div>
+					<div class="oec-description-container"><div class="oec-description"><?php echo esc_html( $desc ); ?></div></div>
 					<div class="oec-grid-reviews">
 						<?php if ( $rev_n > 0 ) : ?>
 						<div class="oec-stars-container"><div class="oec-stars" style="width: <?php echo esc_attr( round( (float) $r['reviews']['average'] * 100 / 5, 2 ) ); ?>%;"></div></div>

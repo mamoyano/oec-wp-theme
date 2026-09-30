@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.70' );
+define( 'OEC_THEME_VERSION', '1.0.71' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -50,11 +50,13 @@ add_action( 'after_setup_theme', 'oec_setup' );
    ENQUEUE ASSETS
    ============================================================ */
 function oec_enqueue_assets(): void {
+	// Alojado en el tema (v1.11.3, MIT): desde jsdelivr era una conexión
+	// más (DNS + TLS) antes de poder pintar, ~1 s en móvil.
 	wp_enqueue_style(
 		'bootstrap-icons',
-		'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css',
+		OEC_THEME_URI . '/assets/fonts/bootstrap-icons/bootstrap-icons.min.css',
 		[],
-		null
+		'1.11.3'
 	);
 	wp_enqueue_style(
 		'oec-style',

@@ -526,33 +526,57 @@ function oec_especiales_registradas(): array {
  * - sin tematica (home): rota entre los videos de todas las landings. Sin
  *   "loop": al terminar uno, main.js pasa al siguiente ([data-oec-videos]).
  *   El primero cambia cada día, para que no arranque siempre igual.
+ *
+ * El video (2–14 MB) no se pide con la página: sale solo el poster, que es
+ * el LCP, y main.js le pone el src recién después del "load" — y nunca con
+ * "ahorro de datos" o "reducir movimiento" activados (queda la foto).
  */
 add_shortcode( 'oec-hero-video', 'oec_render_hero_video_shortcode' );
 function oec_render_hero_video_shortcode( $atts ): string {
-	$atts   = shortcode_atts( [ 'tematica' => '' ], $atts, 'oec-hero-video' );
-	$items  = array_values( array_filter( oec_get_especiales_list(), fn( $it ) => ! empty( $it['video'] ) ) );
-	if ( '' !== $atts['tematica'] ) {
-		$items = array_values( array_filter( $items, fn( $it ) => $it['tematica'] === $atts['tematica'] ) );
-	}
+	$atts  = shortcode_atts( [ 'tematica' => '' ], $atts, 'oec-hero-video' );
+	$items = oec_hero_video_items( $atts['tematica'] );
 	if ( ! $items ) {
 		return '';
 	}
-
-	$rota = '' === $atts['tematica'] && count( $items ) > 1;
-	if ( $rota ) {
-		$offset = (int) current_time( 'z' ) % count( $items ); // día del año
-		$items  = array_merge( array_slice( $items, $offset ), array_slice( $items, 0, $offset ) );
-	}
+	$rota  = count( $items ) > 1;
 	$first = $items[0];
 
 	return sprintf(
-		'<video class="oec-tematica-hero__video" autoplay muted playsinline%1$s preload="metadata" poster="%2$s"%3$s><source src="%4$s" type="video/mp4"></video>',
+		'<video class="oec-tematica-hero__video" muted playsinline%1$s preload="none" poster="%2$s" data-oec-src="%3$s"%4$s></video>',
 		$rota ? '' : ' loop',
 		esc_url( $first['image'] ?? '' ),
-		$rota ? " data-oec-videos='" . esc_attr( wp_json_encode( array_column( $items, 'video' ) ) ) . "'" : '',
-		esc_url( $first['video'] )
+		esc_url( $first['video'] ),
+		$rota ? " data-oec-videos='" . esc_attr( wp_json_encode( array_column( $items, 'video' ) ) ) . "'" : ''
 	);
 }
+
+/** Videos del hero en el orden en que se muestran (ver el shortcode). */
+function oec_hero_video_items( string $tematica ): array {
+	$items = array_values( array_filter( oec_get_especiales_list(), fn( $it ) => ! empty( $it['video'] ) ) );
+	if ( '' !== $tematica ) {
+		return array_values( array_filter( $items, fn( $it ) => $it['tematica'] === $tematica ) );
+	}
+	if ( count( $items ) > 1 ) {
+		$offset = (int) current_time( 'z' ) % count( $items ); // día del año
+		$items  = array_merge( array_slice( $items, $offset ), array_slice( $items, 0, $offset ) );
+	}
+	return $items;
+}
+
+// El poster es el LCP de la página y el navegador no lo descubre hasta
+// armar el <video>: se adelanta con un preload en el <head>.
+add_action( 'wp_head', function (): void {
+	$post = is_singular() ? get_queried_object() : null;
+	if ( ! $post instanceof WP_Post || ! has_shortcode( $post->post_content, 'oec-hero-video' )
+		|| ! preg_match( '/' . get_shortcode_regex( [ 'oec-hero-video' ] ) . '/', $post->post_content, $m ) ) {
+		return;
+	}
+	$atts  = shortcode_atts( [ 'tematica' => '' ], shortcode_parse_atts( $m[3] ) ?: [] );
+	$items = oec_hero_video_items( (string) $atts['tematica'] );
+	if ( ! empty( $items[0]['image'] ) ) {
+		printf( '<link rel="preload" as="image" href="%s" fetchpriority="high">' . "\n", esc_url( $items[0]['image'] ) );
+	}
+}, 3 );
 
 /**
  * [oec-tematica-nav]

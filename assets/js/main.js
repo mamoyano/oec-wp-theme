@@ -622,6 +622,24 @@
     }
   });
 
+  /* ── Video del hero ([oec-hero-video]): llega sin src para no competir
+     con la carga de la página. Se pide después del "load", salvo con
+     ahorro de datos o "reducir movimiento" (ahí queda el poster). ── */
+  const heroVideos = document.querySelectorAll('video[data-oec-src]');
+  if (heroVideos.length) {
+    const conn = navigator.connection || {};
+    const skip = conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const start = () => heroVideos.forEach((video) => {
+      video.src = video.dataset.oecSrc;
+      video.play().catch(() => {});
+    });
+    if (!skip) {
+      if (document.readyState === 'complete') start();
+      else window.addEventListener('load', start, { once: true });
+    }
+  }
+
   /* ── Video del hero que rota entre las landings ([oec-hero-video] en el
      home): al terminar uno, pasa al siguiente de la lista. ── */
   document.querySelectorAll('video[data-oec-videos]').forEach((video) => {

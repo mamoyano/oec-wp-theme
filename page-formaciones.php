@@ -233,8 +233,8 @@ get_header();
 
 		<h2 class="sr-only"><?php esc_html_e( 'Catálogo de formaciones', 'oec-theme' ); ?></h2>
 		<div class="art-grid art-grid--formaciones">
-			<?php foreach ( $res['items'] as $r ) : ?>
-				<?php echo oec_formacion_card( $r, [ 'org' => true ] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
+			<?php foreach ( $res['items'] as $i => $r ) : ?>
+				<?php echo oec_formacion_card( $r, [ 'org' => true, 'eager' => $i < 3 ] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<?php endforeach; ?>
 		</div>
 

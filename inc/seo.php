@@ -153,12 +153,20 @@ function oec_seo_organization_node(): array {
 	$logo = wp_get_attachment_image_url( (int) get_theme_mod( 'custom_logo' ), 'full' )
 		?: ( function_exists( 'oec_get_options' ) ? ( oec_get_options()['logo_url'] ?? '' ) : '' )
 		?: get_site_icon_url( 512 );
+	// Perfiles sociales (Ajustes del tema): con sameAs, Google y los asistentes
+	// de IA atan el sitio a la misma entidad que esas cuentas.
+	$opts   = function_exists( 'oec_get_options' ) ? oec_get_options() : [];
+	$same   = array_values( array_filter( array_map(
+		fn( $k ) => esc_url_raw( (string) ( $opts[ $k ] ?? '' ) ),
+		[ 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ]
+	) ) );
 	return array_filter( [
-		'@type' => 'EducationalOrganization',
-		'@id'   => home_url( '/' ) . '#organization',
-		'name'  => get_bloginfo( 'name' ),
-		'url'   => home_url( '/' ),
-		'logo'  => $logo ? [ '@type' => 'ImageObject', 'url' => $logo ] : null,
+		'@type'  => 'EducationalOrganization',
+		'@id'    => home_url( '/' ) . '#organization',
+		'name'   => get_bloginfo( 'name' ),
+		'url'    => home_url( '/' ),
+		'logo'   => $logo ? [ '@type' => 'ImageObject', 'url' => $logo ] : null,
+		'sameAs' => $same ?: null,
 	] );
 }
 
@@ -179,7 +187,13 @@ function oec_seo_context(): ?array {
 	$c     = [ 'type' => 'website', 'image' => oec_seo_default_image(), 'schema' => [] ];
 
 	if ( is_front_page() ) {
-		$desc = oec_seo_trim( get_bloginfo( 'description' ), 300 );
+		// El extracto de la página de inicio si se completó; si no, la
+		// descripción corta del sitio. (El contenido del home es HTML de
+		// aplicación, no sirve como resumen.)
+		$front = get_queried_object();
+		$desc  = $front instanceof WP_Post && has_excerpt( $front )
+			? oec_seo_trim( $front->post_excerpt, 300 )
+			: oec_seo_trim( get_bloginfo( 'description' ), 300 );
 		$c    = array_merge( $c, [
 			'title'       => get_bloginfo( 'name' ),
 			'description' => $desc,
@@ -258,6 +272,23 @@ function oec_seo_context(): ?array {
 	$ctx = is_array( $c ) ? $c : null;
 	return $ctx;
 }
+
+// El plugin OEC imprime otro Organization + WebSite (más pobre) en todas las
+// páginas; el nuestro ya los trae, con @id para que el resto los referencie.
+add_action( 'init', function () {
+	remove_action( 'wp_head', 'oec_site_jsonld', 5 );
+} );
+
+// Ficha de formación: el plugin arma todo, pero su canonical dependía del
+// rel_canonical del core, que en producción no sale. Se imprime acá, con la
+// misma URL (data.canonical de la API → la comunidad dueña de la formación).
+add_action( 'wp_head', function () {
+	if ( is_page( 'formacion' ) && function_exists( 'oec_get_current_training_canonical' )
+		&& function_exists( 'oec_get_current_training_data' ) && oec_get_current_training_data() ) {
+		remove_action( 'wp_head', 'rel_canonical' );
+		echo '<link rel="canonical" href="' . esc_url( oec_get_current_training_canonical() ) . '">' . "\n";
+	}
+}, 2 );
 
 // Antes que el rel_canonical de WordPress (10): si emitimos el nuestro, se saca el suyo.
 add_action( 'wp_head', 'oec_seo_head', 2 );
