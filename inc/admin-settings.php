@@ -604,7 +604,7 @@ function oec_render_settings_page(): void {
 				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Rastreo y analítica', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Los scripts se cargan en diferido (primera interacción o 4 s después de cargar la página) para no afectar el rendimiento. Dejá en blanco los que no uses. Para navegar sin rastreo: agregá ?trackers=false a la URL.', 'oec-theme' ); ?></p>
+						<p><?php esc_html_e( 'Los scripts se cargan en diferido para no afectar el rendimiento: GTM y Meta Pixel apenas termina de cargar la página; Clarity en la primera interacción o a los 5 s. Dejá en blanco los que no uses. Para navegar sin rastreo: agregá ?trackers=false a la URL.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
@@ -1355,12 +1355,19 @@ add_action( 'wp_head', 'oec_output_dynamic_css', 100 );
 /* ============================================================
    FRONTEND: Tracker scripts
    ============================================================ */
-// Los tres se cargan en diferido: en la primera interacción (mover el mouse,
-// tocar, scrollear, teclear) o 4 s después del load, lo que llegue antes, igual
-// que en el g-se.com anterior. Así no compiten con el LCP ni suman TBT. Los stubs
-// (dataLayer, fbq, clarity) se crean al toque, así que lo que se registre antes
-// queda en cola y se envía al cargar. Con ?trackers=false no se carga ninguno
-// (para medir con PageSpeed o navegar sin ensuciar las estadísticas).
+// Carga en diferido, en dos tandas, para no competir con el LCP:
+// - GTM y Meta Pixel: al terminar el load, cuando el navegador queda libre
+//   (máx. 1,5 s), o antes si el visitante interactúa. Así casi no se pierden
+//   las visitas que rebotan rápido (las que más le importan a Meta).
+// - Clarity: en la primera interacción o 5 s después del load. Es el más
+//   pesado y solo aporta en sesiones con interacción.
+// Los stubs (dataLayer, fbq, clarity) se crean al toque: lo que se registre
+// antes queda en cola y se envía al cargar.
+// Clic en un enlace al checkout antes de que GTM y el Pixel estén listos: se
+// frena la navegación hasta que carguen (máx. 600 ms) y se repite el clic,
+// para que salgan la conversión de Google Ads (activador de GTM "enlace con
+// checkout") y el AddToCart del plugin.
+// Con ?trackers=false no se carga ninguno (PageSpeed, pruebas internas).
 function oec_output_trackers_head(): void {
 	$opts = oec_get_options();
 	$cfg  = array_filter( [
@@ -1372,22 +1379,39 @@ function oec_output_trackers_head(): void {
 		return;
 	}
 
+	$js = <<<'JS'
+(function(w,d,c){
+if(new URLSearchParams(location.search).get('trackers')==='false')return;
+function add(u){var s=d.createElement('script');s.async=true;s.src=u;d.head.appendChild(s);}
+var ev=['mousemove','pointerdown','touchstart','keydown','scroll'],o={passive:true,capture:true};
+function onFirst(f){function h(){ev.forEach(function(e){w.removeEventListener(e,h,o)});f();}ev.forEach(function(e){w.addEventListener(e,h,o)});}
+function afterLoad(f){if(d.readyState==='complete')f();else w.addEventListener('load',f);}
+var main=c.gtm||c.pixel,started=0;
+if(c.gtm)w.dataLayer=w.dataLayer||[];
+if(c.pixel&&!w.fbq){var n=w.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!w._fbq)w._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];fbq('init',c.pixel);fbq('track','PageView');}
+function loadMain(){if(started||!main)return;started=1;
+if(c.gtm){w.dataLayer.push({'gtm.start':Date.now(),event:'gtm.js'});add('https://www.googletagmanager.com/gtm.js?id='+encodeURIComponent(c.gtm));}
+if(c.pixel)add('https://connect.facebook.net/en_US/fbevents.js');}
+if(main){onFirst(loadMain);afterLoad(function(){w.requestIdleCallback?requestIdleCallback(loadMain,{timeout:1500}):setTimeout(loadMain,300);});}
+if(c.clarity){w.clarity=w.clarity||function(){(w.clarity.q=w.clarity.q||[]).push(arguments)};
+var cl=0;function loadClarity(){if(cl)return;cl=1;add('https://www.clarity.ms/tag/'+encodeURIComponent(c.clarity));}
+onFirst(loadClarity);afterLoad(function(){setTimeout(loadClarity,5000);});}
+if(!main)return;
+function ready(){return(!c.gtm||(w.google_tag_manager&&w.google_tag_manager[c.gtm]))&&(!c.pixel||(w.fbq&&w.fbq.instance));}
+var pass=0;
+d.addEventListener('click',function(e){
+if(pass||e.defaultPrevented||e.button||e.ctrlKey||e.metaKey||e.shiftKey||e.altKey||ready())return;
+var a=e.target.closest&&e.target.closest('a[href]');
+if(!a||(a.target&&a.target!=='_self')||a.href.indexOf('checkout')<0)return;
+var h=a.hostname;if(h!=='onlineeducation.center'&&h.slice(-23)!=='.onlineeducation.center')return;
+e.preventDefault();e.stopImmediatePropagation();loadMain();
+var t0=Date.now();(function wait(){if(ready()||Date.now()-t0>600){setTimeout(function(){pass=1;a.click();pass=0;},ready()?50:0);}else setTimeout(wait,50);})();
+},true);
+})(window,document,
+JS;
+
 	echo "\n<!-- Rastreo (carga diferida) -->\n";
-	echo '<script>(function(w,d,c){'
-		. "if(new URLSearchParams(location.search).get('trackers')==='false')return;"
-		. 'var src=[];'
-		. 'if(c.gtm){w.dataLayer=w.dataLayer||[];src.push("https://www.googletagmanager.com/gtm.js?id="+encodeURIComponent(c.gtm));}'
-		. 'if(c.pixel&&!w.fbq){var n=w.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};'
-		. 'if(!w._fbq)w._fbq=n;n.push=n;n.loaded=!0;n.version="2.0";n.queue=[];'
-		. 'fbq("init",c.pixel);fbq("track","PageView");src.push("https://connect.facebook.net/en_US/fbevents.js");}'
-		. 'if(c.clarity){w.clarity=w.clarity||function(){(w.clarity.q=w.clarity.q||[]).push(arguments)};src.push("https://www.clarity.ms/tag/"+encodeURIComponent(c.clarity));}'
-		. 'var ev=["mousemove","pointerdown","touchstart","keydown","scroll"],o={passive:true},done=0;'
-		. 'function load(){if(done)return;done=1;ev.forEach(function(e){w.removeEventListener(e,load,o)});'
-		. 'if(c.gtm)w.dataLayer.push({"gtm.start":Date.now(),event:"gtm.js"});'
-		. 'src.forEach(function(u){var s=d.createElement("script");s.async=true;s.src=u;d.head.appendChild(s)});}'
-		. 'ev.forEach(function(e){w.addEventListener(e,load,o)});'
-		. 'w.addEventListener("load",function(){setTimeout(load,4000)});'
-		. '})(window,document,' . wp_json_encode( $cfg ) . ");</script>\n";
+	echo '<script>' . str_replace( "\n", '', $js ) . wp_json_encode( $cfg ) . ");</script>\n";
 }
 add_action( 'wp_head', 'oec_output_trackers_head', 1 );
 
