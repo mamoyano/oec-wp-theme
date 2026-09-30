@@ -16,6 +16,10 @@ class OEC_AI_Chat {
 	const SSE_PAD_BYTES = 8192;
 	const SSE_BATCH_SEC = 0.3;
 
+	// Relleno de esta respuesta. ?nopad=1 lo desactiva solo en esa consulta,
+	// para comprobar si el servidor ya transmite sin buffer.
+	private static int $sse_pad = self::SSE_PAD_BYTES;
+
 	/* ── Bootstrap ─────────────────────────────────────────── */
 
 	public static function init(): void {
@@ -494,6 +498,9 @@ class OEC_AI_Chat {
 		header( 'X-LiteSpeed-Cache-Control: no-cache' );
 
 		// Relleno inicial: fuerza el envío de las cabeceras
+		if ( ! empty( $_GET['nopad'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+			self::$sse_pad = 0;
+		}
 		self::sse_flush( '' );
 
 		$opts    = oec_get_options();
@@ -570,8 +577,8 @@ class OEC_AI_Chat {
 	/* Envía un bloque SSE y lo empuja fuera del buffer del proxy con relleno
 	 * (comentario SSE: línea que empieza con ":", el cliente la ignora). */
 	private static function sse_flush( string $payload ): void {
-		if ( self::SSE_PAD_BYTES > 0 ) {
-			$payload .= ':' . str_repeat( ' ', self::SSE_PAD_BYTES ) . "\n\n";
+		if ( self::$sse_pad > 0 ) {
+			$payload .= ':' . str_repeat( ' ', self::$sse_pad ) . "\n\n";
 		}
 		echo $payload; // phpcs:ignore
 		if ( ob_get_level() ) {
