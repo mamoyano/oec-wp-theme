@@ -176,6 +176,12 @@
         : '';
       return `<figure class="oec-md-figure"><img src="${src}" alt="${alt}" class="oec-md-img" loading="lazy">${caption}</figure>`;
     });
+    // 2a. Fotos seguidas → una fila propia, debajo del texto (no pegadas a la
+    //     línea). Se comen los saltos de línea de alrededor para no dejar <br> sueltos.
+    html = html.replace(
+      /[ \t]*\n*((?:<figure class="oec-md-figure">.*?<\/figure>\s*)+)\n*/g,
+      (_, figs) => '<div class="oec-md-gallery">' + figs.replace(/\s+(?=<figure)|\s+$/g, '') + '</div>'
+    );
     // 3. Markdown links [text](url)
     html = html.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
