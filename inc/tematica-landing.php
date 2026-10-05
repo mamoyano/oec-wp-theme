@@ -434,15 +434,46 @@ function oec_get_especiales_list(): array {
 /**
  * La misma imagen en .webp si existe al lado del .png/.jpg: el conversor de
  * imágenes (inc/images.php) deja el WebP y borra el original, y las URLs de
- * abajo están escritas a mano. Si no hay WebP (p. ej. en local), la original.
+ * abajo están escritas a mano. Si no hay WebP y el original está acá, se
+ * genera una vez: son los posters del hero (el LCP del home y las landings)
+ * y el conversor saltea las imágenes de menos de 150 KB. Si no se puede (o
+ * no achica), queda la original y no se reintenta.
  */
 function oec_landing_webp( string $url ): string {
 	$pos = strpos( $url, '/wp-content/' );
 	if ( false === $pos || ! preg_match( '/\.(png|jpe?g)$/i', $url ) ) {
 		return $url;
 	}
-	$webp = preg_replace( '/\.(png|jpe?g)$/i', '.webp', substr( $url, $pos + strlen( '/wp-content/' ) ) );
-	return is_file( WP_CONTENT_DIR . '/' . $webp ) ? preg_replace( '/\.(png|jpe?g)$/i', '.webp', $url ) : $url;
+	$rel  = substr( $url, $pos + strlen( '/wp-content/' ) );
+	$webp = WP_CONTENT_DIR . '/' . preg_replace( '/\.(png|jpe?g)$/i', '.webp', $rel );
+	if ( ! is_file( $webp ) && ! oec_landing_make_webp( WP_CONTENT_DIR . '/' . $rel, $webp ) ) {
+		return $url;
+	}
+	return preg_replace( '/\.(png|jpe?g)$/i', '.webp', $url );
+}
+
+function oec_landing_make_webp( string $src, string $dest ): bool {
+	$skip = 'oec_webp_skip_' . md5( $src );
+	if ( ! is_file( $src ) || get_transient( $skip ) || ! wp_image_editor_supports( [ 'mime_type' => 'image/webp' ] ) ) {
+		return false;
+	}
+	set_transient( $skip, 1, DAY_IN_SECONDS ); // también frena a otro pedido simultáneo
+	$editor = wp_get_image_editor( $src );
+	if ( is_wp_error( $editor ) ) {
+		return false;
+	}
+	$editor->set_quality( 80 );
+	$tmp   = preg_replace( '/\.webp$/', '-' . wp_generate_password( 6, false ) . '.webp', $dest );
+	$saved = $editor->save( $tmp, 'image/webp' );
+	if ( is_wp_error( $saved ) || empty( $saved['path'] ) || ! is_file( $saved['path'] ) ) {
+		return false;
+	}
+	if ( filesize( $saved['path'] ) >= filesize( $src ) || ! rename( $saved['path'], $dest ) ) {
+		wp_delete_file( $saved['path'] );
+		return false;
+	}
+	delete_transient( $skip );
+	return true;
 }
 
 /** Todas las landings declaradas (publicadas o no): ver oec_get_especiales_list(). */

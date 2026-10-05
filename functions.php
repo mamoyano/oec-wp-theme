@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.79' );
+define( 'OEC_THEME_VERSION', '1.0.80' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -56,11 +56,11 @@ function oec_enqueue_assets(): void {
 		'bootstrap-icons',
 		OEC_THEME_URI . '/assets/fonts/bootstrap-icons/bootstrap-icons.min.css',
 		[],
-		'1.11.3'
+		oec_asset_version( 'assets/fonts/bootstrap-icons/bootstrap-icons.min.css' )
 	);
 	wp_enqueue_style(
 		'oec-style',
-		get_stylesheet_uri(),
+		oec_min_stylesheet_uri(), // copia minificada de style.css (inc/performance.php)
 		[ 'bootstrap-icons' ],
 		oec_asset_version( 'style.css' )
 	);

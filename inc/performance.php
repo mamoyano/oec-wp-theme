@@ -242,11 +242,81 @@ add_filter( 'wp_resource_hints', function ( array $hints, string $relation_type 
    ============================================================ */
 add_action( 'wp_enqueue_scripts', function (): void {
 	$styles = wp_styles();
-	if ( isset( $styles->registered['bootstrap-icons'] ) ) {
-		$styles->registered['bootstrap-icons']->src = OEC_THEME_URI . '/assets/fonts/bootstrap-icons/bootstrap-icons.min.css';
-		$styles->registered['bootstrap-icons']->ver = '1.11.3';
+	if ( ! isset( $styles->registered['bootstrap-icons'] ) ) {
+		return;
+	}
+	$styles->registered['bootstrap-icons']->src = OEC_THEME_URI . '/assets/fonts/bootstrap-icons/bootstrap-icons.min.css';
+	$styles->registered['bootstrap-icons']->ver = oec_asset_version( 'assets/fonts/bootstrap-icons/bootstrap-icons.min.css' );
+
+	// Recorte inline (build-subset.py): las clases de los ~110 íconos que se
+	// usan + una fuente de ~10 KB. Así la hoja completa (86 KB, ~2000 íconos)
+	// carga sin bloquear el render; queda como respaldo para un ícono que no
+	// esté en el recorte, igual que la fuente completa (ver el CSS generado).
+	$subset = OEC_THEME_DIR . '/assets/fonts/bootstrap-icons/bootstrap-icons-subset.css';
+	if ( is_readable( $subset ) ) {
+		$url = oec_unprefix_asset_src( OEC_THEME_URI . '/assets/fonts/bootstrap-icons' );
+		wp_add_inline_style( 'bootstrap-icons', str_replace( '{URL}', esc_url_raw( $url ), trim( (string) file_get_contents( $subset ) ) ) );
+		wp_style_add_data( 'bootstrap-icons', 'oec_async', true );
 	}
 }, 100 );
+
+// La hoja completa de íconos, sin bloquear: media="print" y pasa a "all" al cargar.
+add_filter( 'style_loader_tag', function ( string $tag, string $handle ): string {
+	if ( 'bootstrap-icons' !== $handle || ! wp_styles()->get_data( $handle, 'oec_async' ) ) {
+		return $tag;
+	}
+	$async = preg_replace( '/media=([\'"])all\1/', 'media="print" onload="this.media=\'all\'"', $tag, 1 );
+	return $async === $tag ? $tag : $async . '<noscript>' . trim( $tag ) . "</noscript>\n";
+}, 10, 2 );
+
+/* ============================================================
+   12e. STYLE.CSS MINIFICADO
+       style.css (~175 KB) bloquea el render y la mitad son comentarios y
+       espacios: se sirve una copia minificada (35 → 22 KB comprimido).
+       Se genera sola la primera vez que cambia style.css (por fecha y
+       tamaño), en uploads/oec-theme/ con el hash en el nombre: no hace
+       falta purgar Cloudflare. El tema sigue sin paso de build; si no se
+       puede escribir, se usa style.css tal cual.
+   ============================================================ */
+function oec_minify_css( string $css ): string {
+	$css     = preg_replace( '#/\*.*?\*/#s', '', $css );
+	$strings = [];
+	// Los textos entre comillas (content:, url("…"), grid-template-areas) no se tocan.
+	$css = preg_replace_callback( '/"(?:\\\\.|[^"\\\\])*"|\'(?:\\\\.|[^\'\\\\])*\'/', function ( $m ) use ( &$strings ) {
+		$strings[] = $m[0];
+		return "\x00" . ( count( $strings ) - 1 ) . "\x00";
+	}, $css );
+	$css = preg_replace( '/\s+/', ' ', $css );
+	$css = preg_replace( '/\s*([{};,>])\s*/', '$1', $css );
+	$css = trim( str_replace( ';}', '}', $css ) );
+	return preg_replace_callback( '/\x00(\d+)\x00/', fn( $m ) => $strings[ (int) $m[1] ], $css );
+}
+
+function oec_min_stylesheet_uri(): string {
+	$src = get_stylesheet_directory() . '/style.css';
+	$dir = WP_CONTENT_DIR . '/uploads/oec-theme';
+	if ( ! is_readable( $src ) ) {
+		return get_stylesheet_uri();
+	}
+	$name = 'style-' . substr( md5( OEC_THEME_VERSION . '|' . filemtime( $src ) . '|' . filesize( $src ) ), 0, 12 ) . '.min.css';
+	$file = "{$dir}/{$name}";
+	if ( ! is_file( $file ) ) {
+		$css = oec_minify_css( (string) file_get_contents( $src ) );
+		$tmp = $file . '.' . wp_generate_password( 6, false ) . '.tmp';
+		if ( '' === $css || ! wp_mkdir_p( $dir ) || false === file_put_contents( $tmp, $css ) || ! rename( $tmp, $file ) ) {
+			@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			return get_stylesheet_uri();
+		}
+		// Las versiones viejas se borran recién al día: páginas cacheadas en
+		// Cloudflare todavía pueden estar pidiéndolas.
+		foreach ( glob( "{$dir}/style-*.min.css" ) ?: [] as $old ) {
+			if ( $old !== $file && filemtime( $old ) < time() - DAY_IN_SECONDS ) {
+				@unlink( $old ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+			}
+		}
+	}
+	return network_site_url( '/wp-content/uploads/oec-theme/' . $name );
+}
 
 /* ============================================================
    12c. JQUERY — fuera de las páginas que no lo usan

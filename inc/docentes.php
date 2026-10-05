@@ -143,11 +143,11 @@ function oec_docente_clean_bio( string $bio ): string {
 	return trim( (string) $bio );
 }
 
-/** Foto por el redimensionador de OEC. */
+/** Foto por el redimensionador de OEC (sale en AVIF/WebP según el navegador; q=75 pesa ~25 % menos que 85). */
 function oec_docente_photo_url( string $photo, int $w = 480 ): string {
 	return $photo
-		? add_query_arg( 'format', 'webp', oec_cdn_resize( $photo, $w, 85 ) )
-		: 'https://imgrsize.oe-img.center/img/user-default.jpg?w=' . $w . '&q=85&format=webp';
+		? add_query_arg( 'format', 'webp', oec_cdn_resize( $photo, $w, 75 ) )
+		: 'https://imgrsize.oe-img.center/img/user-default.jpg?w=' . $w . '&q=75&format=webp';
 }
 
 /** URL de la landing de un docente (page-docente.php, ?slug=…). */
