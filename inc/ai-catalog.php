@@ -8,7 +8,24 @@ class OEC_AI_Catalog {
 	const OPTION_JOB = 'oec_ai_catalog_job';
 	const CRON_HOOK  = 'oec_ai_catalog_sync';
 	const SLICE_HOOK = 'oec_ai_catalog_slice';
-	const BATCH_SIZE = 20;
+	/** Fichas por lote (cada una = ficha en oas-api + opiniones en api.g-se.com). */
+	const BATCH_SIZE = 5;
+
+	/** Pausa entre lotes de fichas, para no saturar oas-api. */
+	const BATCH_PAUSE_SECONDS = 1;
+
+	/** Páginas de listado pedidas en paralelo. */
+	const LIST_PARALLEL = 2;
+
+	/**
+	 * Abiertas: la ficha completa se vuelve a pedir solo si es nueva, si
+	 * cambió de edición o si tiene más de OPEN_REFRESH_EVERY. Las vencidas
+	 * se reparten: hasta OPEN_REFRESH_MAX por día, las más viejas primero.
+	 * Al resto se le actualizan desde el listado los datos que cambian
+	 * (fechas, relevancia, destacados, opiniones), sin pedir la ficha.
+	 */
+	const OPEN_REFRESH_EVERY = WEEK_IN_SECONDS;
+	const OPEN_REFRESH_MAX   = 60;
 
 	const API_LIST = 'https://oas-api.onlineeducation.center/api-oas/v1/trainings';
 
@@ -48,11 +65,30 @@ class OEC_AI_Catalog {
 
 	/* ── Bootstrap ─────────────────────────────────────────── */
 
+	/*
+	 * Multisitio: el catálogo es uno solo para toda la red. Lo sincroniza
+	 * únicamente el sitio de configuración (/es/, ver oec_config_blog_id())
+	 * y los demás leen sus archivos y su meta. Antes cada sitio corría su
+	 * propio sync completo contra la API, a la misma hora.
+	 *
+	 * En entornos locales (WP_ENVIRONMENT_TYPE = local) no hay sync
+	 * automático, para no golpear la API de producción cada vez que se abre
+	 * el sitio de pruebas; el botón "Sincronizar ahora" sigue funcionando.
+	 */
 	public static function init(): void {
 		add_action( self::CRON_HOOK, [ __CLASS__, 'start' ] );
 		add_action( self::SLICE_HOOK, [ __CLASS__, 'run_slice' ] );
 		add_action( 'wp_ajax_oec_ai_sync_catalog', [ __CLASS__, 'ajax_sync' ] );
 
+		if ( ! oec_is_config_site() || 'local' === wp_get_environment_type() ) {
+			if ( wp_next_scheduled( self::CRON_HOOK ) ) {
+				wp_clear_scheduled_hook( self::CRON_HOOK );
+			}
+			if ( ! oec_is_config_site() && wp_next_scheduled( self::SLICE_HOOK ) ) {
+				wp_clear_scheduled_hook( self::SLICE_HOOK );
+			}
+			return;
+		}
 		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
 			wp_schedule_event( strtotime( 'tomorrow 03:00:00' ), 'daily', self::CRON_HOOK );
 		}
@@ -62,7 +98,15 @@ class OEC_AI_Catalog {
 
 	public static function get_dir(): string {
 		if ( ! self::$dir ) {
+			// Siempre la carpeta del sitio de configuración (ver init()).
+			$switch = is_multisite() && ! oec_is_config_site();
+			if ( $switch ) {
+				switch_to_blog( oec_config_blog_id() );
+			}
 			self::$dir = trailingslashit( wp_upload_dir()['basedir'] ) . self::DIR_NAME;
+			if ( $switch ) {
+				restore_current_blog();
+			}
 		}
 		return self::$dir;
 	}
@@ -147,7 +191,7 @@ class OEC_AI_Catalog {
 	}
 
 	public static function get_meta(): array {
-		return get_option( self::OPTION_META, [
+		return oec_config_get_option( self::OPTION_META, [
 			'status'      => 'never',
 			'count'       => 0,
 			'finished_at' => '',
@@ -265,7 +309,7 @@ class OEC_AI_Catalog {
 					return self::abort( $job, 'No se pudo obtener el listado de formaciones.' );
 				}
 				self::write_job_file( 'open', $rows );
-				$job['queue'] = array_column( $rows, 'id' );
+				$job['queue'] = self::queue_open( $rows );
 				$job['total'] = count( $job['queue'] );
 				$job['phase'] = 'open_details';
 				return $job;
@@ -283,10 +327,18 @@ class OEC_AI_Catalog {
 						$job['errors'][] = $id . ': ' . $data['error'];
 						continue;
 					}
-					self::save_formation( $id, self::process( $data['detail'], $data['reviews'] ) );
+					self::save_formation( $id, array_merge(
+						self::process( $data['detail'], $data['reviews'] ),
+						[ '_fetched' => time() ]
+					) );
 					if ( $closed ) {
 						$job['fetched'][] = (string) $id;
+					} else {
+						$job['open_fetched'] = ( $job['open_fetched'] ?? 0 ) + 1;
 					}
+				}
+				if ( $job['queue'] ) {
+					sleep( self::BATCH_PAUSE_SECONDS );
 				}
 				return $job;
 
@@ -338,6 +390,66 @@ class OEC_AI_Catalog {
 		return self::queue_closed( $job, array_merge( $fresh, $old ) );
 	}
 
+	/**
+	 * Abiertas que necesitan la ficha completa: las que no están en disco,
+	 * las que cambiaron de edición y, de las que tienen más de
+	 * OPEN_REFRESH_EVERY, las OPEN_REFRESH_MAX más viejas. Al resto se le
+	 * actualizan los datos del listado sin pedirle nada a la API.
+	 */
+	private static function queue_open( array $rows ): array {
+		$queue = [];
+		$stale = [];
+		foreach ( $rows as $r ) {
+			$id = (string) $r['id'];
+			$f  = self::get_formation( $id );
+			if ( ! $f || (int) ( $f['edition_number'] ?? 0 ) !== (int) ( $r['edition_number'] ?? 0 ) ) {
+				$queue[] = $id;
+				continue;
+			}
+			$path    = self::get_dir() . '/formations/' . sanitize_file_name( $id ) . '.json';
+			$fetched = (int) ( $f['_fetched'] ?? filemtime( $path ) );
+			if ( time() - $fetched > self::OPEN_REFRESH_EVERY ) {
+				$stale[ $id ] = $fetched;
+			}
+			self::save_formation( $id, array_merge( self::patch_from_row( $f, $r ), [ '_fetched' => $fetched ] ) );
+		}
+		asort( $stale ); // las más viejas primero
+		return array_merge( $queue, array_slice( array_map( 'strval', array_keys( $stale ) ), 0, self::OPEN_REFRESH_MAX ) );
+	}
+
+	/** Datos de una fila del listado que cambian entre ediciones/días → ficha guardada. */
+	private static function patch_from_row( array $f, array $r ): array {
+		foreach ( [ 'title', 'slug', 'type', 'image', 'modality', 'synchronicity' ] as $k ) {
+			if ( isset( $r[ $k ] ) && '' !== $r[ $k ] ) {
+				$f[ $k ] = (string) $r[ $k ];
+			}
+		}
+		foreach ( [ 'start', 'end', 'enrollment_end' ] as $k ) {
+			if ( ! empty( $r[ $k ] ) ) {
+				$f[ $k ] = substr( (string) $r[ $k ], 0, 10 );
+			}
+		}
+		if ( isset( $r['relevance'] ) ) {
+			$f['relevance'] = (int) $r['relevance'];
+		}
+		foreach ( [ 'great_lecturers', 'great_topic', 'great_certification', 'great_organizer', 'great_price' ] as $k ) {
+			if ( array_key_exists( $k, $r ) ) {
+				$f[ $k ] = (bool) $r[ $k ];
+			}
+		}
+		if ( array_key_exists( 'reviews_summary', $r ) ) {
+			$f['reviews_summary'] = oec_ai_catalog_summary( $r['reviews_summary'] );
+		}
+		if ( isset( $r['wpgroup'] ) ) {
+			$f['tags']      = array_values( array_filter( explode( ' ', trim( (string) $r['wpgroup'] ) ) ) );
+			$f['tematicas'] = array_values( array_intersect( $f['tags'], self::TEMATICA_SLUGS ) );
+		}
+		if ( ! empty( $r['short_description'] ) ) {
+			$f['description'] = trim( wp_strip_all_tags( (string) $r['short_description'] ) );
+		}
+		return $f;
+	}
+
 	/** Guarda las cerradas y encola las que no tienen ficha en disco. */
 	private static function queue_closed( array $job, array $rows ): array {
 		self::write_job_file( 'closed', $rows );
@@ -374,7 +486,7 @@ class OEC_AI_Catalog {
 				] );
 			}
 		}
-		$chunk = array_slice( $pending, 0, $st['total'] ? 6 : 1, true );
+		$chunk = array_slice( $pending, 0, $st['total'] ? self::LIST_PARALLEL : 1, true );
 		$got   = 0;
 		foreach ( self::fetch_json_multiple( $chunk, $token ) as $pg => $body ) {
 			if ( isset( $body['data'] ) ) {
@@ -457,6 +569,8 @@ class OEC_AI_Catalog {
 			'finished_at'    => current_time( 'c' ),
 			'count'          => count( $index ),
 			'closed_count'   => count( $closed_rows ),
+			'open_fetched'   => (int) ( $job['open_fetched'] ?? 0 ),
+			'closed_fetched' => count( $job['fetched'] ),
 			'closed_full_at' => ! empty( $job['closed_full_done'] ) ? time() : (int) ( $meta['closed_full_at'] ?? 0 ),
 			'progress'       => '',
 			'errors'         => $job['errors'],
@@ -1060,12 +1174,21 @@ class OEC_AI_Catalog {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			wp_send_json_error( 'Sin permisos', 403 );
 		}
+		// El trabajo vive en el sitio de configuración (ver init()).
+		$switch = is_multisite() && ! oec_is_config_site();
+		if ( $switch ) {
+			switch_to_blog( oec_config_blog_id() );
+		}
 		if ( ! empty( $_POST['start'] ) ) {
 			self::start();
 		} else {
 			self::run_slice();
 		}
-		wp_send_json_success( self::get_meta() );
+		$meta = self::get_meta();
+		if ( $switch ) {
+			restore_current_blog();
+		}
+		wp_send_json_success( $meta );
 	}
 }
 

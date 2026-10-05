@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.73
+Version: 1.0.74
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -1583,11 +1583,13 @@ body.oec-chat-open { overflow: hidden; }
 }
 
 /* iOS Safari hace zoom al enfocar campos con letra < 16px y la página queda
-   agrandada y cortada. Solo en iOS (-webkit-touch-callout): 16px mínimo. */
-@supports (-webkit-touch-callout: none) {
+   agrandada y cortada. En pantallas táctiles: 16px mínimo (el #id del chat
+   va aparte porque su regla tiene más especificidad). */
+@media (hover: none) and (pointer: coarse) {
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
   textarea,
-  select { font-size: max(16px, 1em); }
+  select,
+  #oec-overlay-input { font-size: 16px; }
 }
 
 /* El chat ocupa solo lo visible sobre el teclado (la altura la ajusta
