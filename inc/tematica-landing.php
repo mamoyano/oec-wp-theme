@@ -424,11 +424,25 @@ function oec_get_especiales_list(): array {
 		if ( ! $page || 'publish' !== $page->post_status ) {
 			continue;
 		}
-		$e['image'] = $e['image'] ?: (string) get_the_post_thumbnail_url( $page, 'full' );
+		$e['image'] = oec_landing_webp( $e['image'] ?: (string) get_the_post_thumbnail_url( $page, 'full' ) );
 		$e['video'] = $e['video'] ?: esc_url_raw( trim( (string) get_post_meta( $page->ID, 'hero_video', true ) ) );
 		$out[]      = $e;
 	}
 	return $cache[ $blog ] = $out;
+}
+
+/**
+ * La misma imagen en .webp si existe al lado del .png/.jpg: el conversor de
+ * imágenes (inc/images.php) deja el WebP y borra el original, y las URLs de
+ * abajo están escritas a mano. Si no hay WebP (p. ej. en local), la original.
+ */
+function oec_landing_webp( string $url ): string {
+	$pos = strpos( $url, '/wp-content/' );
+	if ( false === $pos || ! preg_match( '/\.(png|jpe?g)$/i', $url ) ) {
+		return $url;
+	}
+	$webp = preg_replace( '/\.(png|jpe?g)$/i', '.webp', substr( $url, $pos + strlen( '/wp-content/' ) ) );
+	return is_file( WP_CONTENT_DIR . '/' . $webp ) ? preg_replace( '/\.(png|jpe?g)$/i', '.webp', $url ) : $url;
 }
 
 /** Todas las landings declaradas (publicadas o no): ver oec_get_especiales_list(). */
