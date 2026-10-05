@@ -267,8 +267,8 @@ class OEC_Images {
 		foreach ( $old_urls as $size => $url ) {
 			$map[ self::url_needle( $url ) ] = self::url_needle( $new_urls[ $size ] ?? $new_urls['full'] );
 		}
-		$changed = self::replace_in_content( $map );
-		self::purge_posts( array_merge( $changed, self::posts_with_thumbnail( $id ) ) );
+		self::replace_in_network( $map );
+		self::purge_posts( self::posts_with_thumbnail( $id ) );
 
 		return max( 0, $old_bytes - (int) filesize( $webp ) );
 	}
@@ -306,6 +306,26 @@ class OEC_Images {
 		return $changed;
 	}
 
+	/**
+	 * replace_in_content() en todos los sitios de la red: una imagen subida
+	 * en la raíz puede estar usada en una página de /es (pasó con el fondo de
+	 * la landing de Fisiología: se convirtió a WebP, se borró el PNG y la
+	 * landing quedó apuntando a un archivo que ya no existía). Las rutas no se
+	 * pisan entre sitios: "uploads/2026/…" (raíz) no es parte de
+	 * "uploads/sites/2/2026/…" (/es).
+	 */
+	private static function replace_in_network( array $map ): void {
+		if ( ! is_multisite() ) {
+			self::purge_posts( self::replace_in_content( $map ) );
+			return;
+		}
+		foreach ( get_sites( [ 'fields' => 'ids', 'number' => 100 ] ) as $blog_id ) {
+			switch_to_blog( (int) $blog_id );
+			self::purge_posts( self::replace_in_content( $map ) );
+			restore_current_blog();
+		}
+	}
+
 	/** Posts que usan el adjunto como imagen destacada. */
 	private static function posts_with_thumbnail( int $att_id ): array {
 		global $wpdb;
@@ -316,15 +336,18 @@ class OEC_Images {
 	}
 
 	/**
-	 * Limpia la caché de objetos y avisa que los posts cambiaron: con
-	 * 'edit_post' el plugin de Cloudflare purga esas URLs de APO, que si no
-	 * seguirían sirviendo HTML con las imágenes viejas (ya borradas).
+	 * Limpia la caché de objetos y borra esas páginas de Cloudflare
+	 * (inc/cloudflare.php), que si no seguirían sirviendo HTML con las
+	 * imágenes viejas (ya borradas). 'edit_post' queda para otros plugins.
 	 */
 	private static function purge_posts( array $ids ): void {
 		foreach ( array_unique( $ids ) as $post_id ) {
 			clean_post_cache( $post_id );
 			$post = get_post( $post_id );
 			if ( $post && 'publish' === $post->post_status ) {
+				if ( function_exists( 'oec_cf_queue' ) ) {
+					oec_cf_queue( oec_cf_urls_for_post( $post ) );
+				}
 				do_action( 'edit_post', $post_id, $post );
 			}
 		}
