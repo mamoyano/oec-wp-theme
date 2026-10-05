@@ -3,6 +3,13 @@
 <head>
 <meta charset="<?php bloginfo( 'charset' ); ?>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<?php
+/* iPhone/iPad: Safari hace zoom al enfocar un campo y la página queda
+ * agrandada y cortada. maximum-scale=1 lo evita; en iOS el usuario igual
+ * puede ampliar con dos dedos. Solo en iOS: en Android bloquearía ese
+ * gesto. Va por JS porque Cloudflare cachea el mismo HTML para todos. */
+?>
+<script>(function(){var n=navigator;if(/iPad|iPhone|iPod/.test(n.userAgent)||(n.platform==='MacIntel'&&n.maxTouchPoints>1)){var m=document.querySelector('meta[name="viewport"]');if(m)m.setAttribute('content','width=device-width, initial-scale=1, maximum-scale=1');}})();</script>
 <link rel="profile" href="https://gmpg.org/xfn/11">
 <?php wp_head(); ?>
 </head>
