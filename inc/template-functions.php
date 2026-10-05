@@ -284,7 +284,11 @@ function oec_pluralize_es( string $singular ): string {
    CONTACT FORM HANDLER
    ============================================================ */
 function oec_handle_contact_form(): void {
-	if ( ! isset( $_POST['oec_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oec_nonce'] ) ), 'oec_contact_nonce' ) ) {
+	// El nonce solo se exige con sesión iniciada: la página puede estar días en
+	// la caché de Cloudflare y el nonce vence en 12-24 h. Para visitantes, en
+	// un formulario de contacto público no protege nada; la trampa para bots
+	// (cf_website) sí.
+	if ( is_user_logged_in() && ( ! isset( $_POST['oec_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oec_nonce'] ) ), 'oec_contact_nonce' ) ) ) {
 		wp_die( esc_html__( 'Acción no permitida.', 'oec-theme' ) );
 	}
 

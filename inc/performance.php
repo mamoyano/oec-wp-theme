@@ -335,23 +335,21 @@ add_filter( 'script_loader_src', 'oec_unprefix_asset_src', 20 );
        - Un 404 recibe un TTL corto en vez de 24 h: si mañana esa URL
          pasa a existir (o era un typo pasajero), no queda "pegado"
          un 404 cacheado todo un día.
-       - HTML: 5 minutos en el navegador (max-age) y 10 en el borde de
-         Cloudflare (s-maxage), + stale-while-revalidate de 10 min. Antes
-         eran 24 h: con cuentas regresivas, cierres de inscripción,
-         descuentos que vencen y el catálogo que se actualiza a diario,
-         un visitante que volvía podía ver datos de ayer. CSS/JS/imágenes
-         no pasan por acá (los sirve el servidor web con su propia caché
-         larga, y el ?ver= del enqueue invalida cuando cambian).
+       - HTML: 5 minutos en el navegador (max-age: a un navegador no se
+         le puede borrar la caché) y en el borde de Cloudflare (s-maxage)
+         según el tipo de página — posts 30 días, listados 1 día,
+         búsquedas 1 h —, con borrado automático cuando algo cambia
+         (inc/cloudflare.php). CSS/JS/imágenes no pasan por acá (los sirve
+         el servidor web con su propia caché larga, y el ?ver= del enqueue
+         invalida cuando cambian).
    ============================================================ */
 function oec_send_cache_headers(): void {
 	if ( is_admin() || defined( 'REST_REQUEST' ) || is_user_logged_in() ) {
 		return;
 	}
-	if ( is_404() ) {
-		header( 'Cache-Control: public, max-age=60' );
-		return;
-	}
-	header( 'Cache-Control: public, max-age=300, s-maxage=600, stale-while-revalidate=600' );
+	// Tiempo en Cloudflare según el tipo de página (posts 30 días, listados
+	// 1 día, búsquedas 1 h, 404 1 min): ver inc/cloudflare.php.
+	header( 'Cache-Control: ' . oec_cf_cache_control() );
 }
 // En 'wp' y no en 'send_headers': send_headers corre ANTES de la consulta,
 // cuando is_404() todavía es siempre false (los 404 se cacheaban 10 min).
