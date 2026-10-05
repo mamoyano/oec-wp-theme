@@ -94,6 +94,23 @@
     document.body.appendChild(el);
   }
 
+  /* ── Teclado mobile: el chat ocupa solo lo visible ───────── */
+  // iOS no achica la ventana al abrir el teclado: sin esto, la barra con el
+  // botón de enviar queda tapada. Ajusta alto y posición al visualViewport.
+  function fitToViewport() {
+    const overlay = document.getElementById('oec-ai-overlay');
+    const vv = window.visualViewport;
+    if (!overlay || !vv) return;
+    if (!overlayOpen) {
+      overlay.style.height = '';
+      overlay.style.top = '';
+      return;
+    }
+    overlay.style.height = vv.height + 'px';
+    overlay.style.top    = vv.offsetTop + 'px';
+    scrollBody();
+  }
+
   /* ── Open: animación "header se expande" ─────────────────── */
   function openWithMorph(firstMessage) {
     if (overlayOpen) return;
@@ -114,6 +131,7 @@
     document.body.classList.add('oec-chat-open');
     overlay.offsetHeight; // force reflow → CSS transition starts
     overlay.classList.add('oec-overlay--open');
+    fitToViewport();
 
     setTimeout(() => {
       appendMsg('user', firstMessage);
@@ -134,6 +152,7 @@
 
     setTimeout(() => {
       overlay.classList.remove('oec-overlay--active');
+      fitToViewport();
       document.body.classList.remove('oec-chat-open');
       const messages = document.getElementById('oec-overlay-messages');
       if (messages) messages.innerHTML = '';
@@ -423,11 +442,15 @@
     });
 
     try {
-      const res = await fetch(streamEndpoint, {
+      const req = {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
         body:    JSON.stringify({ message, history, country, currency, mentioned_ids: mentionedFormationIds }),
-      });
+      };
+      let res = await fetch(streamEndpoint, req);
+      // Si una regla del servidor intercepta la ruta exacta y da 404, la misma
+      // ruta con "/" final la atiende WordPress directamente.
+      if (res.status === 404) res = await fetch(streamEndpoint.replace(/\/?$/, '/'), req);
 
       if (!res.ok || !res.body) throw new Error('stream_unavailable');
 
@@ -684,6 +707,10 @@
   function init() {
     buildOverlay();
     wireEvents();
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', fitToViewport);
+      window.visualViewport.addEventListener('scroll', fitToViewport);
+    }
   }
 
   if (document.readyState === 'loading') {
