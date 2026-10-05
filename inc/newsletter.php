@@ -57,6 +57,9 @@ const OEC_NL_CONFIRM_HOURS     = 48;
 const OEC_NL_OPTION  = 'oec_newsletter';
 const OEC_NL_STATE   = 'oec_newsletter_state';
 const OEC_NL_LATEST  = 'oec_newsletter_latest';
+// Nombres de TODAS las listas de la cuenta (solo para el buscador del admin;
+// en producción son cientos, por eso no van en OEC_NL_OPTION).
+const OEC_NL_REMOTE_LISTS = 'oec_newsletter_remote_lists';
 const OEC_NL_CRON    = 'oec_newsletter_cron';
 const OEC_NL_API_V4  = 'https://api.elasticemail.com/v4';
 const OEC_NL_API_V2  = 'https://api.elasticemail.com/v2';
@@ -531,32 +534,61 @@ function oec_nl_add_contact( string $email, string $first, string $last, array $
 	return true;
 }
 
-/** Trae las listas de la cuenta y las fusiona con la config local. */
+/**
+ * ¿Esta lista forma parte de la configuración? La general, las de las
+ * landings de temática, las activas y las que tienen algo cargado
+ * (categorías, subject-id o un nombre público propio). El resto de las
+ * listas de la cuenta no se guardan en la config ni se muestran.
+ */
+function oec_nl_list_is_configured( string $name, array $l ): bool {
+	return OEC_NL_GENERAL_LIST === $name
+		|| ! empty( $l['enabled'] )
+		|| ! empty( $l['especial'] )
+		|| ! empty( $l['cats'] )
+		|| ! empty( $l['subject'] )
+		|| ( isset( $l['label'] ) && '' !== $l['label'] && $l['label'] !== $name );
+}
+
+function oec_nl_prune_lists( array $lists ): array {
+	return array_filter( $lists, fn( $l, $name ) => oec_nl_list_is_configured( (string) $name, (array) $l ), ARRAY_FILTER_USE_BOTH );
+}
+
+/** Nombres de todas las listas de la cuenta (última sincronización). */
+function oec_nl_remote_list_names(): array {
+	return (array) oec_config_get_option( OEC_NL_REMOTE_LISTS, [] );
+}
+
+/**
+ * Trae los nombres de todas las listas de la cuenta (para el buscador de
+ * "Agregar temática") y deja en la config solo las configuradas que siguen
+ * existiendo en Elastic Email.
+ *
+ * @return int|WP_Error Cantidad de listas en la cuenta.
+ */
 function oec_nl_sync_lists() {
 	$remote = oec_nl_api( 'GET', '/lists' );
 	if ( is_wp_error( $remote ) ) {
 		return $remote;
 	}
-	$opts = oec_nl_opts();
-	$new  = [];
-	foreach ( $remote as $list ) {
-		$name = sanitize_text_field( $list['ListName'] ?? '' );
-		if ( '' === $name ) {
-			continue;
+	$names = array_values( array_unique( array_filter( array_map(
+		fn( $l ) => sanitize_text_field( $l['ListName'] ?? '' ),
+		(array) $remote
+	) ) ) );
+	natcasesort( $names );
+	oec_config_update_option( OEC_NL_REMOTE_LISTS, array_values( $names ), false );
+
+	$opts  = oec_nl_opts();
+	$lists = [];
+	foreach ( oec_nl_prune_lists( $opts['lists'] ) as $name => $l ) {
+		// Las de las landings se crean solas si faltan (oec_nl_ensure_especiales_lists).
+		if ( in_array( $name, $names, true ) || ! empty( $l['especial'] ) ) {
+			$lists[ $name ] = $l;
 		}
-		$old          = $opts['lists'][ $name ] ?? [];
-		$new[ $name ] = [
-			'label'    => $old['label'] ?? $name,
-			'enabled'  => ! empty( $old['enabled'] ),
-			'cats'     => array_map( 'intval', $old['cats'] ?? [] ),
-			'subject'  => $old['subject'] ?? '',
-			'especial' => $old['especial'] ?? '',
-		];
 	}
-	ksort( $new );
-	$opts['lists'] = $new;
+	ksort( $lists );
+	$opts['lists'] = $lists;
 	oec_config_update_option( OEC_NL_OPTION, $opts );
-	return count( $new );
+	return count( $names );
 }
 
 /* ============================================================
@@ -1528,6 +1560,10 @@ add_action( 'admin_post_oec_nl_save', function () {
 		if ( ! isset( $opts['lists'][ $name ] ) ) {
 			continue;
 		}
+		if ( ! empty( $row['remove'] ) && empty( $opts['lists'][ $name ]['especial'] ) ) {
+			unset( $opts['lists'][ $name ] );
+			continue;
+		}
 		$opts['lists'][ $name ] = [
 			'label'    => sanitize_text_field( $row['label'] ?? $name ) ?: $name,
 			'enabled'  => ! empty( $row['enabled'] ),
@@ -1536,6 +1572,33 @@ add_action( 'admin_post_oec_nl_save', function () {
 			'especial' => $opts['lists'][ $name ]['especial'] ?? '', // registrada por una landing
 		];
 	}
+
+	// "Agregar temática": tiene que ser una lista que exista en la cuenta.
+	$add_error = '';
+	$add_name  = trim( sanitize_text_field( $in['add_list'] ?? '' ) );
+	if ( '' !== $add_name ) {
+		$match = '';
+		foreach ( oec_nl_remote_list_names() as $remote_name ) {
+			if ( 0 === strcasecmp( $remote_name, $add_name ) ) {
+				$match = $remote_name;
+				break;
+			}
+		}
+		if ( $match ) {
+			$opts['lists'][ $match ] = ( $opts['lists'][ $match ] ?? [] ) + [
+				'label'    => $match,
+				'cats'     => [],
+				'subject'  => '',
+				'especial' => '',
+			];
+			$opts['lists'][ $match ]['enabled'] = true;
+			ksort( $opts['lists'] );
+		} else {
+			/* translators: %s: nombre de lista */
+			$add_error = sprintf( __( 'No hay ninguna lista "%s" en Elastic Email. Si la acabás de crear, tocá "Guardar y sincronizar listas".', 'oec-theme' ), $add_name );
+		}
+	}
+	$opts['lists'] = oec_nl_prune_lists( $opts['lists'] );
 
 	$opts['digest_enabled'] = ! empty( $in['digest_enabled'] );
 	$opts['weekday']        = min( 7, max( 1, (int) ( $in['weekday'] ?? 1 ) ) );
@@ -1561,7 +1624,10 @@ add_action( 'admin_post_oec_nl_save', function () {
 		oec_nl_ensure_especiales_lists();
 		oec_nl_redirect_notice( 'success', sprintf( __( 'Listas sincronizadas: %d.', 'oec-theme' ), $res ) );
 	}
-	oec_nl_redirect_notice( 'success', __( 'Configuración guardada.', 'oec-theme' ) );
+	if ( $add_error ) {
+		oec_nl_redirect_notice( 'error', $add_error );
+	}
+	oec_nl_redirect_notice( 'success', $add_name ? sprintf( __( 'Temática agregada: %s.', 'oec-theme' ), $add_name ) : __( 'Configuración guardada.', 'oec-theme' ) );
 } );
 
 add_action( 'admin_post_oec_nl_action', function () {
@@ -1628,9 +1694,24 @@ function oec_nl_render_admin(): void {
 		return;
 	}
 
-	$opts       = oec_nl_opts();
-	$state      = oec_nl_state();
-	$all        = oec_nl_all_lists();
+	$opts = oec_nl_opts();
+
+	// Configs anteriores guardaban TODAS las listas de la cuenta: pasamos
+	// los nombres al buscador y dejamos solo las configuradas.
+	$pruned = oec_nl_prune_lists( $opts['lists'] );
+	if ( count( $pruned ) !== count( $opts['lists'] ) ) {
+		if ( ! oec_nl_remote_list_names() ) {
+			$names = array_keys( $opts['lists'] );
+			natcasesort( $names );
+			oec_config_update_option( OEC_NL_REMOTE_LISTS, array_values( $names ), false );
+		}
+		$opts['lists'] = $pruned;
+		oec_config_update_option( OEC_NL_OPTION, $opts );
+	}
+
+	$remote_names = oec_nl_remote_list_names();
+	$state        = oec_nl_state();
+	$all          = oec_nl_all_lists();
 	$latest     = (array) oec_config_get_option( OEC_NL_LATEST, [] );
 	$categories = get_categories( [ 'hide_empty' => false ] );
 	$has_oas    = (bool) trim( oec_config_theme_options()['oec_api_token'] ?? '' );
@@ -1649,6 +1730,8 @@ function oec_nl_render_admin(): void {
 	.oec-nl-lists { width: 100%; border-collapse: collapse; }
 	.oec-nl-lists th, .oec-nl-lists td { text-align: left; padding: .75rem .5rem; border-bottom: 1px solid #f0f0f1; vertical-align: top; }
 	.oec-nl-lists tr.is-general td { background: #f0f6fc; }
+	.oec-nl-tag { display: inline-block; margin-top: .25rem; padding: 1px 6px; border-radius: 4px; background: #f0f6fc; color: #194872; font-size: 11px; }
+	.oec-nl-add { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 1.25rem 0 .5rem; }
 	.oec-nl-cats { max-height: 140px; overflow-y: auto; border: 1px solid #dcdcde; border-radius: 6px; padding: .5rem .75rem; background: #fff; }
 	.oec-nl-cats label { display: block; margin: .15rem 0; }
 	.oec-nl-log { font-family: Menlo, monospace; font-size: 12px; max-height: 280px; overflow-y: auto; margin: 0; }
@@ -1714,9 +1797,10 @@ function oec_nl_render_admin(): void {
 					<p><?php esc_html_e( 'Cada lista de Elastic Email activada recibe su propio newsletter: artículos de las categorías elegidas + formaciones del subject-id de OAS (ej. nutricion-deportiva, fuerza). La lista general siempre se envía, con todo el contenido.', 'oec-theme' ); ?></p>
 				</div>
 				<div class="oec-card__body">
-					<?php if ( ! $opts['lists'] ) : ?>
-						<p><?php esc_html_e( 'Sincronizá para traer las listas de la cuenta.', 'oec-theme' ); ?></p>
-					<?php else : ?>
+					<?php
+					// La general siempre arriba, aunque todavía no se haya sincronizado.
+					$rows = [ OEC_NL_GENERAL_LIST => $opts['lists'][ OEC_NL_GENERAL_LIST ] ?? [] ] + $opts['lists'];
+					?>
 					<table class="oec-nl-lists">
 						<thead><tr>
 							<th><?php esc_html_e( 'Activa', 'oec-theme' ); ?></th>
@@ -1724,22 +1808,28 @@ function oec_nl_render_admin(): void {
 							<th><?php esc_html_e( 'Nombre público', 'oec-theme' ); ?></th>
 							<th><?php esc_html_e( 'Subject-id OAS', 'oec-theme' ); ?></th>
 							<th><?php esc_html_e( 'Categorías', 'oec-theme' ); ?></th>
+							<th><?php esc_html_e( 'Quitar', 'oec-theme' ); ?></th>
 						</tr></thead>
 						<tbody>
 						<?php
 						$i = 0;
-						foreach ( $opts['lists'] as $name => $list ) :
+						foreach ( $rows as $name => $list ) :
 							$field      = 'lists[' . $i++ . ']';
 							$is_general = OEC_NL_GENERAL_LIST === $name;
 							?>
 							<tr class="<?php echo $is_general ? 'is-general' : ''; ?>">
 								<?php if ( $is_general ) : ?>
 								<td>✔</td>
-								<td colspan="4"><strong><?php echo esc_html( $name ); ?></strong> — <?php esc_html_e( 'lista general (fija en el tema)', 'oec-theme' ); ?></td>
+								<td colspan="5"><strong><?php echo esc_html( $name ); ?></strong> — <?php esc_html_e( 'lista general (fija en el tema)', 'oec-theme' ); ?></td>
 								<?php else : ?>
 								<td><input type="hidden" name="<?php echo esc_attr( $field ); ?>[name]" value="<?php echo esc_attr( $name ); ?>"><input type="checkbox" name="<?php echo esc_attr( $field ); ?>[enabled]" value="1" <?php checked( ! empty( $list['enabled'] ) ); ?>></td>
-								<td><strong><?php echo esc_html( $name ); ?></strong></td>
-								<td><input type="text" name="<?php echo esc_attr( $field ); ?>[label]" value="<?php echo esc_attr( $list['label'] ); ?>"></td>
+								<td>
+									<strong><?php echo esc_html( $name ); ?></strong>
+									<?php if ( ! empty( $list['especial'] ) ) : ?>
+									<br><span class="oec-nl-tag"><?php printf( esc_html__( 'Landing: %s', 'oec-theme' ), esc_html( $list['especial'] ) ); ?></span>
+									<?php endif; ?>
+								</td>
+								<td><input type="text" name="<?php echo esc_attr( $field ); ?>[label]" value="<?php echo esc_attr( $list['label'] ?? $name ); ?>"></td>
 								<td><input type="text" name="<?php echo esc_attr( $field ); ?>[subject]" value="<?php echo esc_attr( $list['subject'] ?? '' ); ?>" placeholder="fuerza" style="width:160px;"></td>
 								<td>
 									<div class="oec-nl-cats">
@@ -1748,16 +1838,40 @@ function oec_nl_render_admin(): void {
 									<?php endforeach; ?>
 									</div>
 								</td>
+								<td>
+									<?php if ( empty( $list['especial'] ) ) : ?>
+									<input type="checkbox" name="<?php echo esc_attr( $field ); ?>[remove]" value="1" aria-label="<?php echo esc_attr( sprintf( __( 'Quitar %s', 'oec-theme' ), $name ) ); ?>">
+									<?php else : ?>
+									<span title="<?php esc_attr_e( 'La administra la landing de temática', 'oec-theme' ); ?>">—</span>
+									<?php endif; ?>
+								</td>
 								<?php endif; ?>
 							</tr>
 						<?php endforeach; ?>
 						</tbody>
 					</table>
-					<?php if ( ! isset( $opts['lists'][ OEC_NL_GENERAL_LIST ] ) ) : ?>
+					<?php if ( $remote_names && ! in_array( OEC_NL_GENERAL_LIST, $remote_names, true ) ) : ?>
 					<p style="color:#b32d2e"><?php printf( esc_html__( 'Atención: la lista general "%s" no existe en la cuenta de Elastic Email.', 'oec-theme' ), esc_html( OEC_NL_GENERAL_LIST ) ); ?></p>
 					<?php endif; ?>
-					<?php endif; ?>
-					<p><button type="submit" name="oec_nl_do" value="sync" class="button"><?php esc_html_e( 'Guardar y sincronizar listas', 'oec-theme' ); ?></button></p>
+
+					<div class="oec-nl-add">
+						<label for="oec-nl-add"><strong><?php esc_html_e( 'Agregar temática', 'oec-theme' ); ?></strong></label>
+						<?php if ( $remote_names ) : ?>
+						<input id="oec-nl-add" type="text" name="add_list" list="oec-nl-remote-lists" class="regular-text" autocomplete="off"
+							placeholder="<?php echo esc_attr( sprintf( __( 'Buscar entre las %d listas de Elastic Email…', 'oec-theme' ), count( $remote_names ) ) ); ?>">
+						<datalist id="oec-nl-remote-lists">
+							<?php foreach ( $remote_names as $remote_name ) : ?>
+								<?php if ( ! isset( $rows[ $remote_name ] ) ) : ?>
+								<option value="<?php echo esc_attr( $remote_name ); ?>"></option>
+								<?php endif; ?>
+							<?php endforeach; ?>
+						</datalist>
+						<button type="submit" name="oec_nl_do" value="add" class="button"><?php esc_html_e( 'Agregar', 'oec-theme' ); ?></button>
+						<?php else : ?>
+						<span class="description"><?php esc_html_e( 'Sincronizá para poder buscar entre las listas de la cuenta.', 'oec-theme' ); ?></span>
+						<?php endif; ?>
+					</div>
+					<p><button type="submit" name="oec_nl_do" value="sync" class="button"><?php esc_html_e( 'Guardar y sincronizar listas', 'oec-theme' ); ?></button> <span class="description"><?php esc_html_e( 'Actualiza el buscador con las listas de la cuenta; la tabla no cambia.', 'oec-theme' ); ?></span></p>
 					<p class="description"><?php esc_html_e( 'Formulario independiente:', 'oec-theme' ); ?> <code>[oec_newsletter]</code> · <code>[oec_newsletter topics="no"]</code> · <?php esc_html_e( 'widget “OEC · Newsletter”. La invitación del hero sale sola dentro de [oec-credits-widget].', 'oec-theme' ); ?></p>
 				</div>
 			</div>
