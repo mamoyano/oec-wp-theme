@@ -324,7 +324,8 @@ function oec_render_novedades_shortcode( $atts ): string {
 /**
  * [oec-trust-logos title="Trabajamos con"]
  *
- * Cinta infinita de logos institucionales (avales). Lista curada a mano:
+ * Cinta infinita de logos institucionales (avales). Lista curada a mano
+ * (archivos en assets/img/trust/, 120×80 WebP; para sumar uno, agregarlo ahí):
  * solo logos que se leen a 40px de alto — los que son mayormente texto
  * chico (AAHC, CSV, Europe Active, ABAMD, IDV, ISSN, AAOT) quedaron
  * afuera. Distinta de [oec-organizations], que es dinámica y lista a
@@ -360,6 +361,9 @@ add_shortcode( 'oec-trust-logos', 'oec_render_trust_logos_shortcode' );
 function oec_render_trust_logos_shortcode( $atts ): string {
 	$atts  = shortcode_atts( [ 'title' => __( 'Trabajamos con', 'oec-theme' ) ], $atts, 'oec-trust-logos' );
 	$logos = oec_get_trust_logos();
+	// En el tema (assets/img/trust, 120×80 WebP): antes salían de
+	// onlineeducation.center a 300×200 JPG y sin caché del navegador.
+	$base  = oec_unprefix_asset_src( OEC_THEME_URI . '/assets/img/trust/' );
 
 	ob_start();
 	?>
@@ -372,9 +376,9 @@ function oec_render_trust_logos_shortcode( $atts ): string {
 				<?php // Dos vueltas: main.js corre la cinta el largo de una y empalma sin salto. Sin lazy: si un logo carga tarde cambia el largo. ?>
 				<?php for ( $i = 0; $i < 2; $i++ ) : ?>
 					<?php foreach ( $logos as $file => $name ) : ?>
-					<img src="<?php echo esc_url( 'https://onlineeducation.center/wp-content/uploads/2024/12/' . $file . '.jpg' ); ?>"
+					<img src="<?php echo esc_url( $base . $file . '.webp' ); ?>"
 					     alt="<?php echo $i ? '' : esc_attr( $name ); ?>"<?php echo $i ? ' aria-hidden="true"' : ''; ?>
-					     decoding="async" height="40">
+					     decoding="async" width="60" height="40">
 					<?php endforeach; ?>
 				<?php endfor; ?>
 			</div>
@@ -685,7 +689,14 @@ add_action( 'wp_enqueue_scripts', function (): void {
 } );
 
 add_filter( 'the_content', function ( $content ) {
-	if ( is_page( 'formacion' ) || false === strpos( (string) $content, 'go.botmaker.com/rest/webchat' ) ) {
+	if ( is_page( 'formacion' ) ) {
+		return $content;
+	}
+	// Los botones de chat eran <a href="javascript:void(0)">: Google no los
+	// considera enlaces rastreables. Con "#chat" + role="button" son válidos y
+	// botmaker.js igual cancela la navegación al hacer clic.
+	$content = preg_replace( '/<a href="javascript:void\(0\)"(?=[^>]*\boec-botmaker-trigger\b)/', '<a href="#chat" role="button"', (string) $content );
+	if ( false === strpos( $content, 'go.botmaker.com/rest/webchat' ) ) {
 		return $content;
 	}
 	// El <script> que inyectaba el widget (y su comentario "Botmaker — mismo widget…").

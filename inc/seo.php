@@ -194,9 +194,12 @@ function oec_seo_context(): ?array {
 		$desc  = $front instanceof WP_Post && has_excerpt( $front )
 			? oec_seo_trim( $front->post_excerpt, 300 )
 			: oec_seo_trim( get_bloginfo( 'description' ), 300 );
+		// Meta description: Google muestra ~155 caracteres. El texto largo
+		// queda para el JSON-LD de la organización y del sitio.
+		$meta_desc = oec_seo_trim( $desc, 158 );
 		$c    = array_merge( $c, [
 			'title'       => get_bloginfo( 'name' ),
-			'description' => $desc,
+			'description' => $meta_desc,
 			'url'         => home_url( '/' ),
 		] );
 		$c['schema'][] = array_merge( oec_seo_organization_node(), array_filter( [ 'description' => $desc ] ) );

@@ -238,7 +238,13 @@ function oec_seo_purge( string $group = 'all' ): void {
 		foreach ( glob( "{$dir}/{$name}-*.xml" ) ?: [] as $file ) {
 			wp_delete_file( $file );
 		}
-		unset( $state[ $name ] );
+		// Se marca en vez de borrarse: el índice de la raíz (que no regenera
+		// secciones de otro sitio) la sigue listando mientras tanto. Antes,
+		// entre la purga y la regeneración, /sitemap.xml salía sin artículos
+		// ni páginas, y Cloudflare cacheaba esa versión una hora.
+		if ( isset( $state[ $name ] ) ) {
+			$state[ $name ]['stale'] = true;
+		}
 	}
 	oec_sitemap_state( $state );
 	wp_delete_file( $dir . '/llms.txt' );
@@ -256,7 +262,7 @@ add_action( 'oec_seo_warm', function () {
 	@set_time_limit( 300 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 	$state = oec_sitemap_state();
 	foreach ( array_keys( oec_sitemap_sections() ) as $name ) {
-		if ( ! isset( $state[ $name ] ) ) {
+		if ( ! isset( $state[ $name ] ) || ! empty( $state[ $name ]['stale'] ) ) {
 			$state = oec_sitemap_build( $name );
 		}
 	}
@@ -326,7 +332,7 @@ function oec_sitemap_section_xml( string $name, int $page ): ?string {
 	$file = oec_seo_cache_dir() . "/{$name}-{$page}.xml";
 	if ( ! file_exists( $file ) ) {
 		$state = oec_sitemap_state();
-		if ( isset( $state[ $name ] ) && $page > $state[ $name ]['pages'] ) {
+		if ( isset( $state[ $name ] ) && empty( $state[ $name ]['stale'] ) && $page > $state[ $name ]['pages'] ) {
 			return null;
 		}
 		oec_sitemap_build( $name );
@@ -344,7 +350,7 @@ function oec_sitemap_parts(): array {
 	$state = oec_sitemap_state();
 	$parts = [];
 	foreach ( array_keys( oec_sitemap_sections() ) as $name ) {
-		if ( ! isset( $state[ $name ] ) ) {
+		if ( ! isset( $state[ $name ] ) || ! empty( $state[ $name ]['stale'] ) ) {
 			$state = oec_sitemap_build( $name );
 		}
 		for ( $p = 1; $p <= (int) ( $state[ $name ]['pages'] ?? 0 ); $p++ ) {

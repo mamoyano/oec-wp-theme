@@ -162,11 +162,23 @@ add_filter( 'oec_seo', function ( $c ) {
 			__( 'Formaciones abiertas de %s: cursos, diplomados y posgrados online.', 'oec-theme' ),
 			$org['name']
 		);
-		return array_merge( $c, array_filter( [
+		$c = array_merge( $c, array_filter( [
 			'title'       => $org['name'],
 			'description' => oec_seo_trim( $desc ),
 			'image'       => ! empty( $org['logo'] ) ? oec_cdn_resize( $org['logo'], 1200, 90 ) : '',
 		] ) );
+		// La organización como entidad (los docentes ya tienen su Person).
+		$url             = function_exists( 'oec_organizacion_url' ) ? oec_organizacion_url( $org['slug'] ) : '';
+		$c['schema'][]   = array_filter( [
+			'@type'       => 'EducationalOrganization',
+			'@id'         => $url ? $url . '#organization' : null,
+			'name'        => $org['name'],
+			'alternateName' => ( $org['short_name'] ?? '' ) && $org['short_name'] !== $org['name'] ? $org['short_name'] : null,
+			'url'         => $url ?: null,
+			'logo'        => ! empty( $org['logo'] ) ? oec_cdn_resize( $org['logo'], 400, 90 ) : null,
+			'description' => oec_seo_trim( (string) ( $org['short_description'] ?? '' ), 500 ) ?: null,
+		] );
+		return $c;
 	}
 	if ( is_page( 'organizaciones' ) && class_exists( 'OEC_AI_Catalog' ) ) {
 		$c['description'] = sprintf(

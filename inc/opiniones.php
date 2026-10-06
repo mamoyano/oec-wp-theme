@@ -179,7 +179,7 @@ function oec_render_opiniones_shortcode( $atts ): string {
 				<?php foreach ( $col as $i => $r ) : ?>
 					<figure class="oec-opinion<?php echo $i >= 4 ? ' is-extra' : ''; ?>">
 						<div class="oec-opinion__top">
-							<span class="oec-opinion__stars" aria-label="<?php echo esc_attr( sprintf( __( '%d de 5 estrellas', 'oec-theme' ), $r['rating'] ) ); ?>">
+							<span class="oec-opinion__stars" role="img" aria-label="<?php echo esc_attr( sprintf( __( '%d de 5 estrellas', 'oec-theme' ), $r['rating'] ) ); ?>">
 								<?php echo str_repeat( '<i class="bi bi-star-fill" aria-hidden="true"></i>', $r['rating'] ); // phpcs:ignore ?>
 							</span>
 							<?php if ( $r['date'] ) : ?>
