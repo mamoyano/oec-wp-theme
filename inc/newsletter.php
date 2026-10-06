@@ -1704,6 +1704,17 @@ function oec_nl_send_test( string $list_name, string $to ) {
 	if ( is_wp_error( $html ) ) {
 		return $html;
 	}
+	// Es un envío transaccional: Elastic Email solo completa {email}, no los
+	// datos del contacto ({firstname} quedaría escrito). Se completan acá con
+	// los del contacto, para que la prueba se vea como la campaña real.
+	$contact = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $to ) );
+	$html    = oec_nl_personalize_html(
+		$html,
+		$to,
+		is_wp_error( $contact ) ? '' : (string) ( $contact['FirstName'] ?? '' ),
+		is_wp_error( $contact ) ? '' : (string) ( $contact['LastName'] ?? '' ),
+		$list_name
+	);
 	return oec_nl_api( 'POST', '/emails/transactional', [
 		'Recipients' => [ 'To' => [ $to ] ],
 		'Content'    => [
@@ -2232,6 +2243,7 @@ function oec_nl_render_admin(): void {
 					<input type="email" name="test_email" value="<?php echo esc_attr( wp_get_current_user()->user_email ); ?>" aria-label="<?php esc_attr_e( 'Email de prueba', 'oec-theme' ); ?>">
 					<button type="submit" name="oec_nl_do" value="test" class="button"><?php esc_html_e( 'Enviar prueba', 'oec-theme' ); ?></button>
 				</form>
+				<p class="description"><?php esc_html_e( 'Manda el newsletter elegido a un solo email (envío transaccional), con el nombre de ese contacto ya completado.', 'oec-theme' ); ?></p>
 
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="oec-nl-actions"
 					onsubmit="return this.only_test.checked || confirm('<?php echo esc_js( __( '¿Enviar ahora el newsletter elegido a TODOS sus suscriptores reales?', 'oec-theme' ) ); ?>');">
