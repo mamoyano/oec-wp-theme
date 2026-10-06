@@ -262,9 +262,18 @@ class OEC_AI_Chat {
 
 	/* ── Real-time price fetch ──────────────────────────────── */
 
+	/** Precio de una formación por país/moneda: se guarda 1 hora (PRICE_TTL). */
+	const PRICE_TTL = HOUR_IN_SECONDS;
+
 	private static function fetch_prices( array $ids, string $country, string $currency ): array {
+		$prices   = [];
 		$requests = [];
 		foreach ( $ids as $id ) {
+			$cached = get_transient( self::price_key( $id, $country, $currency ) );
+			if ( is_array( $cached ) ) {
+				$prices[ $id ] = $cached;
+				continue;
+			}
 			$requests[ $id ] = [
 				'url'  => sprintf(
 					'https://api.g-se.com/v2/content/trainings/%s/price/%s/%s',
@@ -275,7 +284,9 @@ class OEC_AI_Chat {
 			];
 		}
 
-		$prices = [];
+		if ( ! $requests ) {
+			return $prices;
+		}
 		try {
 			$class     = class_exists( '\WpOrg\Requests\Requests' ) ? '\WpOrg\Requests\Requests' : 'Requests';
 			$exc_class = class_exists( '\WpOrg\Requests\Exception' ) ? '\WpOrg\Requests\Exception' : 'Requests_Exception';
@@ -287,6 +298,7 @@ class OEC_AI_Chat {
 				$data = json_decode( $resp->body, true );
 				if ( ! empty( $data['price'] ) ) {
 					$prices[ $id ] = $data;
+					set_transient( self::price_key( $id, $country, $currency ), $data, self::PRICE_TTL );
 				}
 			}
 		} catch ( \Throwable $e ) {
@@ -294,6 +306,10 @@ class OEC_AI_Chat {
 		}
 
 		return $prices;
+	}
+
+	private static function price_key( string $id, string $country, string $currency ): string {
+		return 'oec_chat_price_' . md5( $id . '|' . $country . '|' . $currency );
 	}
 
 	/* ── Context builder ────────────────────────────────────── */
@@ -591,11 +607,40 @@ class OEC_AI_Chat {
 		self::sse_data( [ 'status' => $msg ] );
 	}
 
+	/** ¿Hay alguna formación abierta con 2+ palabras de la consulta en su título? */
+	private static function matches_titles( string $query ): bool {
+		static $generic = [ 'curso', 'cursos', 'formacion', 'formaciones', 'quiero', 'busco', 'buscando',
+			'aprender', 'sobre', 'algo', 'interesa', 'tienen', 'tenes', 'alguna', 'algun', 'para', 'como', 'online' ];
+		$words = array_diff(
+			array_unique( array_filter( explode( ' ', self::title_norm( $query ) ), static fn( $w ) => strlen( $w ) >= 4 ) ),
+			$generic
+		);
+		if ( count( $words ) < 2 ) {
+			return false;
+		}
+		foreach ( OEC_AI_Catalog::get_index() as $entry ) {
+			$title = ' ' . self::title_norm( $entry['title'] ?? '' ) . ' ';
+			$hits  = 0;
+			foreach ( $words as $w ) {
+				if ( str_contains( $title, ' ' . $w . ' ' ) && ++$hits >= 2 ) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private static function expand_query( string $key, string $query ): string {
 		// Saludos y mensajes sin palabras de búsqueda: no hay nada que expandir
 		$norm = trim( preg_replace( '/\s+/u', ' ', mb_strtolower( $query ) ) );
 		if ( preg_match( '/^(hola|buen[oa]s?( d[ií]as| tardes| noches)?|hey|gracias|muchas gracias|ok|dale|genial|perfecto|chau|adi[oó]s)[\s!.,¡¿?]*$/u', $norm )
 			|| ! preg_match( '/\p{L}{4,}/u', $norm ) ) {
+			return $query;
+		}
+
+		// Si la consulta ya nombra el tema de alguna formación (2+ palabras en
+		// su título), la búsqueda directa alcanza: se ahorra la llamada (~1,2 s).
+		if ( self::matches_titles( $norm ) ) {
 			return $query;
 		}
 
@@ -766,29 +811,44 @@ class OEC_AI_Chat {
 		return false;
 	}
 
-	/* Match a formation title against the AI reply (robust to minor formatting) */
+	/* Texto para comparar títulos: minúsculas, sin tildes, sin comillas ni signos. */
+	private static function title_norm( string $text ): string {
+		$text = remove_accents( mb_strtolower( $text ) );
+		return trim( preg_replace( '/[^a-z0-9]+/', ' ', $text ) );
+	}
+
+	/*
+	 * ¿La respuesta de la IA nombra esta formación? Tolera comillas rectas vs.
+	 * tipográficas, tildes y mayúsculas, y que omita el subtítulo después de
+	 * ":" (ej. 'Fisiología … "De la Teoría a la Práctica"' sin ": Del resultado
+	 * de un test…"). El título principal solo vale si tiene 4+ palabras, para
+	 * que un genérico como "Nutrición Deportiva: …" no dispare la tarjeta.
+	 */
 	private static function title_in_text( string $title, string $text ): bool {
-		// Exact match first (most common case)
-		if ( mb_stripos( $text, $title ) !== false ) {
+		$t = self::title_norm( $title );
+		$x = ' ' . self::title_norm( $text ) . ' ';
+		if ( '' === $t ) {
+			return false;
+		}
+		if ( str_contains( $x, ' ' . $t . ' ' ) ) {
 			return true;
 		}
-		// Partial match: significant words must mostly appear in the reply
-		$words       = preg_split( '/\s+/u', $title, -1, PREG_SPLIT_NO_EMPTY );
-		$significant = array_values( array_filter( $words, static fn( $w ) => mb_strlen( $w ) > 4 ) );
+		$main = self::title_norm( preg_split( '/\s*[:|]\s*|\s+[—–-]\s+/u', $title )[0] ?? '' );
+		if ( $main !== $t && substr_count( $main, ' ' ) >= 3 && str_contains( $x, ' ' . $main . ' ' ) ) {
+			return true;
+		}
+		// Coincidencia parcial: la mayoría de las palabras largas del título completo
+		$significant = array_values( array_filter( explode( ' ', $t ), static fn( $w ) => strlen( $w ) > 4 ) );
 		if ( count( $significant ) < 2 ) {
 			return false;
 		}
-		// The last significant word is usually the differentiating topic (e.g. "Voley", "Natación")
-		// Require it explicitly so "Curso de Preparación Física en Voley" doesn't match "en Natación"
-		$last = end( $significant );
-		if ( mb_stripos( $text, $last ) === false ) {
+		// La última palabra larga suele ser el tema que diferencia ("voley", "natacion"):
+		// se exige para que "Preparación Física en Voley" no coincida con "en Natación".
+		if ( ! str_contains( $x, ' ' . end( $significant ) . ' ' ) ) {
 			return false;
 		}
-		$matches = array_filter(
-			$significant,
-			static fn( $w ) => mb_stripos( $text, $w ) !== false
-		);
-		return ( count( $matches ) / count( $significant ) ) >= 0.80;
+		$found = array_filter( $significant, static fn( $w ) => str_contains( $x, ' ' . $w . ' ' ) );
+		return count( $found ) / count( $significant ) >= 0.80;
 	}
 
 	/* ── Anthropic call ─────────────────────────────────────── */
