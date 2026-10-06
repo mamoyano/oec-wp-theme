@@ -15,7 +15,7 @@ defined( 'ABSPATH' ) || exit;
      los soportan de forma pareja.
    - Botones "bulletproof" (td con bgcolor + a con padding).
    - Imágenes con width/height/alt y en PNG/JPG (el logo del sitio es WebP,
-     que Outlook no muestra: se usa OEC_NL_LOGO).
+     que Outlook no muestra: se usa OEC_NL_LOGO, un PNG del tema).
    - HTML compacto: Gmail recorta los mensajes de más de ~102 KB.
    ============================================================ */
 

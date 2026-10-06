@@ -36,7 +36,10 @@ defined( 'ABSPATH' ) || exit;
 const OEC_NL_GENERAL_LIST = 'Prueba';
 const OEC_NL_FROM         = 'Grupo Sobre Entrenamiento <newsletter@g-se.com>';
 const OEC_NL_BRAND        = 'Grupo Sobre Entrenamiento';
-const OEC_NL_LOGO         = 'https://g-se.com/wp-content/uploads/2025/01/g-se-2.png';
+// PNG dentro del tema: el logo del sitio es WebP (Outlook no lo muestra) y el
+// PNG viejo de uploads/2025 desapareció con la migración del sitio.
+const OEC_NL_LOGO         = OEC_THEME_URI . '/assets/img/email-logo.png';
+const OEC_NL_LOGO_LEGACY  = 'https://g-se.com/wp-content/uploads/2025/01/g-se-2.png';
 const OEC_NL_FACEBOOK     = 'https://www.facebook.com/gsesocial';
 const OEC_NL_INSTAGRAM    = 'https://www.instagram.com/gsesocial/';
 const OEC_NL_WHATSAPP     = 'https://api.whatsapp.com/send?phone=5493512584960&text=Hola%2C+quiero+informaci%C3%B3n+%28o+tengo+consultas%29+%2Asobre+formaciones%2A+que+aqu%C3%AD+se+ofrecen.%0D%0A_%28Entiendo+que+no+pueden+responderme+otro+tipo+de+consultas%29_';
@@ -700,7 +703,9 @@ function oec_nl_weekly_status( string $email, string $list = OEC_NL_GENERAL_LIST
  * transaccionales.
  */
 function oec_nl_personalize_html( string $html, string $email, string $first, string $last, string $list = OEC_NL_GENERAL_LIST ): string {
-	return strtr( $html, [
+	// Sin nombre en el contacto, que no quede "Hola , estos son…".
+	$greetings = '' === $first ? [ 'Hola {firstname}, estos' => '¡Hola! Estos', '{firstname}, nuestros' => 'Hola, nuestros', 'para {firstname}.' => 'para vos.' ] : [];
+	return strtr( oec_nl_fix_saved_html( $html ), $greetings + [
 		'{{ encodeURIComponent(email) }}'     => rawurlencode( $email ),
 		'{{ encodeURIComponent(firstname) }}' => rawurlencode( $first ),
 		'{{ encodeURIComponent(lastname) }}'  => rawurlencode( $last ),
@@ -1236,10 +1241,22 @@ add_action( 'template_redirect', function () {
 	exit;
 } );
 
+/**
+ * Arreglos para newsletters ya guardados (último enviado / reenvíos): el
+ * HTML se guarda tal como salió, así que puede apuntar al logo viejo.
+ */
+function oec_nl_fix_saved_html( string $html ): string {
+	return str_replace( OEC_NL_LOGO_LEGACY, OEC_NL_LOGO, $html );
+}
+
 /** Neutraliza los merge tags de Elastic Email para mostrar el HTML en la web. */
 function oec_nl_public_html( string $html ): string {
-	return strtr( $html, [
-		'{firstname}'                              => 'Hola',
+	// strtr prueba primero las claves más largas: los saludos van antes que {firstname}.
+	return strtr( oec_nl_fix_saved_html( $html ), [
+		'Hola {firstname}, estos'                  => '¡Hola! Estos',
+		'{firstname}, nuestros'                    => 'Hola, nuestros', // plantilla anterior a la v1.0.50
+		'para {firstname}.'                        => 'para vos.',
+		'{firstname}'                              => '',
 		'{lastname}'                               => '',
 		'{email}'                                  => '',
 		'{country}'                                => '',
