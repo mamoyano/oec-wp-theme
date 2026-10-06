@@ -559,11 +559,13 @@ function oec_nl_render_email( array $d ): string {
 
 	return oec_nl_email_shell( [
 		'title'      => OEC_NL_BRAND . ' · Newsletter',
-		'preheader'  => 'Artículos, blogs y formaciones seleccionadas para {firstname}.',
+		// {campo:valor} = valor por defecto de Elastic Email si el contacto no tiene ese dato
+		// (un {firstname} solo queda escrito tal cual).
+		'preheader'  => 'Artículos, blogs y formaciones seleccionadas para {firstname:vos}.',
 		'label'      => 'Newsletter semanal',
 		'sublabel'   => $d['date'],
 		'heading'    => $d['topic'] ? 'Lo nuevo en ' . esc_html( $d['topic'] ) : 'Lo nuevo de esta semana',
-		'intro'      => 'Hola {firstname}, estos son los artículos y formaciones que seleccionamos para vos.',
+		'intro'      => 'Hola {firstname:colega}, estos son los artículos y formaciones que seleccionamos para vos.',
 		'body'       => oec_nl_claim_html( $d['claim'] ) . $d['content'] . $cta,
 		'subscribed' => true,
 	] );

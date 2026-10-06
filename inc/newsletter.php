@@ -712,7 +712,9 @@ function oec_nl_weekly_status( string $email, string $list = OEC_NL_GENERAL_LIST
  * transaccionales.
  */
 function oec_nl_personalize_html( string $html, string $email, string $first, string $last, string $list = OEC_NL_GENERAL_LIST ): string {
-	// Sin nombre en el contacto, que no quede "Hola , estos son…".
+	// {campo:valor por defecto}: el dato del contacto o, si falta, el valor.
+	$html = oec_nl_fill_fallbacks( $html, [ 'firstname' => $first, 'lastname' => $last, 'email' => $email ] );
+	// Sin nombre en el contacto, que no quede "Hola , estos son…" (plantillas viejas).
 	$greetings = '' === $first ? [ 'Hola {firstname}, estos' => '¡Hola! Estos', '{firstname}, nuestros' => 'Hola, nuestros', 'para {firstname}.' => 'para vos.' ] : [];
 	return strtr( oec_nl_fix_saved_html( $html ), $greetings + [
 		// Forma de script: la tienen los newsletters guardados antes de la v1.0.90.
@@ -1434,10 +1436,26 @@ function oec_nl_fix_saved_html( string $html ): string {
 	return str_replace( OEC_NL_LOGO_LEGACY, OEC_NL_LOGO, $html );
 }
 
+/**
+ * Resuelve los merge tags con valor por defecto ({firstname:colega}) como lo
+ * haría Elastic Email: el dato si existe, si no el valor por defecto.
+ */
+function oec_nl_fill_fallbacks( string $html, array $values ): string {
+	return (string) preg_replace_callback(
+		'/\{(firstname|lastname|email|country):([^{}]*)\}/i', // solo campos: el <style> también usa {propiedad:valor}
+		function ( $m ) use ( $values ) {
+			$v = (string) ( $values[ strtolower( $m[1] ) ] ?? '' );
+			return '' !== $v ? esc_html( $v ) : $m[2];
+		},
+		$html
+	);
+}
+
 /** Neutraliza los merge tags de Elastic Email para mostrar el HTML en la web. */
 function oec_nl_public_html( string $html ): string {
+	$html = oec_nl_fill_fallbacks( oec_nl_fix_saved_html( $html ), [] );
 	// strtr prueba primero las claves más largas: los saludos van antes que {firstname}.
-	return strtr( oec_nl_fix_saved_html( $html ), [
+	return strtr( $html, [
 		'Hola {firstname}, estos'                  => '¡Hola! Estos',
 		'{firstname}, nuestros'                    => 'Hola, nuestros', // plantilla anterior a la v1.0.50
 		'para {firstname}.'                        => 'para vos.',
@@ -1509,11 +1527,13 @@ function oec_nl_subject( array $list ): string {
 function oec_nl_training_link( array $training ): string {
 	$target = oec_config_url( '/formacion/' . ( $training['slug'] ?? '' ) )
 		. '?utm_source=mailing&utm_medium=elastic&utm_campaign=newsletter+semanal&utm_content=' . wp_date( 'Y-m-d' );
-	// Merge tags simples, NO la forma de script {{ encodeURIComponent(firstname) }}:
-	// si el contacto no tiene ese campo, el script falla ("firstname is not
-	// defined") y Elastic Email descarta el email entero. Los simples quedan vacíos.
+	// Solo {email}, que todos los contactos tienen. Nombre, apellido y país no:
+	// - la forma de script {{ encodeURIComponent(firstname) }} falla si el
+	//   contacto no tiene el campo ("firstname is not defined") y Elastic
+	//   Email descarta el email entero;
+	// - un {firstname} simple queda escrito tal cual en el link.
 	return OEC_NL_REDIRECTOR
-		. '?c_mail={email}&c_fn={firstname}&c_ln={lastname}&c_country={country}&l='
+		. '?c_mail={email}&l='
 		. rawurlencode( $target );
 }
 
