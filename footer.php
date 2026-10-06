@@ -55,10 +55,13 @@ $_socials = [
 						$_logo_url = $_fopts['logo_url'] ?? '';
 						$_logo_h   = (int) ( $_fopts['logo_height'] ?? 40 );
 						if ( $_logo_url ) : ?>
+							<?php $_logo_box = oec_logo_box( $_logo_url, $_logo_h ); ?>
 							<img src="<?php echo esc_url( $_logo_url ); ?>"
 							     alt="<?php bloginfo( 'name' ); ?>"
-							     style="max-height:<?php echo esc_attr( $_logo_h ); ?>px;height:auto;width:auto;"
-							     loading="lazy">
+							     <?php if ( $_logo_box ) : ?>width="<?php echo (int) $_logo_box[0]; ?>" height="<?php echo (int) $_logo_box[1]; ?>"
+							     style="width:<?php echo (int) $_logo_box[0]; ?>px;height:<?php echo (int) $_logo_box[1]; ?>px;"
+							     <?php else : ?>style="max-height:<?php echo esc_attr( $_logo_h ); ?>px;height:auto;width:auto;"
+							     <?php endif; ?>loading="lazy">
 						<?php elseif ( has_custom_logo() ) :
 							the_custom_logo();
 						else : ?>

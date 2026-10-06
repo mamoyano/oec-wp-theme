@@ -363,3 +363,28 @@ function oec_create_quienes_somos_page(): void {
 }
 add_action( 'after_switch_theme', 'oec_create_quienes_somos_page' );
 add_action( 'admin_init', 'oec_create_quienes_somos_page' );
+
+/**
+ * [ancho, alto] de un logo de la biblioteca de medios mostrado a $max_h px
+ * de alto como máximo, para reservarle el lugar antes de que cargue (si no,
+ * al llegar empuja lo que tiene abajo: Lighthouse lo marcaba como CLS en la
+ * ficha de formación). null si no es un adjunto con medidas.
+ */
+function oec_logo_box( string $url, int $max_h ): ?array {
+	$key  = 'oec_logo_dims_' . md5( $url );
+	$dims = get_transient( $key );
+	if ( false === $dims ) {
+		$dims = [];
+		$id   = $url ? attachment_url_to_postid( $url ) : 0;
+		$meta = $id ? wp_get_attachment_metadata( $id ) : [];
+		if ( ! empty( $meta['width'] ) && ! empty( $meta['height'] ) ) {
+			$dims = [ (int) $meta['width'], (int) $meta['height'] ];
+		}
+		set_transient( $key, $dims, WEEK_IN_SECONDS );
+	}
+	if ( ! $dims || $max_h < 1 ) {
+		return null;
+	}
+	$h = min( $max_h, $dims[1] );
+	return [ max( 1, (int) round( $dims[0] * $h / $dims[1] ) ), $h ];
+}

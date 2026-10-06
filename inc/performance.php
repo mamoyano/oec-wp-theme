@@ -228,7 +228,9 @@ add_filter( 'wp_robots', function ( array $robots ): array {
        tampoco hace falta conectarse a ese CDN.
    ============================================================ */
 add_filter( 'wp_resource_hints', function ( array $hints, string $relation_type ): array {
-	if ( 'preconnect' === $relation_type ) {
+	// En la ficha de formación lo pone la plantilla del plugin (sin esto quedaba
+	// dos veces y PageSpeed avisaba "más de 4 preconnect").
+	if ( 'preconnect' === $relation_type && ! is_page( 'formacion' ) ) {
 		$hints[] = 'https://imgrsize.oe-img.center';
 	}
 	return $hints;
