@@ -829,17 +829,38 @@ function oec_nl_abuse_consent_label(): string {
 	return sprintf( __( 'Quiero volver a recibir los correos de %s.', 'oec-theme' ), OEC_NL_BRAND );
 }
 
-/** Public Account ID de la cuenta (para contact/add), cacheado 30 días. */
-function oec_nl_public_account_id(): string {
-	$id = get_transient( 'oec_nl_public_account_id' );
-	if ( false === $id ) {
-		$acc = oec_nl_api_v2( '/account/load', [] );
-		$id  = is_wp_error( $acc ) ? '' : (string) ( $acc['publicaccountid'] ?? '' );
-		if ( $id ) {
-			set_transient( 'oec_nl_public_account_id', $id, 30 * DAY_IN_SECONDS );
-		}
+/**
+ * Datos de la cuenta de Elastic Email de la API key cargada (v2
+ * account/load): email, si es subcuenta y el Public Account ID. Cacheado por
+ * key: si se cambia la key, se vuelve a consultar.
+ *
+ * @return array{email: string, issub: bool, publicaccountid: string}|null
+ */
+function oec_nl_account_info(): ?array {
+	$key = oec_nl_api_key();
+	if ( ! $key ) {
+		return null;
 	}
-	return (string) $id;
+	$cache = 'oec_nl_account_' . substr( md5( $key ), 0, 12 );
+	$info  = get_transient( $cache );
+	if ( false === $info ) {
+		$acc = oec_nl_api_v2( '/account/load', [] );
+		if ( is_wp_error( $acc ) ) {
+			return null; // no se cachea el error
+		}
+		$info = [
+			'email'           => (string) ( $acc['email'] ?? '' ),
+			'issub'           => ! empty( $acc['issub'] ),
+			'publicaccountid' => (string) ( $acc['publicaccountid'] ?? '' ),
+		];
+		set_transient( $cache, $info, DAY_IN_SECONDS );
+	}
+	return $info;
+}
+
+/** Public Account ID de la cuenta (para contact/add). */
+function oec_nl_public_account_id(): string {
+	return (string) ( oec_nl_account_info()['publicaccountid'] ?? '' );
 }
 
 /**
@@ -1855,7 +1876,13 @@ add_action( 'admin_post_oec_nl_save', function () {
 		if ( is_wp_error( $res ) ) {
 			oec_nl_redirect_notice( 'error', $res->get_error_message() );
 		}
-		oec_nl_redirect_notice( 'success', sprintf( __( 'Conexión correcta. La cuenta tiene %d listas.', 'oec-theme' ), count( $res ) ) );
+		$acc = oec_nl_account_info();
+		oec_nl_redirect_notice( 'success', sprintf(
+			/* translators: 1: email de la cuenta, 2: cantidad de listas */
+			__( 'Conexión correcta con la cuenta %1$s de Elastic Email (%2$d listas).', 'oec-theme' ),
+			$acc ? $acc['email'] . ( $acc['issub'] ? ' — subcuenta' : '' ) : '?',
+			count( $res )
+		) );
 	}
 	if ( 'sync' === $do ) {
 		$res = oec_nl_sync_lists();
@@ -2024,6 +2051,18 @@ function oec_nl_render_admin(): void {
 						</tr>
 					</table>
 					<dl class="oec-nl-facts">
+						<?php $nl_account = oec_nl_account_info(); ?>
+						<dt><?php esc_html_e( 'Cuenta de Elastic Email', 'oec-theme' ); ?></dt>
+						<dd>
+							<?php if ( $nl_account ) : ?>
+								<strong><?php echo esc_html( $nl_account['email'] ); ?></strong>
+								<?php echo $nl_account['issub'] ? esc_html__( '(subcuenta)', 'oec-theme' ) : esc_html__( '(cuenta principal)', 'oec-theme' ); ?>
+							<?php elseif ( oec_nl_api_key() ) : ?>
+								<span style="color:#b32d2e"><?php esc_html_e( 'No se pudo consultar: revisá la API key.', 'oec-theme' ); ?></span>
+							<?php else : ?>
+								<em><?php esc_html_e( 'Sin API key', 'oec-theme' ); ?></em>
+							<?php endif; ?>
+						</dd>
 						<dt><?php esc_html_e( 'Lista general', 'oec-theme' ); ?></dt><dd><code><?php echo esc_html( OEC_NL_GENERAL_LIST ); ?></code></dd>
 						<dt><?php esc_html_e( 'Remitente', 'oec-theme' ); ?></dt><dd><code><?php echo esc_html( OEC_NL_FROM ); ?></code></dd>
 						<dt><?php esc_html_e( 'Créditos', 'oec-theme' ); ?></dt><dd><?php printf( esc_html__( '%1$d por suscribirse · %2$d semanales', 'oec-theme' ), (int) OEC_NL_SUBSCRIBE_CREDITS, (int) OEC_NL_WEEKLY_CREDITS ); ?></dd>
