@@ -63,6 +63,8 @@ const OEC_NL_LATEST  = 'oec_newsletter_latest';
 // Nombres de TODAS las listas de la cuenta (solo para el buscador del admin;
 // en producción son cientos, por eso no van en OEC_NL_OPTION).
 const OEC_NL_REMOTE_LISTS = 'oec_newsletter_remote_lists';
+const OEC_NL_UNSUPPRESS_DAYS = 30; // rebotes y bajas: un intento de reactivación cada 30 días
+const OEC_NL_UNABUSE_DAYS    = 90; // spam: una reactivación cada 90 días
 const OEC_NL_CRON    = 'oec_newsletter_cron';
 const OEC_NL_API_V4  = 'https://api.elasticemail.com/v4';
 const OEC_NL_API_V2  = 'https://api.elasticemail.com/v2';
@@ -599,7 +601,8 @@ function oec_nl_sync_lists() {
    ============================================================ */
 
 /** @return true|WP_Error */
-function oec_nl_send_confirmation( string $email, string $first, string $last, array $lists ) {
+/** Link firmado a /newsletter-confirmado/ (lo usan nuestro email y la reactivación de Elastic Email). */
+function oec_nl_confirm_url( string $email, string $first, string $last, array $lists ): string {
 	$token = oec_nl_sign_token( [
 		'e'   => $email,
 		'f'   => $first,
@@ -607,7 +610,11 @@ function oec_nl_send_confirmation( string $email, string $first, string $last, a
 		'ls'  => $lists,
 		'exp' => time() + OEC_NL_CONFIRM_HOURS * HOUR_IN_SECONDS,
 	] );
-	$url = add_query_arg( 't', $token, oec_config_url( '/newsletter-confirmado/' ) );
+	return add_query_arg( 't', $token, oec_config_url( '/newsletter-confirmado/' ) );
+}
+
+function oec_nl_send_confirmation( string $email, string $first, string $last, array $lists ) {
+	$url = oec_nl_confirm_url( $email, $first, $last, $lists );
 
 	$res = oec_nl_api( 'POST', '/emails/transactional', [
 		'Recipients' => [ 'To' => [ $email ] ],
@@ -780,7 +787,168 @@ function oec_nl_rest_resend( WP_REST_Request $request ): WP_REST_Response {
 	return oec_nl_json( $ok );
 }
 
-/** POST { email, first_name, last_name, lists[]?, website } → manda el email de confirmación. */
+/* ============================================================
+   DIRECCIONES SUPRIMIDAS
+   Elastic Email no envía a direcciones suprimidas: el email de
+   confirmación "sale" pero nunca llega. Antes de mandarlo se revisa el
+   estado del contacto:
+   - Rebotado / inactivo: se pasa a Active (API v2 contact/changestatus) y
+     sale nuestro email. Una vez cada 30 días por dirección: si vuelve a
+     rebotar, Elastic Email la suprime otra vez.
+     Ojo: DELETE /suppressions NO sirve: borra la supresión pero el contacto
+     conserva el estado y el próximo envío lo vuelve a suprimir.
+   - Baja / spam / sin confirmar: Elastic Email no deja reactivarlos por API
+     ("You can not change an existing contact's status to Active for
+     Unsubscribed, Complaint or NotConfirmed contacts"). La única vía es su
+     propio doble opt-in (v2 contact/add con sendActivation): Elastic Email
+     manda su email de activación y, al hacer clic, reactiva el contacto y
+     redirige a /newsletter-confirmado/ con nuestro token. Hasta ese clic el
+     contacto queda NotConfirmed y no recibe campañas. Para spam además se
+     pide una declaración explícita (abuse_consent), una vez cada 90 días.
+   ============================================================ */
+
+/**
+ * @return array{status: string}|null|WP_Error null = no está suprimida.
+ */
+function oec_nl_suppression( string $email ) {
+	$s = oec_nl_api( 'GET', '/suppressions/' . rawurlencode( $email ) );
+	if ( is_wp_error( $s ) ) {
+		return 'oec_nl_http_404' === $s->get_error_code() ? null : $s;
+	}
+	// La supresión no dice el motivo: lo da el estado del contacto.
+	$c = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $email ) );
+	return [ 'status' => is_wp_error( $c ) ? 'Unknown' : (string) ( $c['Status'] ?? 'Unknown' ) ];
+}
+
+function oec_nl_abuse_consent_label(): string {
+	return sprintf( __( 'Quiero volver a recibir los correos de %s.', 'oec-theme' ), OEC_NL_BRAND );
+}
+
+/** Public Account ID de la cuenta (para contact/add), cacheado 30 días. */
+function oec_nl_public_account_id(): string {
+	$id = get_transient( 'oec_nl_public_account_id' );
+	if ( false === $id ) {
+		$acc = oec_nl_api_v2( '/account/load', [] );
+		$id  = is_wp_error( $acc ) ? '' : (string) ( $acc['publicaccountid'] ?? '' );
+		if ( $id ) {
+			set_transient( 'oec_nl_public_account_id', $id, 30 * DAY_IN_SECONDS );
+		}
+	}
+	return (string) $id;
+}
+
+/**
+ * Doble opt-in de Elastic Email (v2 contact/add con sendActivation): la vía
+ * que acepta para volver a suscribir bajas, quejas y no confirmados.
+ *
+ * @return true|WP_Error
+ */
+function oec_nl_send_activation( string $email, string $first, string $last, array $lists ) {
+	$public = oec_nl_public_account_id();
+	if ( ! $public ) {
+		return new WP_Error( 'oec_nl_no_public_id', 'No se pudo obtener el Public Account ID de Elastic Email.' );
+	}
+	$params = [
+		'publicAccountID'     => $public,
+		'email'               => $email,
+		'firstName'           => $first,
+		'lastName'            => $last,
+		'sendActivation'      => 'true',
+		'activationReturnUrl' => oec_nl_confirm_url( $email, $first, $last, $lists ),
+		'consentIP'           => oec_nl_client_ip(),
+		'consentDate'         => gmdate( 'Y-m-d\TH:i:s' ),
+		'sourceUrl'           => oec_config_url( '/' ),
+	];
+	$pairs = [];
+	foreach ( array_filter( $params, 'strlen' ) as $k => $v ) {
+		$pairs[] = rawurlencode( $k ) . '=' . rawurlencode( (string) $v );
+	}
+	foreach ( $lists as $list ) {
+		$pairs[] = 'listName=' . rawurlencode( $list ); // se repite: es una lista
+	}
+	$res = wp_remote_post( OEC_NL_API_V2 . '/contact/add', [
+		'timeout' => 20,
+		'headers' => [ 'Content-Type' => 'application/x-www-form-urlencoded' ],
+		'body'    => implode( '&', $pairs ),
+	] );
+	if ( is_wp_error( $res ) ) {
+		return $res;
+	}
+	$data = json_decode( wp_remote_retrieve_body( $res ), true );
+	return ! empty( $data['success'] ) ? true : new WP_Error( 'oec_nl_activation', 'Elastic Email v2: ' . ( $data['error'] ?? 'respuesta inválida' ) );
+}
+
+/**
+ * Reactiva una dirección suprimida si corresponde.
+ *
+ * @return string|WP_REST_Response Texto a anteponer al mensaje de éxito (y
+ *         seguir con nuestro email), o la respuesta final a devolver.
+ */
+function oec_nl_handle_suppression( string $email, string $status, bool $abuse_consent, string $first, string $last, array $lists ) {
+	$key        = md5( strtolower( $email ) );
+	$abuse      = 'Abuse' === $status;
+	$activation = in_array( $status, [ 'Unsubscribed', 'Abuse', 'NotConfirmed' ], true );
+
+	if ( $abuse && ! $abuse_consent ) {
+		oec_nl_log( 'info', 'Suscripción frenada: ' . $email . ' figura como spam en Elastic Email (se pidió confirmación).' );
+		return oec_nl_json( [
+			'ok'            => false,
+			'code'          => 'abuse',
+			'message'       => __( 'Hace un tiempo marcaste nuestros correos como spam, por eso no podemos escribirte. Si ahora querés recibirlos, tildá la casilla y volvé a tocar el botón: te mandamos un único email para confirmar.', 'oec-theme' ),
+			'consent_label' => oec_nl_abuse_consent_label(),
+		] );
+	}
+
+	$lock = ( $abuse ? 'oec_nl_unabuse_' : 'oec_nl_unsup_' ) . $key;
+	if ( get_transient( $lock ) ) {
+		oec_nl_log( 'info', sprintf( 'Suscripción frenada: %s (%s) ya se intentó reactivar hace poco.', $email, $status ) );
+		return oec_nl_json( [
+			'ok'      => false,
+			'code'    => 'suppressed',
+			'message' => $activation
+				? __( 'Hace poco te enviamos un email para reactivar tu suscripción. Buscalo en tu bandeja (y en spam) o escribinos y lo resolvemos.', 'oec-theme' )
+				: __( 'Tu casilla rechazó nuestros correos hace poco. Revisá que el email esté bien escrito o probá con otro.', 'oec-theme' ),
+		] );
+	}
+
+	if ( ! $activation ) {
+		$changed = oec_nl_api_v2( '/contact/changestatus', [ 'emails' => $email, 'status' => 'Active' ] );
+		if ( is_wp_error( $changed ) ) {
+			// Por si el estado real es uno de los que Elastic Email no deja cambiar.
+			if ( false === stripos( $changed->get_error_message(), 'can not change' ) ) {
+				oec_nl_log( 'error', 'No se pudo reactivar ' . $email . ': ' . $changed->get_error_message() );
+				return oec_nl_json( [ 'ok' => false, 'message' => __( 'No pudimos enviarte el email de confirmación. Probá de nuevo más tarde.', 'oec-theme' ) ], 502 );
+			}
+			$activation = true;
+		}
+	}
+
+	if ( $activation ) {
+		$sent = oec_nl_send_activation( $email, $first, $last, $lists );
+		if ( is_wp_error( $sent ) ) {
+			oec_nl_log( 'error', 'Reactivación por doble opt-in de ' . $email . ': ' . $sent->get_error_message() );
+			return oec_nl_json( [ 'ok' => false, 'message' => __( 'No pudimos enviarte el email de confirmación. Probá de nuevo más tarde.', 'oec-theme' ) ], 502 );
+		}
+		set_transient( $lock, 1, ( $abuse ? OEC_NL_UNABUSE_DAYS : OEC_NL_UNSUPPRESS_DAYS ) * DAY_IN_SECONDS );
+		delete_transient( 'oec_nl_sub_' . $key );
+		oec_nl_log( 'success', sprintf( 'Reactivación pedida a Elastic Email (doble opt-in) para %s (estaba %s%s).', $email, $status, $abuse ? ', con declaración del usuario' : '' ) );
+		return oec_nl_json( [
+			'ok'      => true,
+			'message' => sprintf(
+				/* translators: %s: email */
+				__( 'Tu dirección estaba dada de baja de nuestros envíos. Te mandamos un email para reactivarla a %s: tocá el botón de confirmación y sumás tus créditos (revisá también spam).', 'oec-theme' ),
+				$email
+			),
+		] );
+	}
+
+	set_transient( $lock, 1, OEC_NL_UNSUPPRESS_DAYS * DAY_IN_SECONDS );
+	delete_transient( 'oec_nl_sub_' . $key );
+	oec_nl_log( 'success', sprintf( 'Dirección reactivada en Elastic Email: %s (estaba %s).', $email, $status ) );
+	return __( 'Tu dirección estaba bloqueada para nuestros envíos por un rebote anterior y ya la reactivamos.', 'oec-theme' );
+}
+
+/** POST { email, first_name, last_name, lists[]?, abuse_consent?, website } → manda el email de confirmación. */
 function oec_nl_rest_subscribe( WP_REST_Request $request ): WP_REST_Response {
 	$email = sanitize_email( (string) $request->get_param( 'email' ) );
 	$ok    = [
@@ -820,6 +988,20 @@ function oec_nl_rest_subscribe( WP_REST_Request $request ): WP_REST_Response {
 	$throttle = 'oec_nl_sent_' . md5( strtolower( $email ) );
 	if ( get_transient( $throttle ) ) {
 		return oec_nl_json( $ok );
+	}
+
+	// Dirección suprimida en Elastic Email: el email no llegaría nunca.
+	$sup = oec_nl_suppression( $email );
+	if ( is_wp_error( $sup ) ) {
+		// Si la consulta falla, mejor intentar el envío que frenar a todos.
+		oec_nl_log( 'error', 'No se pudo revisar la supresión de ' . $email . ': ' . $sup->get_error_message() );
+	} elseif ( $sup ) {
+		$handled = oec_nl_handle_suppression( $email, $sup['status'], rest_sanitize_boolean( $request->get_param( 'abuse_consent' ) ), $first, $last, $lists );
+		if ( $handled instanceof WP_REST_Response ) {
+			return $handled;
+		}
+		$ok['message'] = $handled . ' ' . $ok['message'];
+		sleep( 2 ); // margen para que Elastic Email aplique el cambio de estado antes del envío
 	}
 
 	$sent = oec_nl_send_confirmation( $email, $first, $last, $lists );

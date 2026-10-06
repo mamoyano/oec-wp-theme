@@ -82,6 +82,25 @@
     setTimeout(done, 600); // por si no dispara transitionend
   }
 
+  // La dirección figura como spam en Elastic Email: el servidor pide una
+  // declaración explícita antes de reactivarla (code: 'abuse').
+  function showAbuseConsent(form, label, beforeEl) {
+    var box = form.querySelector('.oec-nl-consent');
+    if (!box) {
+      box = document.createElement('label');
+      box.className = 'oec-nl-consent';
+      box.innerHTML = '<input type="checkbox" name="abuse_consent" value="1"> <span></span>';
+      beforeEl.parentNode.insertBefore(box, beforeEl);
+    }
+    box.querySelector('span').textContent = label;
+    box.querySelector('input').focus();
+  }
+
+  function abuseConsent(form) {
+    var el = form.querySelector('[name="abuse_consent"]');
+    return !!(el && el.checked);
+  }
+
   // Botón "procesando": spinner + deshabilitado mientras dura el pedido.
   function setBusy(btn, busy) {
     btn.disabled = busy;
@@ -165,9 +184,11 @@
         first_name: first.value.trim(),
         last_name: last.value.trim(),
         lists: list ? [list] : undefined,
+        abuse_consent: abuseConsent(form),
         website: form.querySelector('[name="website"]').value
       }).then(function (data) {
         setMsg(offerMsg, data.message || 'Ocurrió un error. Probá de nuevo.', !data.ok);
+        if (data.code === 'abuse') showAbuseConsent(form, data.consent_label, offerBtn);
         if (data.ok) {
           form.hidden = true;
           track('newsletter_signup', { newsletter_source: 'hero', newsletter_list: list });
@@ -236,9 +257,11 @@
         first_name: first.value.trim(),
         last_name: last.value.trim(),
         lists: lists,
+        abuse_consent: abuseConsent(form),
         website: form.querySelector('[name="website"]').value
       }).then(function (data) {
         setMsg(msg, data.message || 'Ocurrió un error. Probá de nuevo.', !data.ok);
+        if (data.code === 'abuse') showAbuseConsent(form, data.consent_label, form.querySelector('.oec-nl__legal') || btn);
         if (data.ok) {
           form.classList.add('is-done');
           track('newsletter_signup', { newsletter_source: 'form', newsletter_lists: lists.length });

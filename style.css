@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.86
+Version: 1.0.87
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4582,6 +4582,25 @@ body.oec-chat-open { overflow: hidden; }
 .oec-nl__msg { margin: 0; font-size: .9375rem; color: var(--color-badge-blog); font-weight: 500; }
 .oec-nl__msg.is-error { color: #b32d2e; }
 .oec-nl.is-loading { opacity: .7; pointer-events: none; }
+/* Declaración para reactivar una dirección marcada como spam (newsletter.js). */
+.oec-nl-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(232,149,42,.55);
+  border-radius: 8px;
+  background: rgba(232,149,42,.1);
+  color: var(--color-text); /* explícito: si no hereda el blanco de secciones oscuras */
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  cursor: pointer;
+}
+.oec-nl-consent input { margin-top: 3px; accent-color: var(--tematica-accent, var(--color-accent)); }
+.oec-nl.is-done .oec-nl-consent { display: none; }
+.oec-tematica-hero__credits .oec-credits-widget .oec-nl-consent { color: #fff; } /* widget del hero oscuro: solo aclara p y h3 */
 .oec-nl.is-done .oec-nl__topics,
 .oec-nl.is-done .oec-nl__fields,
 .oec-nl.is-done .oec-nl__legal { display: none; }
