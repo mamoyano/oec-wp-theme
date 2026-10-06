@@ -32,8 +32,10 @@ defined( 'ABSPATH' ) || exit;
    ============================================================ */
 
 /* ── Datos fijos de G-SE ────────────────────────────────────── */
-// Lista general. TODO: pasar a 'G-SE General' cuando terminen las pruebas.
-const OEC_NL_GENERAL_LIST = 'Prueba';
+// Lista general del newsletter semanal (nombre exacto en Elastic Email).
+const OEC_NL_GENERAL_LIST = 'G-SE - General';
+// Lista para probar envíos desde el admin ("Solo a la lista Prueba").
+const OEC_NL_TEST_LIST    = 'Prueba';
 const OEC_NL_FROM         = 'Grupo Sobre Entrenamiento <newsletter@g-se.com>';
 const OEC_NL_BRAND        = 'Grupo Sobre Entrenamiento';
 // PNG dentro del tema: el logo del sitio es WebP (Outlook no lo muestra) y el
@@ -1559,21 +1561,32 @@ function oec_nl_build_email( array $list, int $sent_at, int $since ) {
  *
  * @return string|WP_Error 'sent' | 'draft' | 'empty'
  */
-function oec_nl_send_digest( string $list_name ) {
+/**
+ * @param string $only_to Lista destino de una PRUEBA (OEC_NL_TEST_LIST): manda
+ *                        el contenido de $list_name a esa lista, con [PRUEBA]
+ *                        en el asunto, sin tocar el último envío ni el
+ *                        "último enviado" (el envío del lunes no cambia).
+ */
+function oec_nl_send_digest( string $list_name, string $only_to = '' ) {
 	$lists = oec_nl_all_lists();
 	$list  = $lists[ $list_name ] ?? null;
 	if ( ! $list ) {
 		return new WP_Error( 'oec_nl_no_list', 'Lista inexistente o inactiva.' );
 	}
 
+	$test    = '' !== $only_to;
 	$state   = oec_nl_state();
 	$sent_at = time();
 	$since   = (int) ( $state['last_sent'][ $list_name ] ?? 0 ) ?: $sent_at - WEEK_IN_SECONDS;
 
 	// Sin artículos nuevos no se envía (las formaciones solas no justifican el correo).
+	// En una prueba se usan los últimos, para que siempre haya algo que mirar.
 	if ( ! oec_nl_collect_posts( $list, $since ) ) {
-		oec_nl_log( 'info', sprintf( '%s: sin artículos nuevos, no se envía.', $list_name ) );
-		return 'empty';
+		if ( ! $test ) {
+			oec_nl_log( 'info', sprintf( '%s: sin artículos nuevos, no se envía.', $list_name ) );
+			return 'empty';
+		}
+		$since = 0;
 	}
 
 	$html = oec_nl_build_email( $list, $sent_at, $since );
@@ -1582,8 +1595,8 @@ function oec_nl_send_digest( string $list_name ) {
 		return $html;
 	}
 
-	$subject  = oec_nl_subject( $list );
-	$template = sprintf( 'Newsletter %s %s %d', $list_name, wp_date( 'Y-m-d' ), $sent_at );
+	$subject  = ( $test ? '[PRUEBA] ' : '' ) . oec_nl_subject( $list );
+	$template = sprintf( '%sNewsletter %s %s %d', $test ? 'PRUEBA ' : '', $list_name, wp_date( 'Y-m-d' ), $sent_at );
 
 	$tpl = oec_nl_api( 'POST', '/templates', [
 		'Name'          => $template,
@@ -1607,7 +1620,7 @@ function oec_nl_send_digest( string $list_name ) {
 			'TemplateName' => $tpl['Name'] ?? $template,
 			'Utm'          => [ 'Source' => 'newsletter', 'Medium' => 'email', 'Campaign' => 'newsletter+semanal' ],
 		] ],
-		'Recipients' => [ 'ListNames' => [ $list_name ] ],
+		'Recipients' => [ 'ListNames' => [ $test ? $only_to : $list_name ] ],
 		'Options'    => [
 			'DeliveryOptimization' => 'ToEngagedFirst',
 			'TrackOpens'           => true,
@@ -1617,6 +1630,11 @@ function oec_nl_send_digest( string $list_name ) {
 	if ( is_wp_error( $camp ) ) {
 		oec_nl_log( 'error', sprintf( '%s (campaña): %s', $list_name, $camp->get_error_message() ) );
 		return $camp;
+	}
+
+	if ( $test ) {
+		oec_nl_log( 'success', sprintf( 'Prueba: newsletter de %s enviado a la lista %s.', $list_name, $only_to ) );
+		return 'Draft' === $status ? 'draft' : 'sent';
 	}
 
 	$state                            = oec_nl_state();
@@ -1852,13 +1870,14 @@ add_action( 'admin_post_oec_nl_action', function () {
 	}
 
 	if ( 'run' === $do ) {
+		$only    = ! empty( $in['only_test'] ) ? OEC_NL_TEST_LIST : '';
 		$names   = 'all' === $list ? array_keys( oec_nl_all_lists() ) : [ $list ];
 		$summary = [];
 		foreach ( $names as $name ) {
-			$res       = oec_nl_send_digest( $name );
+			$res       = oec_nl_send_digest( $name, $only );
 			$summary[] = $name . ': ' . ( is_wp_error( $res ) ? $res->get_error_message() : $res );
 		}
-		oec_nl_redirect_notice( 'info', implode( ' · ', $summary ) );
+		oec_nl_redirect_notice( 'info', ( $only ? sprintf( __( 'Prueba a la lista %s — ', 'oec-theme' ), $only ) : '' ) . implode( ' · ', $summary ) );
 	}
 
 	oec_nl_redirect_notice( 'error', __( 'Acción desconocida.', 'oec-theme' ) );
@@ -2152,12 +2171,20 @@ function oec_nl_render_admin(): void {
 				</form>
 
 				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="oec-nl-actions"
-					onsubmit="return confirm('<?php echo esc_js( __( '¿Enviar ahora el newsletter a TODOS los suscriptores de todas las listas activas?', 'oec-theme' ) ); ?>');">
+					onsubmit="return this.only_test.checked || confirm('<?php echo esc_js( __( '¿Enviar ahora el newsletter elegido a TODOS sus suscriptores reales?', 'oec-theme' ) ); ?>');">
 					<input type="hidden" name="action" value="oec_nl_action">
-					<input type="hidden" name="list" value="all">
 					<?php wp_nonce_field( 'oec_nl_action' ); ?>
-					<button type="submit" name="oec_nl_do" value="run" class="button button-secondary"><?php esc_html_e( 'Enviar newsletter ahora (todas las listas)', 'oec-theme' ); ?></button>
+					<strong><?php esc_html_e( 'Enviar ahora:', 'oec-theme' ); ?></strong>
+					<select name="list" aria-label="<?php esc_attr_e( 'Newsletter a enviar', 'oec-theme' ); ?>">
+						<?php foreach ( $all as $name => $list ) : ?>
+						<option value="<?php echo esc_attr( $name ); ?>"><?php echo esc_html( $list['general'] ? $name . ' (general)' : $name ); ?></option>
+						<?php endforeach; ?>
+						<option value="all"><?php esc_html_e( 'Todos los newsletters activos', 'oec-theme' ); ?></option>
+					</select>
+					<label><input type="checkbox" name="only_test" value="1" checked> <?php printf( esc_html__( 'Solo a la lista %s (prueba)', 'oec-theme' ), '<code>' . esc_html( OEC_NL_TEST_LIST ) . '</code>' ); ?></label>
+					<button type="submit" name="oec_nl_do" value="run" class="button button-secondary"><?php esc_html_e( 'Enviar ahora', 'oec-theme' ); ?></button>
 				</form>
+				<p class="description"><?php printf( esc_html__( 'Con la casilla tildada, el newsletter elegido va solo a la lista %s, con [PRUEBA] en el asunto, y no cambia el envío del lunes. Sin la casilla, va a los suscriptores reales de esa lista.', 'oec-theme' ), esc_html( OEC_NL_TEST_LIST ) ); ?></p>
 			</div>
 		</div>
 		<?php endif; ?>
