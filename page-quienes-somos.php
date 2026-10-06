@@ -227,17 +227,15 @@ get_header();
 				</a>
 			</div>
 
-			<?php if ( 'success' === $qs_contact ) : ?>
-			<div class="qs-form qs-form__done" role="status">
+			<?php /* Se envía por AJAX sin recargar (script de abajo); sin JS, por admin-post.php como antes. */ ?>
+			<div class="qs-form qs-form__done" role="status" tabindex="-1" data-qs-done<?php echo 'success' === $qs_contact ? '' : ' hidden'; ?>>
 				<i class="bi bi-check-circle" aria-hidden="true"></i>
 				<h3><?php esc_html_e( '¡Gracias! Recibimos tu mensaje.', 'oec-theme' ); ?></h3>
 				<p><?php esc_html_e( 'Te vamos a responder por email a la brevedad.', 'oec-theme' ); ?></p>
 			</div>
-			<?php else : ?>
-			<form class="qs-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
-				<?php if ( 'error' === $qs_contact ) : ?>
-				<p class="qs-form__error" role="alert"><?php esc_html_e( 'Revisá tu nombre y tu email e intentá de nuevo.', 'oec-theme' ); ?></p>
-				<?php endif; ?>
+			<?php if ( 'success' !== $qs_contact ) : ?>
+			<form class="qs-form" method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" data-qs-ajax="<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>">
+				<p class="qs-form__error" role="alert" data-qs-error<?php echo 'error' === $qs_contact ? '' : ' hidden'; ?>><?php esc_html_e( 'Revisá tu nombre y tu email e intentá de nuevo.', 'oec-theme' ); ?></p>
 				<input type="hidden" name="action" value="oec_contact_form">
 				<?php wp_nonce_field( 'oec_contact_nonce', 'oec_nonce' ); ?>
 				<label>
@@ -259,6 +257,41 @@ get_header();
 				</label>
 				<button type="submit" class="btn btn-primary"><?php esc_html_e( 'Enviar mensaje', 'oec-theme' ); ?></button>
 			</form>
+			<script>
+			( function () {
+				var form = document.querySelector( 'form[data-qs-ajax]' );
+				if ( ! form || ! window.fetch || ! window.FormData ) {
+					return; // sin JS moderno: envío normal por admin-post.php
+				}
+				var done   = document.querySelector( '[data-qs-done]' );
+				var error  = form.querySelector( '[data-qs-error]' );
+				var button = form.querySelector( 'button[type="submit"]' );
+				var label  = button.textContent;
+				form.addEventListener( 'submit', function ( e ) {
+					e.preventDefault();
+					error.hidden       = true;
+					button.disabled    = true;
+					button.textContent = <?php echo wp_json_encode( __( 'Enviando…', 'oec-theme' ) ); ?>;
+					fetch( form.dataset.qsAjax, { method: 'POST', body: new FormData( form ), credentials: 'same-origin' } )
+						.then( function ( r ) { return r.json(); } )
+						.then( function ( res ) {
+							if ( res && res.success ) {
+								form.hidden = true;
+								done.hidden = false;
+								done.focus();
+								return;
+							}
+							throw new Error( res && res.data ? res.data : '' );
+						} )
+						.catch( function ( err ) {
+							error.textContent = err && err.message ? err.message : <?php echo wp_json_encode( __( 'No se pudo enviar el mensaje. Probá de nuevo en un momento.', 'oec-theme' ) ); ?>;
+							error.hidden      = false;
+							button.disabled    = false;
+							button.textContent = label;
+						} );
+				} );
+			} )();
+			</script>
 			<?php endif; ?>
 		</div>
 	</section>

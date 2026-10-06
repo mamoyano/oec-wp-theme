@@ -283,19 +283,22 @@ function oec_pluralize_es( string $singular ): string {
 /* ============================================================
    CONTACT FORM HANDLER
    ============================================================ */
-function oec_handle_contact_form(): void {
+/**
+ * Procesa el formulario de contacto. true si se envió (o era un bot, que se
+ * descarta en silencio); si no, el motivo para mostrar.
+ */
+function oec_contact_process() {
 	// El nonce solo se exige con sesión iniciada: la página puede estar días en
 	// la caché de Cloudflare y el nonce vence en 12-24 h. Para visitantes, en
 	// un formulario de contacto público no protege nada; la trampa para bots
 	// (cf_website) sí.
 	if ( is_user_logged_in() && ( ! isset( $_POST['oec_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['oec_nonce'] ) ), 'oec_contact_nonce' ) ) ) {
-		wp_die( esc_html__( 'Acción no permitida.', 'oec-theme' ) );
+		return __( 'Tu sesión venció. Recargá la página e intentá de nuevo.', 'oec-theme' );
 	}
 
 	// Trampa para bots (campo invisible en el formulario): se descarta en silencio.
 	if ( ! empty( $_POST['cf_website'] ) ) {
-		wp_safe_redirect( add_query_arg( 'contact', 'success', wp_get_referer() ) . '#contacto' );
-		exit;
+		return true;
 	}
 
 	$name     = sanitize_text_field( wp_unslash( $_POST['cf_name']     ?? '' ) );
@@ -305,8 +308,7 @@ function oec_handle_contact_form(): void {
 	$message  = sanitize_textarea_field( wp_unslash( $_POST['cf_message']  ?? '' ) );
 
 	if ( ! $name || ! is_email( $email ) ) {
-		wp_safe_redirect( add_query_arg( 'contact', 'error', wp_get_referer() ) . '#contacto' );
-		exit;
+		return __( 'Revisá tu nombre y tu email e intentá de nuevo.', 'oec-theme' );
 	}
 
 	$to      = get_theme_mod( 'oec_contact_email', get_option( 'admin_email' ) );
@@ -317,13 +319,27 @@ function oec_handle_contact_form(): void {
 	);
 	$headers = [ 'Content-Type: text/plain; charset=UTF-8', "Reply-To: {$name} <{$email}>" ];
 
-	wp_mail( $to, $subject, $body, $headers );
+	return wp_mail( $to, $subject, $body, $headers )
+		? true
+		: __( 'No se pudo enviar el mensaje. Probá de nuevo en un momento.', 'oec-theme' );
+}
 
-	wp_safe_redirect( add_query_arg( 'contact', 'success', wp_get_referer() ) . '#contacto' );
+// Sin JS: envío normal y vuelta a la página con ?contact=success|error.
+function oec_handle_contact_form(): void {
+	$result = oec_contact_process();
+	wp_safe_redirect( add_query_arg( 'contact', true === $result ? 'success' : 'error', wp_get_referer() ) . '#contacto' );
 	exit;
 }
 add_action( 'admin_post_oec_contact_form',        'oec_handle_contact_form' );
 add_action( 'admin_post_nopriv_oec_contact_form', 'oec_handle_contact_form' );
+
+// Con JS: el formulario se envía por AJAX y no recarga la página.
+function oec_handle_contact_form_ajax(): void {
+	$result = oec_contact_process();
+	true === $result ? wp_send_json_success() : wp_send_json_error( $result );
+}
+add_action( 'wp_ajax_oec_contact_form',        'oec_handle_contact_form_ajax' );
+add_action( 'wp_ajax_nopriv_oec_contact_form', 'oec_handle_contact_form_ajax' );
 
 /**
  * Página "Quiénes somos" (page-quienes-somos.php): se crea sola en el sitio
