@@ -171,6 +171,35 @@ function oec_seo_organization_node(): array {
 }
 
 /**
+ * Autor de un artículo para el JSON-LD. Muchos "autores" de WordPress son en
+ * realidad revistas, bases de datos o canales de los que se importa
+ * (PubMed, PLOS ONE, Nutrients, Kronos, BPA Podcast…): declararlos como
+ * Person es un dato falso para Google. Esos van como Organization; "G-SE" y
+ * "Autores Varios" apuntan a la organización del sitio; el resto, Person.
+ * Filtro 'oec_seo_author_type' (user_id, nombre) → 'person' | 'organization' | 'site'.
+ */
+function oec_seo_author_node( int $user_id ): array {
+	$name = (string) get_the_author_meta( 'display_name', $user_id );
+	$url  = get_author_posts_url( $user_id );
+	$type = 'person';
+	if ( preg_match( '/^(g-se\b|grupo sobre entrenamiento|autores varios)/i', $name ) ) {
+		$type = 'site';
+	} elseif ( preg_match( '/\b(revista|journal|plos ?one|pubmed|publice|kronos|gymnasium|nutrients|sports? medicine|springer|human kinetics|podcast|team|blogs?|my sport science|sport tips|bmc)\b/i', $name ) ) {
+		$type = 'organization';
+	}
+	$type = apply_filters( 'oec_seo_author_type', $type, $user_id, $name );
+
+	if ( 'site' === $type ) {
+		return [ '@id' => home_url( '/' ) . '#organization' ];
+	}
+	return [
+		'@type' => 'organization' === $type ? 'Organization' : 'Person',
+		'name'  => $name,
+		'url'   => $url,
+	];
+}
+
+/**
  * Contexto SEO de la página actual (cacheado). null = no emitir nada.
  */
 function oec_seo_context(): ?array {
@@ -387,11 +416,7 @@ function oec_seo_head(): void {
 			'articleSection'   => $c['article']['section'] ?: null,
 			'keywords'         => $c['article']['tags'] ? implode( ', ', $c['article']['tags'] ) : null,
 			'wordCount'        => str_word_count( wp_strip_all_tags( $post->post_content ) ),
-			'author'           => [
-				'@type' => 'Person',
-				'name'  => get_the_author_meta( 'display_name', $post->post_author ),
-				'url'   => get_author_posts_url( $post->post_author ),
-			],
+			'author'           => oec_seo_author_node( (int) $post->post_author ),
 			'publisher'        => oec_seo_organization_node(),
 		] );
 	}
