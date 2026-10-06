@@ -715,6 +715,7 @@ function oec_nl_personalize_html( string $html, string $email, string $first, st
 	// Sin nombre en el contacto, que no quede "Hola , estos son…".
 	$greetings = '' === $first ? [ 'Hola {firstname}, estos' => '¡Hola! Estos', '{firstname}, nuestros' => 'Hola, nuestros', 'para {firstname}.' => 'para vos.' ] : [];
 	return strtr( oec_nl_fix_saved_html( $html ), $greetings + [
+		// Forma de script: la tienen los newsletters guardados antes de la v1.0.90.
 		'{{ encodeURIComponent(email) }}'     => rawurlencode( $email ),
 		'{{ encodeURIComponent(firstname) }}' => rawurlencode( $first ),
 		'{{ encodeURIComponent(lastname) }}'  => rawurlencode( $last ),
@@ -1504,12 +1505,15 @@ function oec_nl_subject( array $list ): string {
 		: sprintf( 'Novedades en %s: %s', $list['label'], $date );
 }
 
-/** Link de formación con el redirector de OEC (merge tags de Elastic Email, sin codificar). */
+/** Link de formación con el redirector de OEC (merge tags simples de Elastic Email). */
 function oec_nl_training_link( array $training ): string {
 	$target = oec_config_url( '/formacion/' . ( $training['slug'] ?? '' ) )
 		. '?utm_source=mailing&utm_medium=elastic&utm_campaign=newsletter+semanal&utm_content=' . wp_date( 'Y-m-d' );
+	// Merge tags simples, NO la forma de script {{ encodeURIComponent(firstname) }}:
+	// si el contacto no tiene ese campo, el script falla ("firstname is not
+	// defined") y Elastic Email descarta el email entero. Los simples quedan vacíos.
 	return OEC_NL_REDIRECTOR
-		. '?c_mail={{ encodeURIComponent(email) }}&c_fn={{ encodeURIComponent(firstname) }}&c_ln={{ encodeURIComponent(lastname) }}&c_country={country}&l='
+		. '?c_mail={email}&c_fn={firstname}&c_ln={lastname}&c_country={country}&l='
 		. rawurlencode( $target );
 }
 
