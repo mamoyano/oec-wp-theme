@@ -620,8 +620,8 @@ function oec_nl_send_confirmation( string $email, string $first, string $last, a
 		'Recipients' => [ 'To' => [ $email ] ],
 		'Content'    => [
 			'From'    => OEC_NL_FROM,
-			'Subject' => sprintf( __( 'Confirmá tu suscripción y sumá %d créditos', 'oec-theme' ), OEC_NL_SUBSCRIBE_CREDITS ),
-			'Body'    => [ [ 'ContentType' => 'HTML', 'Content' => oec_nl_render_confirm_email( $first, $url ), 'Charset' => 'utf-8' ] ],
+			'Subject' => oec_nl_confirm_subject( $lists ),
+			'Body'    => [ [ 'ContentType' => 'HTML', 'Content' => oec_nl_render_confirm_email( $first, $url, $lists ), 'Charset' => 'utf-8' ] ],
 		],
 	] );
 	return is_wp_error( $res ) ? $res : true;

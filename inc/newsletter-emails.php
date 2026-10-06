@@ -73,8 +73,14 @@ function oec_nl_email_shell( array $a ): string {
 		'intro'      => '',
 		'body'       => '',
 		'subscribed' => true,
+		'header_bg'  => '', // fondo de la cabecera (p. ej. el tinte de una temática)
+		'label_color'=> '', // color de la etiqueta (p. ej. el acento de una temática)
+		'banner'     => '', // URL de una franja de imagen debajo de la cabecera (600 px)
+		'banner_alt' => '',
 	] );
-	$f = OEC_NL_FONT;
+	$f      = OEC_NL_FONT;
+	$head   = sanitize_hex_color( $a['header_bg'] ) ?: $c['dark'];
+	$lcolor = sanitize_hex_color( $a['label_color'] ) ?: $c['accent'];
 
 	ob_start();
 	?>
@@ -119,12 +125,12 @@ u+#body a{color:inherit;text-decoration:none}
 <!--[if mso]><table role="presentation" width="600" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
 <table role="presentation" class="nl-wrap" width="600" cellpadding="0" cellspacing="0" border="0" style="width:600px;max-width:600px;margin:0 auto;">
 
-	<tr><td class="nl-px" bgcolor="<?php echo esc_attr( $c['dark'] ); ?>" style="background:<?php echo esc_attr( $c['dark'] ); ?>;border-radius:16px 16px 0 0;padding:26px 32px 30px;">
+	<tr><td class="nl-px" bgcolor="<?php echo esc_attr( $head ); ?>" style="background:<?php echo esc_attr( $head ); ?>;border-radius:16px 16px 0 0;padding:26px 32px 30px;">
 		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
 			<td valign="middle"><a href="<?php echo esc_url( oec_config_url( '/?utm_source=mailing&utm_medium=newsletter' ) ); ?>" target="_blank"><img src="<?php echo esc_url( OEC_NL_LOGO ); ?>" width="91" height="40" alt="<?php echo esc_attr( OEC_NL_BRAND ); ?>" style="display:block;width:91px;height:40px;"></a></td>
 			<?php if ( $a['label'] ) : ?>
 			<td valign="middle" align="right" style="font-family:<?php echo esc_attr( $f ); ?>;">
-				<span style="display:block;font-size:11px;line-height:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:<?php echo esc_attr( $c['accent'] ); ?>;"><?php echo esc_html( $a['label'] ); ?></span>
+				<span style="display:block;font-size:11px;line-height:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:<?php echo esc_attr( $lcolor ); ?>;"><?php echo esc_html( $a['label'] ); ?></span>
 				<?php if ( $a['sublabel'] ) : ?><span style="display:block;font-size:13px;line-height:18px;color:<?php echo esc_attr( $c['soft'] ); ?>;"><?php echo esc_html( $a['sublabel'] ); ?></span><?php endif; ?>
 			</td>
 			<?php endif; ?>
@@ -136,6 +142,10 @@ u+#body a{color:inherit;text-decoration:none}
 		<p style="margin:12px 0 0;font-family:<?php echo esc_attr( $f ); ?>;font-size:16px;line-height:24px;color:<?php echo esc_attr( $c['soft'] ); ?>;"><?php echo $a['intro']; // phpcs:ignore -- escapado por quien llama ?></p>
 		<?php endif; ?>
 	</td></tr>
+
+	<?php if ( $a['banner'] ) : ?>
+	<tr><td bgcolor="<?php echo esc_attr( $head ); ?>" style="padding:0;font-size:0;line-height:0;background:<?php echo esc_attr( $head ); ?>;"><img src="<?php echo esc_url( $a['banner'] ); ?>" width="600" alt="<?php echo esc_attr( $a['banner_alt'] ); ?>" style="display:block;width:100%;max-width:600px;height:auto;"></td></tr>
+	<?php endif; ?>
 
 	<?php echo $a['body']; // phpcs:ignore ?>
 
@@ -187,21 +197,113 @@ function oec_nl_email_footer( bool $subscribed ): string {
 }
 
 /* ============================================================
-   EMAIL DE CONFIRMACIÓN (bienvenida en 3 pasos)
+   EMAIL DE CONFIRMACIÓN (bienvenida al newsletter elegido, en 3 pasos)
    ============================================================ */
-function oec_nl_render_confirm_email( string $first, string $url ): string {
-	$c     = oec_nl_colors();
-	$f     = OEC_NL_FONT;
-	$email = preg_replace( '/^.*<([^>]+)>$/', '$1', OEC_NL_FROM );
-	$h     = 'margin:0 0 6px;font-family:' . $f . ';font-size:18px;line-height:24px;font-weight:800;color:' . $c['text'] . ';';
-	$p     = 'margin:0 0 12px;font-family:' . $f . ';font-size:15px;line-height:23px;color:' . $c['muted'] . ';';
-	$icon  = 'https://d2u6lzrmbvw8bs.cloudfront.net/assets/social-icons/%1$s/%1$s-round-solid-color.png';
 
-	$step = function ( int $n, string $inner, bool $last = false ) use ( $c, $f ) {
+/**
+ * Temática de la suscripción: los datos de su landing (título, acento,
+ * tinte, portada) si se eligió UNA sola lista y es de una temática; null
+ * para el newsletter general o una combinación.
+ */
+function oec_nl_confirm_topic( array $lists ): ?array {
+	$lists = array_values( array_unique( $lists ) );
+	if ( 1 !== count( $lists ) || OEC_NL_GENERAL_LIST === $lists[0] || ! function_exists( 'oec_nl_especiales_lists' ) || ! function_exists( 'oec_get_especiales_list' ) ) {
+		return null;
+	}
+	$tematica = oec_nl_especiales_lists()[ $lists[0] ]['tematica'] ?? '';
+	foreach ( oec_get_especiales_list() as $e ) {
+		if ( $tematica && $e['tematica'] === $tematica ) {
+			return $e;
+		}
+	}
+	return null;
+}
+
+/**
+ * Las listas en una frase: "el newsletter semanal y el newsletter de
+ * Endurance". Con $al = true, para después de "suscripción": "al
+ * newsletter semanal y al newsletter de Endurance".
+ */
+function oec_nl_lists_phrase( array $lists, bool $al = false ): string {
+	$especiales = function_exists( 'oec_nl_especiales_lists' ) ? oec_nl_especiales_lists() : [];
+	$opts       = function_exists( 'oec_nl_opts' ) ? oec_nl_opts()['lists'] : [];
+	$names      = [];
+	foreach ( array_unique( $lists ) ?: [ OEC_NL_GENERAL_LIST ] as $list ) {
+		$names[] = ( $al ? 'al ' : 'el ' ) . ( OEC_NL_GENERAL_LIST === $list
+			? 'newsletter semanal'
+			: 'newsletter de ' . ( $especiales[ $list ]['label'] ?? ( $opts[ $list ]['label'] ?? $list ) ) );
+	}
+	$last = array_pop( $names );
+	return $names ? implode( ', ', $names ) . ' y ' . $last : $last;
+}
+
+/**
+ * Franja JPG de 1200×440 de la portada de una temática para el email (las
+ * portadas son PNG/WebP de varios MB; Outlook no muestra WebP). Se genera
+ * una vez en uploads/oec-theme/ y se regenera si cambia la portada.
+ */
+function oec_nl_topic_banner( array $topic ): string {
+	$src = (string) ( $topic['image'] ?? '' );
+	$pos = strpos( $src, '/wp-content/' );
+	if ( false === $pos ) {
+		return '';
+	}
+	$file = WP_CONTENT_DIR . '/' . substr( $src, $pos + strlen( '/wp-content/' ) );
+	if ( ! is_file( $file ) ) {
+		return '';
+	}
+	$up   = wp_upload_dir();
+	$name = 'email-' . sanitize_title( $topic['tematica'] ) . '-' . substr( md5( $file . filemtime( $file ) ), 0, 8 ) . '.jpg';
+	$dir  = trailingslashit( $up['basedir'] ) . 'oec-theme';
+	$url  = trailingslashit( $up['baseurl'] ) . 'oec-theme/' . $name;
+	if ( is_file( "$dir/$name" ) ) {
+		return $url;
+	}
+	$editor = wp_get_image_editor( $file );
+	if ( is_wp_error( $editor ) || is_wp_error( $editor->resize( 1200, 440, true ) ) ) {
+		return '';
+	}
+	wp_mkdir_p( $dir );
+	$editor->set_quality( 80 );
+	$saved = $editor->save( "$dir/$name", 'image/jpeg' );
+	if ( is_wp_error( $saved ) ) {
+		return '';
+	}
+	// Las versiones viejas de esa temática ya no se usan.
+	foreach ( glob( "$dir/email-" . sanitize_title( $topic['tematica'] ) . '-*.jpg' ) ?: [] as $old ) {
+		if ( basename( $old ) !== $name ) {
+			wp_delete_file( $old );
+		}
+	}
+	return $url;
+}
+
+/** Asunto del email de confirmación. */
+function oec_nl_confirm_subject( array $lists ): string {
+	$topic = oec_nl_confirm_topic( $lists );
+	return $topic
+		? sprintf( 'Confirmá tu suscripción a %s y sumá %d créditos', $topic['title'], OEC_NL_SUBSCRIBE_CREDITS )
+		: sprintf( 'Confirmá tu suscripción y sumá %d créditos', OEC_NL_SUBSCRIBE_CREDITS );
+}
+
+function oec_nl_render_confirm_email( string $first, string $url, array $lists = [ OEC_NL_GENERAL_LIST ] ): string {
+	$c      = oec_nl_colors();
+	$f      = OEC_NL_FONT;
+	$topic  = oec_nl_confirm_topic( $lists );
+	$accent = $topic ? ( sanitize_hex_color( $topic['accent'] ?? '' ) ?: $c['accent'] ) : $c['accent'];
+	$dark   = $topic ? ( sanitize_hex_color( $topic['tinte'] ?? '' ) ?: $c['dark'] ) : $c['dark'];
+	$what   = oec_nl_lists_phrase( $lists );        // "el newsletter de Nutrición Deportiva"
+	$to     = oec_nl_lists_phrase( $lists, true );  // "al newsletter de Nutrición Deportiva"
+	$email  = preg_replace( '/^.*<([^>]+)>$/', '$1', OEC_NL_FROM );
+	$h      = 'margin:0 0 6px;font-family:' . $f . ';font-size:18px;line-height:24px;font-weight:800;color:' . $c['text'] . ';';
+	$p      = 'margin:0 0 12px;font-family:' . $f . ';font-size:15px;line-height:23px;color:' . $c['muted'] . ';';
+	$icon   = 'https://d2u6lzrmbvw8bs.cloudfront.net/assets/social-icons/%1$s/%1$s-round-solid-color.png';
+
+	$step = function ( int $n, string $inner, bool $last = false ) use ( $c, $f, $accent, $dark ) {
 		return '<tr><td class="nl-px" bgcolor="#ffffff" style="background:#ffffff;padding:' . ( 1 === $n ? '32' : '0' ) . 'px 32px ' . ( $last ? '8' : '28' ) . 'px;">'
 			. '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
 			. '<td width="56" valign="top" style="width:56px;padding-top:2px;">'
-			. '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="40" height="40" align="center" valign="middle" bgcolor="' . esc_attr( $c['dark'] ) . '" style="width:40px;height:40px;border-radius:20px;background:' . esc_attr( $c['dark'] ) . ';font-family:' . $f . ';font-size:17px;font-weight:800;line-height:40px;color:' . esc_attr( $c['accent'] ) . ';">' . $n . '</td></tr></table>'
+			. '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="40" height="40" align="center" valign="middle" bgcolor="' . esc_attr( $dark ) . '" style="width:40px;height:40px;border-radius:20px;background:' . esc_attr( $dark ) . ';font-family:' . $f . ';font-size:17px;font-weight:800;line-height:40px;color:' . esc_attr( $accent ) . ';">' . $n . '</td></tr></table>'
 			. '</td><td valign="top">' . $inner . '</td></tr></table>'
 			. ( $last ? '' : '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding-top:28px;border-bottom:1px solid ' . esc_attr( $c['border'] ) . ';font-size:0;line-height:0;">&nbsp;</td></tr></table>' )
 			. '</td></tr>';
@@ -212,6 +314,10 @@ function oec_nl_render_confirm_email( string $first, string $url ): string {
 		. '<td style="padding:4px 0 0;"><a href="' . esc_url( OEC_NL_INSTAGRAM ) . '" target="_blank"><img src="' . esc_url( sprintf( $icon, 'instagram' ) ) . '" width="40" height="40" alt="Instagram" style="display:block;width:40px;height:40px;"></a></td>'
 		. '</tr></table>';
 
+	$weekly = $topic
+		? 'Así vas a recibir todos los ' . esc_html( oec_nl_weekday_plural() ) . ' lo nuevo en <strong style="color:' . esc_attr( $c['text'] ) . ';">' . esc_html( $topic['title'] ) . '</strong>: artículos, blogs y formaciones seleccionadas de la temática.'
+		: 'Así vas a recibir ' . esc_html( $what ) . ' todos los ' . esc_html( oec_nl_weekday_plural() ) . ', con artículos, blogs y ofertas exclusivas en formaciones.';
+
 	$body = $step( 1,
 		'<p style="' . $h . '">Seguinos en redes</p>'
 		. '<p style="' . $p . '">Contenido académico, novedades en formaciones, vivos y descuentos especiales.</p>' . $socials
@@ -219,24 +325,28 @@ function oec_nl_render_confirm_email( string $first, string $url ): string {
 	. $step( 2,
 		'<p style="' . $h . '">Asegurá nuestros emails</p>'
 		. '<p style="' . $p . '">Si este email llegó a spam o promociones, marcalo como <strong style="color:' . esc_attr( $c['text'] ) . ';">no es spam</strong> y agregá <a href="mailto:' . esc_attr( $email ) . '" style="color:' . esc_attr( $c['primary'] ) . ';font-weight:700;text-decoration:none;">' . esc_html( $email ) . '</a> a tus contactos.</p>'
-		. '<p style="' . $p . 'margin:0;">Así vas a recibir el newsletter todos los ' . esc_html( oec_nl_weekday_plural() ) . ', con artículos, blogs y ofertas exclusivas en formaciones.</p>'
+		. '<p style="' . $p . 'margin:0;">' . $weekly . '</p>'
 	)
 	. $step( 3,
 		'<p style="' . $h . '">Confirmá y sumá ' . (int) OEC_NL_SUBSCRIBE_CREDITS . ' créditos</p>'
 		. '<p style="' . $p . '">Tocá el botón para confirmar tu suscripción. Los créditos se acreditan al instante y los podés canjear por descuentos en las mejores formaciones de ciencias del ejercicio en habla hispana.</p>'
-		. oec_nl_btn( esc_url( $url ), 'Confirmar y obtener mis créditos', $c['accent'], $c['dark'] )
+		. oec_nl_btn( esc_url( $url ), 'Confirmar y obtener mis créditos', $accent, $c['dark'] )
 		. '<p style="' . $p . 'margin:14px 0 0;font-size:13px;line-height:19px;">¿Cómo se usan los créditos? <a href="' . esc_url( oec_config_url( '/creditos-por-descuentos' ) ) . '" style="color:' . esc_attr( $c['primary'] ) . ';font-weight:700;text-decoration:none;">Te lo explicamos acá</a>. El link vence en ' . (int) OEC_NL_CONFIRM_HOURS . ' horas.</p>',
 		true
 	);
 
 	return oec_nl_email_shell( [
-		'title'      => 'Bienvenida a G-SE',
-		'preheader'  => sprintf( 'Confirmá tu suscripción y sumá %d créditos.', OEC_NL_SUBSCRIBE_CREDITS ),
-		'label'      => 'Bienvenida a G-SE',
-		'heading'    => $first ? '¡Excelente, ' . esc_html( $first ) . '!' : '¡Excelente!',
-		'intro'      => sprintf( 'Seguí estos pasos para sumarte a la comunidad de G-SE y obtener tus %d créditos.', OEC_NL_SUBSCRIBE_CREDITS ),
-		'body'       => $body,
-		'subscribed' => false,
+		'title'       => $topic ? 'Newsletter de ' . $topic['title'] : 'Newsletter semanal de G-SE',
+		'preheader'   => sprintf( 'Confirmá tu suscripción %s para sumar %d créditos.', $to, OEC_NL_SUBSCRIBE_CREDITS ),
+		'label'       => $topic ? 'Newsletter · ' . $topic['title'] : 'Newsletter semanal',
+		'label_color' => $accent,
+		'header_bg'   => $dark,
+		'banner'      => $topic ? oec_nl_topic_banner( $topic ) : '',
+		'banner_alt'  => $topic ? $topic['title'] : '',
+		'heading'     => $first ? '¡Excelente, ' . esc_html( $first ) . '!' : '¡Excelente!',
+		'intro'       => esc_html( sprintf( 'Confirmá tu suscripción %s para sumar %d créditos. Son solo tres pasos:', $to, OEC_NL_SUBSCRIBE_CREDITS ) ),
+		'body'        => $body,
+		'subscribed'  => false,
 	] );
 }
 
