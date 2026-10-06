@@ -59,6 +59,20 @@ function oec_nl_pill( string $label, string $bg, string $color ): string {
 }
 
 /**
+ * Codifica los caracteres no ASCII (acentos, ¿, β…) y los espacios dentro de
+ * los src/href del email: hay clientes de correo que no abren URLs con UTF-8
+ * crudo (p. ej. imágenes subidas como "¿Ven-mejor-….jpg"). Los merge tags de
+ * Elastic Email ({email}, {unsubscribe}…) son ASCII y quedan intactos.
+ */
+function oec_nl_ascii_urls( string $html ): string {
+	return (string) preg_replace_callback(
+		'/\b(src|href)="([^"]*)"/',
+		fn( $m ) => $m[1] . '="' . preg_replace_callback( '/[\x80-\xFF ]/', fn( $c ) => rawurlencode( $c[0] ), $m[2] ) . '"',
+		$html
+	);
+}
+
+/**
  * Documento completo: cabecera oscura (logo + etiqueta + título), cuerpo
  * blanco y pie. $body son filas <tr> de la tabla de 600px.
  */
@@ -160,7 +174,7 @@ u+#body a{color:inherit;text-decoration:none}
 </body>
 </html>
 	<?php
-	return (string) ob_get_clean();
+	return oec_nl_ascii_urls( (string) ob_get_clean() );
 }
 
 /**
