@@ -181,11 +181,29 @@
     }
   });
 
-  /* ── Docentes [oec-docentes]: flechas + entrada escalonada ── */
+  /* Mezcla un array en el lugar (Fisher–Yates). Docentes y organizaciones
+     ordenan al azar en cada visita lo que el servidor eligió: el HTML queda
+     cacheado, así que el orden no puede salir del PHP. */
+  const mezclar = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  };
+
+  /* ── Docentes [oec-docentes]: orden al azar, flechas + entrada escalonada ── */
   document.querySelectorAll('.oec-docentes').forEach((section) => {
     const track  = section.querySelector('.oec-docentes__track');
     const arrows = section.querySelectorAll('.oec-docentes__arrow');
     if (!track) return;
+
+    // La card "+N docentes más" queda siempre al final.
+    const mas = track.querySelector('.oec-docente--more');
+    mezclar([...track.querySelectorAll('.oec-docente:not(.oec-docente--more)')]).forEach((card, i) => {
+      card.style.setProperty('--i', i); // orden de la entrada escalonada
+      track.insertBefore(card, mas);
+    });
 
     const update = () => {
       const max = track.scrollWidth - track.clientWidth - 2;
@@ -567,6 +585,19 @@
      la persona elige una. La barra de progreso de la pestaña activa es CSS
      (animation) y se reinicia en cada cambio. */
   document.querySelectorAll('[data-oec-orgs]').forEach((box) => {
+    // Orden al azar en cada visita: pestaña y panel se mueven juntos (los
+    // une aria-controls) y arranca seleccionada la primera del nuevo orden.
+    const filaTabs = box.querySelector('.oec-orgs__tabs');
+    const filaPans = box.querySelector('.oec-orgs__panels');
+    if (filaTabs && filaPans) {
+      mezclar([...filaTabs.querySelectorAll('.oec-orgs__tab')]).forEach((t, j) => {
+        const p = box.querySelector('#' + t.getAttribute('aria-controls'));
+        filaTabs.appendChild(t);
+        if (p) { filaPans.appendChild(p); p.hidden = j !== 0; }
+        t.setAttribute('aria-selected', String(j === 0));
+      });
+    }
+
     const tabs   = [...box.querySelectorAll('.oec-orgs__tab')];
     const panels = [...box.querySelectorAll('.oec-orgs__panel')];
     if (tabs.length < 2) return;

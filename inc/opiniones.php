@@ -104,9 +104,14 @@ function oec_render_opiniones_shortcode( $atts ): string {
 	$data  = oec_opiniones_catalog();
 	$tem   = $atts['tematica'];
 
-	$pool = array_filter( $data['reviews'], function ( $r ) use ( $tem ) {
+	// Solo de formaciones abiertas: la card lleva a la formación, y una
+	// cerrada no se puede cursar. El promedio de arriba sí cuenta todas.
+	$abiertas = class_exists( 'OEC_AI_Catalog' ) ? array_flip( array_column( OEC_AI_Catalog::get_index(), 'id' ) ) : [];
+
+	$pool = array_filter( $data['reviews'], function ( $r ) use ( $tem, $abiertas ) {
 		$len = mb_strlen( $r['comment'] );
-		return $r['rating'] >= 4 && $len >= 70 && $len <= 480
+		return isset( $abiertas[ $r['f_id'] ] )
+			&& $r['rating'] >= 4 && $len >= 70 && $len <= 480
 			&& ( '' === $tem || in_array( $tem, $r['tags'], true ) );
 	} );
 	if ( ! $pool ) {

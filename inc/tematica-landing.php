@@ -114,10 +114,13 @@ function oec_render_cierres_shortcode( $atts ): string {
 	$hoy   = current_time( 'Y-m-d' );
 	$hasta = gmdate( 'Y-m-d', strtotime( $hoy . ' +' . ( $dias - 1 ) . ' days' ) );
 
+	// Mismas formaciones que la tira de cierres (oec-tira orden="cierre"):
+	// solo relevancia 1 y 2, así el conteo y la cuenta regresiva coinciden
+	// con las cards. oec_tira_catalogo() trae la relevancia (el índice no).
 	$cierres = [];
-	foreach ( OEC_AI_Catalog::get_index() as $f ) {
+	foreach ( oec_tira_catalogo() as $f ) {
 		$fin = $f['enrollment_end'] ?? '';
-		if ( ! $fin || $fin < $hoy ) {
+		if ( ! $fin || $fin < $hoy || $f['relevance'] < 1 ) {
 			continue;
 		}
 		if ( '' !== $atts['tematica'] && ! in_array( $atts['tematica'], $f['tags'] ?? [], true ) ) {
@@ -165,9 +168,10 @@ function oec_render_cierres_shortcode( $atts ): string {
 /**
  * [oec-agenda more-url="/formaciones?oec_month=1" min="3"]
  *
- * Encabezado "agenda" para la tira de formaciones que empiezan el mes que
- * viene (el [oec-list] que va justo debajo, con title="" y
- * from-date="next-month" to-date="month-after-next", o sea dos meses):
+ * Encabezado "agenda" para la tira de formaciones que empiezan en el mes de
+ * la agenda (oec_agenda_mes(): hasta el día 19 el mes en curso, desde el 20
+ * el siguiente) — la tira de abajo (oec-tira almanaque="si") toma el mismo
+ * mes y el siguiente:
  * nombre del mes + una fila con sus días. main.js cuenta las cards de la
  * tira por día (data-start en cada card del Twig), marca los días en que
  * arranca algo y, al tocar uno, filtra la tira a ese día.
@@ -184,8 +188,9 @@ function oec_render_agenda_shortcode( $atts ): string {
 	$meses = [ 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre' ];
 	$dias  = [ 1 => 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo' ];
 
-	$ini   = new DateTimeImmutable( 'first day of next month', wp_timezone() );
+	$ini   = oec_agenda_mes(); // hasta el 19, el mes en curso; desde el 20, el siguiente
 	$ini2  = $ini->modify( '+1 month' );
+	$atts['more-url'] = oec_agenda_more_url( $atts['more-url'] );
 	$mes   = $meses[ (int) $ini->format( 'n' ) - 1 ];
 	$mes2  = $meses[ (int) $ini2->format( 'n' ) - 1 ];
 

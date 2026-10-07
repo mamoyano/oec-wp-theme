@@ -79,6 +79,29 @@ function oec_tira_catalogo(): array {
 	return $rows;
 }
 
+/**
+ * Mes de la agenda: hasta el día 19 inclusive, el mes en curso; desde el 20,
+ * el siguiente (ya casi no queda nada por arrancar en el mes que termina).
+ * Lo usan el encabezado [oec-agenda] y su tira (oec-tira almanaque="si"),
+ * así siempre muestran el mismo mes. Devuelve el día 1 de ese mes.
+ */
+function oec_agenda_mes(): DateTimeImmutable {
+	$hoy = new DateTimeImmutable( 'now', wp_timezone() );
+	$ini = $hoy->modify( 'first day of this month' )->setTime( 0, 0 );
+	return (int) $hoy->format( 'j' ) >= 20 ? $ini->modify( '+1 month' ) : $ini;
+}
+
+/**
+ * "Ver todo" de la agenda: el filtro de /formaciones por mes espera la clave
+ * del mes ("october-2026", ver oec_formaciones_meses()), no un número.
+ */
+function oec_agenda_more_url( string $url ): string {
+	if ( '' === $url || false === strpos( $url, 'oec_month=' ) ) {
+		return $url;
+	}
+	return (string) preg_replace( '/oec_month=[^&]*/', 'oec_month=' . strtolower( oec_agenda_mes()->format( 'F-Y' ) ), $url );
+}
+
 /** "next-month" / "this-month" / "month-after-next" / AAAA-MM-DD → AAAA-MM-DD. */
 function oec_tira_fecha( string $valor, bool $fin ): string {
 	$meses = [ 'this-month' => 0, 'next-month' => 1, 'month-after-next' => 2 ];
@@ -263,9 +286,24 @@ function oec_render_tira_shortcode( $atts ): string {
 	$desde = $atts['desde'] ? oec_tira_fecha( $atts['desde'], false ) : '';
 	$hasta = $atts['hasta'] ? oec_tira_fecha( $atts['hasta'], true ) : ( $desde && isset( [ 'this-month' => 1, 'next-month' => 1, 'month-after-next' => 1 ][ $atts['desde'] ] ) ? oec_tira_fecha( $atts['desde'], true ) : '' );
 
-	$rows = array_filter( oec_tira_catalogo(), function ( $r ) use ( $hoy, $temas, $desde, $hasta ) {
+	// Tira de la agenda (almanaque): el mes lo decide oec_agenda_mes() — el
+	// mismo que muestra el encabezado [oec-agenda] —, más el siguiente para
+	// cuando ese mes tiene pocas (main.js oculta el segundo si sobran).
+	// Pisa desde/hasta de la página, que todavía dicen "next-month".
+	if ( 'si' === $atts['almanaque'] ) {
+		$mes                = oec_agenda_mes();
+		$desde              = $mes->format( 'Y-m-01' );
+		$hasta              = $mes->modify( '+1 month' )->format( 'Y-m-t' );
+		$atts['more-url']   = oec_agenda_more_url( $atts['more-url'] );
+	}
+	$cierre = 'cierre' === $atts['orden'];
+
+	$rows = array_filter( oec_tira_catalogo(), function ( $r ) use ( $hoy, $temas, $desde, $hasta, $cierre ) {
 		if ( $r['enrollment_end'] && $r['enrollment_end'] < $hoy ) {
 			return false; // inscripción ya cerrada desde el último sync
+		}
+		if ( $cierre && $r['relevance'] < 1 ) {
+			return false; // "Cierran esta semana": solo relevancia 1 y 2
 		}
 		if ( $temas && array_diff( $temas, $r['tags'] ) ) {
 			return false;
