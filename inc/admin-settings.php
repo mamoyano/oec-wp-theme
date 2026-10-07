@@ -604,7 +604,7 @@ function oec_render_settings_page(): void {
 				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Rastreo y analítica', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Los scripts se cargan en diferido para no afectar el rendimiento: GTM y Meta Pixel apenas termina de cargar la página; Clarity en la primera interacción o a los 5 s. Dejá en blanco los que no uses. Para navegar sin rastreo: agregá ?trackers=false a la URL.', 'oec-theme' ); ?></p>
+						<p><?php esc_html_e( 'Los scripts se cargan en diferido para no afectar el rendimiento: GTM y Meta Pixel en la primera interacción o a los 4 s de cargar la página; Clarity en la primera interacción o a los 5 s. Dejá en blanco los que no uses. Para navegar sin rastreo: agregá ?trackers=false a la URL.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
@@ -1356,9 +1356,10 @@ add_action( 'wp_head', 'oec_output_dynamic_css', 100 );
    FRONTEND: Tracker scripts
    ============================================================ */
 // Carga en diferido, en dos tandas, para no competir con el LCP:
-// - GTM y Meta Pixel: al terminar el load, cuando el navegador queda libre
-//   (máx. 1,5 s), o antes si el visitante interactúa. Así casi no se pierden
-//   las visitas que rebotan rápido (las que más le importan a Meta).
+// - GTM y Meta Pixel: en la primera interacción o 4 s después del load. Así no
+//   caen dentro de la medición de PageSpeed (entre 1.0.70 y 1.0.101 cargaban apenas
+//   terminaba el load y sumaban ~1,2 s de tareas largas: la ficha bajó de 90+ a ~74).
+//   Se pierden las visitas que se van en menos de 4 s sin tocar nada (decisión de Mario).
 // - Clarity: en la primera interacción o 5 s después del load. Es el más
 //   pesado y solo aporta en sesiones con interacción.
 // Los stubs (dataLayer, fbq, clarity) se crean al toque: lo que se registre
@@ -1392,7 +1393,7 @@ if(c.pixel&&!w.fbq){var n=w.fbq=function(){n.callMethod?n.callMethod.apply(n,arg
 function loadMain(){if(started||!main)return;started=1;
 if(c.gtm){w.dataLayer.push({'gtm.start':Date.now(),event:'gtm.js'});add('https://www.googletagmanager.com/gtm.js?id='+encodeURIComponent(c.gtm));}
 if(c.pixel)add('https://connect.facebook.net/en_US/fbevents.js');}
-if(main){onFirst(loadMain);afterLoad(function(){w.requestIdleCallback?requestIdleCallback(loadMain,{timeout:1500}):setTimeout(loadMain,300);});}
+if(main){onFirst(loadMain);afterLoad(function(){setTimeout(loadMain,4000);});}
 if(c.clarity){w.clarity=w.clarity||function(){(w.clarity.q=w.clarity.q||[]).push(arguments)};
 var cl=0;function loadClarity(){if(cl)return;cl=1;add('https://www.clarity.ms/tag/'+encodeURIComponent(c.clarity));}
 onFirst(loadClarity);afterLoad(function(){setTimeout(loadClarity,5000);});}

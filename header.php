@@ -28,10 +28,18 @@
 			   aria-label="<?php bloginfo( 'name' ); ?>">
 				<?php
 				$oec_logo = function_exists( 'oec_get_options' ) ? oec_get_options()['logo_url'] : '';
-				if ( $oec_logo ) : ?>
+				if ( $oec_logo ) :
+					// width según la proporción real del archivo (si está en la biblioteca de medios):
+					// reserva el lugar del logo antes de que cargue (Lighthouse: imagen sin width).
+					$oec_logo_w  = 0;
+					$oec_logo_id = attachment_url_to_postid( $oec_logo );
+					$oec_logo_m  = $oec_logo_id ? wp_get_attachment_metadata( $oec_logo_id ) : [];
+					if ( ! empty( $oec_logo_m['width'] ) && ! empty( $oec_logo_m['height'] ) ) {
+						$oec_logo_w = (int) round( 40 * $oec_logo_m['width'] / $oec_logo_m['height'] );
+					} ?>
 					<img src="<?php echo esc_url( $oec_logo ); ?>"
 					     alt="<?php bloginfo( 'name' ); ?>"
-					     height="40" loading="eager">
+					     <?php if ( $oec_logo_w ) : ?>width="<?php echo (int) $oec_logo_w; ?>" <?php endif; ?>height="40" loading="eager">
 				<?php elseif ( has_custom_logo() ) :
 					the_custom_logo();
 				else : ?>
