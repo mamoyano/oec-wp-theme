@@ -12,7 +12,7 @@ defined( 'ABSPATH' ) || exit;
  * se identifica con un ID anónimo que genera el navegador.
  *
  * Retención: RETENTION_MONTHS; un cron diario borra lo más viejo.
- * Pantalla: "Chat IA" en el admin del sitio de configuración (/es/), con
+ * Pantalla: Tema OEC → Chat IA → Conversaciones (solo en /es/), con
  * resumen, filtros y exportación a CSV.
  */
 class OEC_AI_Chat_Log {
@@ -27,7 +27,6 @@ class OEC_AI_Chat_Log {
 		add_action( 'init', [ __CLASS__, 'maybe_create_table' ] );
 		add_action( self::CRON_HOOK, [ __CLASS__, 'purge' ] );
 		add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
-		add_action( 'admin_menu', [ __CLASS__, 'admin_menu' ] );
 		add_action( 'admin_post_oec_chat_log_csv', [ __CLASS__, 'export_csv' ] );
 
 		// El borrado corre solo en el sitio de configuración (la tabla es una para toda la red).
@@ -147,14 +146,6 @@ class OEC_AI_Chat_Log {
 
 	/* ── Admin ──────────────────────────────────────────────── */
 
-	public static function admin_menu(): void {
-		if ( ! oec_is_config_site() ) {
-			return;
-		}
-		add_menu_page( 'Conversaciones del chat IA', 'Chat IA', 'manage_options', 'oec-chat-log',
-			[ __CLASS__, 'render_page' ], 'dashicons-format-chat', 59 );
-	}
-
 	/** Filtros de la pantalla / CSV → [WHERE sql, args]. */
 	private static function filters(): array {
 		global $wpdb;
@@ -200,8 +191,7 @@ class OEC_AI_Chat_Log {
 		$sec    = static fn( $ms ) => $ms ? number_format_i18n( $ms / 1000, 1 ) . ' s' : '—';
 		$csv    = wp_nonce_url( add_query_arg( array_merge( [ 'action' => 'oec_chat_log_csv' ], $f ), admin_url( 'admin-post.php' ) ), 'oec_chat_log_csv' );
 		?>
-		<div class="wrap">
-			<h1>Conversaciones del chat IA</h1>
+		<div class="oec-chat-log">
 			<p>Cada fila es una consulta. Se guardan <?php echo (int) self::RETENTION_MONTHS; ?> meses y después se borran solas. No se guardan IP ni datos personales.</p>
 
 			<form method="get" style="margin:1em 0;display:flex;gap:.5em;flex-wrap:wrap;align-items:center">

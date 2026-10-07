@@ -26,7 +26,7 @@ defined( 'ABSPATH' ) || exit;
    si el email está suscripto, una vez por semana ISO y hasta 14 días
    después del envío.
 
-   Admin: Apariencia → Newsletter, solo en el sitio de configuración de la
+   Admin: Tema OEC → Newsletter, solo en el sitio de configuración de la
    red (/es/, OEC_CONFIG_SITE_PATH). Todos los sitios leen de ahí las API
    keys, listas, estado y último envío (oec_config_get_option()).
    ============================================================ */
@@ -225,7 +225,7 @@ function oec_nl_subscribe_ref( array $lists ): string {
  * (formaciones) y la categoría del blog (artículos) de la landing, para que
  * entre en el envío semanal igual que la general. Solo toca las que nunca
  * se registraron ("especial" vacío): después manda lo que se edite en
- * Apariencia → Newsletter.
+ * Tema OEC → Newsletter.
  *
  * @return int|WP_Error Cantidad de listas registradas.
  */
@@ -386,7 +386,7 @@ function oec_nl_claim_sig( int $sent_at ): string {
 function oec_nl_api( string $method, string $path, $body = null, array $query = [] ) {
 	$key = oec_nl_api_key();
 	if ( ! $key ) {
-		return new WP_Error( 'oec_nl_no_key', __( 'Falta la API key de Elastic Email (Apariencia → Newsletter).', 'oec-theme' ) );
+		return new WP_Error( 'oec_nl_no_key', __( 'Falta la API key de Elastic Email (Tema OEC → Newsletter).', 'oec-theme' ) );
 	}
 
 	$qs = [];
@@ -1240,7 +1240,7 @@ function oec_nl_render_form( $atts = [] ): string {
 
 	if ( ! oec_nl_api_key() ) {
 		return current_user_can( 'manage_options' )
-			? '<p class="oec-nl-notice">' . esc_html__( 'Newsletter: falta la API key de Elastic Email (Apariencia → Newsletter).', 'oec-theme' ) . '</p>'
+			? '<p class="oec-nl-notice">' . esc_html__( 'Newsletter: falta la API key de Elastic Email (Tema OEC → Newsletter).', 'oec-theme' ) . '</p>'
 			: '';
 	}
 
@@ -1517,11 +1517,11 @@ function oec_nl_collect_posts( array $list, int $since ): array {
 	return get_posts( $args );
 }
 
-/** Próximas formaciones desde la API OAS (token de Ajustes → Integraciones). */
+/** Próximas formaciones desde la API OAS (token de Tema OEC → Formaciones). */
 function oec_nl_collect_trainings( array $list ): array {
 	$token = trim( oec_config_theme_options()['oec_api_token'] ?? '' );
 	if ( ! $token ) {
-		oec_nl_log( 'error', 'Sin token de la API OAS (Ajustes → Integraciones): el newsletter va sin formaciones.' );
+		oec_nl_log( 'error', 'Sin token de la API OAS (Tema OEC → Formaciones): el newsletter va sin formaciones.' );
 		return [];
 	}
 	$url = OEC_NL_OAS_API . '?pagination=' . OEC_NL_MAX_TRAININGS;
@@ -1790,25 +1790,14 @@ add_action( OEC_NL_CRON, function () {
 } );
 
 /* ============================================================
-   ADMIN: Apariencia → Newsletter
+   ADMIN: Tema OEC → Newsletter
    ============================================================ */
-// La configuración vive en un solo sitio de la red (/es/).
-add_action( 'admin_menu', function () {
-	if ( ! oec_is_config_site() ) {
-		return;
-	}
-	add_theme_page(
-		__( 'Newsletter — Elastic Email', 'oec-theme' ),
-		__( 'Newsletter', 'oec-theme' ),
-		'manage_options',
-		'oec-newsletter',
-		'oec_nl_render_admin'
-	);
-} );
+// La configuración vive en un solo sitio de la red (/es/). El submenú se
+// registra en oec_add_admin_menu() (inc/admin-settings.php).
 
 function oec_nl_redirect_notice( string $type, string $message ): void {
 	set_transient( 'oec_nl_notice_' . get_current_user_id(), [ 'type' => $type, 'msg' => $message ], 60 );
-	wp_safe_redirect( add_query_arg( 'page', 'oec-newsletter', admin_url( 'themes.php' ) ) );
+	wp_safe_redirect( oec_admin_url( 'oec-newsletter' ) );
 	exit;
 }
 
@@ -2025,15 +2014,8 @@ function oec_nl_render_admin(): void {
 	</style>
 	<div class="wrap oec-settings-wrap oec-nl-admin">
 
-		<div class="oec-page-header">
-			<div class="oec-page-header__left">
-				<span class="oec-page-header__logo">OEC<span>.</span></span>
-				<div>
-					<h1><?php esc_html_e( 'Newsletter', 'oec-theme' ); ?></h1>
-					<p><?php esc_html_e( 'Suscripciones con créditos y newsletter semanal con Elastic Email.', 'oec-theme' ); ?></p>
-				</div>
-			</div>
-		</div>
+		<h1><?php esc_html_e( 'Newsletter', 'oec-theme' ); ?></h1>
+		<p><?php esc_html_e( 'Suscripciones con créditos y newsletter semanal con Elastic Email.', 'oec-theme' ); ?></p>
 
 		<?php if ( $notice ) : ?>
 		<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['msg'] ); ?></p></div>
@@ -2077,7 +2059,7 @@ function oec_nl_render_admin(): void {
 						<dt><?php esc_html_e( 'Lista general', 'oec-theme' ); ?></dt><dd><code><?php echo esc_html( OEC_NL_GENERAL_LIST ); ?></code></dd>
 						<dt><?php esc_html_e( 'Remitente', 'oec-theme' ); ?></dt><dd><code><?php echo esc_html( OEC_NL_FROM ); ?></code></dd>
 						<dt><?php esc_html_e( 'Créditos', 'oec-theme' ); ?></dt><dd><?php printf( esc_html__( '%1$d por suscribirse · %2$d semanales', 'oec-theme' ), (int) OEC_NL_SUBSCRIBE_CREDITS, (int) OEC_NL_WEEKLY_CREDITS ); ?></dd>
-						<dt><?php esc_html_e( 'Formaciones (API OAS)', 'oec-theme' ); ?></dt><dd><?php echo $has_oas ? esc_html__( 'Token configurado', 'oec-theme' ) : '<strong style="color:#b32d2e">' . esc_html__( 'Falta el token en Ajustes → Integraciones', 'oec-theme' ) . '</strong>'; ?></dd>
+						<dt><?php esc_html_e( 'Formaciones (API OAS)', 'oec-theme' ); ?></dt><dd><?php echo $has_oas ? esc_html__( 'Token configurado', 'oec-theme' ) : '<strong style="color:#b32d2e">' . esc_html__( 'Falta el token en Tema OEC → Formaciones', 'oec-theme' ) . '</strong>'; ?></dd>
 					</dl>
 					<p><button type="submit" name="oec_nl_do" value="test" class="button"><?php esc_html_e( 'Guardar y probar conexión', 'oec-theme' ); ?></button></p>
 				</div>

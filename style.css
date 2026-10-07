@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.102
+Version: 1.0.103
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -17,7 +17,7 @@ GitHub Theme URI: mamoyano/oec-wp-theme
    VARIABLES
    ============================================================ */
 :root {
-  /* Paleta base — configurable desde Apariencia → Online Education Center →
+  /* Paleta base — configurable desde Tema OEC → Diseño →
      Identidad gráfica: primary, dark, dark-2, accent y text. El resto se
      deriva de esos (ver oec_palette()): light = primary 97% hacia blanco,
      border = primary 85%, muted = text 30%, badges = primary / dark-2.

@@ -165,24 +165,112 @@ function oec_sanitize_options( $raw ): array {
 }
 
 /* ============================================================
-   ADMIN MENU
+   ADMIN MENU — "Tema OEC": todo lo que administra el tema
    ============================================================ */
+
+/* Pantallas del menú (slug → título y pestañas). Cada pestaña es una
+ * sección de oec_render_settings_page(); Newsletter tiene su propia
+ * pantalla (inc/newsletter.php). Las conversaciones del chat y el
+ * newsletter solo existen en el sitio de configuración (/es/). */
+function oec_admin_pages(): array {
+	$pages = [
+		'oec-settings'        => [ 'title' => __( 'Diseño', 'oec-theme' ), 'tabs' => [
+			'identidad' => __( 'Identidad gráfica', 'oec-theme' ),
+			'contenido' => __( 'Encabezado y pie', 'oec-theme' ),
+		] ],
+		'oec-formaciones'     => [ 'title' => __( 'Formaciones', 'oec-theme' ), 'tabs' => [ 'formaciones' => '' ] ],
+		'oec-chat-log'        => [ 'title' => __( 'Chat IA', 'oec-theme' ), 'tabs' => [
+			'conversaciones' => __( 'Conversaciones', 'oec-theme' ),
+			'chat'           => __( 'Configuración', 'oec-theme' ),
+		] ],
+		'oec-newsletter'      => [ 'title' => __( 'Newsletter', 'oec-theme' ), 'tabs' => [] ],
+		'oec-integraciones'   => [ 'title' => __( 'Integraciones', 'oec-theme' ), 'tabs' => [ 'integraciones' => '' ] ],
+		'oec-actualizaciones' => [ 'title' => __( 'Actualizaciones', 'oec-theme' ), 'tabs' => [ 'actualizaciones' => '' ] ],
+	];
+	if ( ! oec_is_config_site() ) {
+		// Las conversaciones (tabla de toda la red) y el newsletter se
+		// administran desde /es/; acá queda solo la clave del chat.
+		unset( $pages['oec-newsletter'], $pages['oec-chat-log']['tabs']['conversaciones'] );
+	}
+	return $pages;
+}
+
+/* Opciones que edita cada sección (el resto viaja como hidden al guardar,
+ * porque todo es una sola opción). Sin claves = sección sin formulario. */
+function oec_admin_section_keys(): array {
+	return [
+		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
+		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
+		'formaciones'     => [ 'oec_api_token' ],
+		'chat'            => [ 'oec_anthropic_key' ],
+		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		'actualizaciones' => [],
+		'conversaciones'  => [],
+	];
+}
+
+function oec_admin_url( string $page, array $args = [] ): string {
+	return add_query_arg( array_merge( [ 'page' => $page ], $args ), admin_url( 'admin.php' ) );
+}
+
 function oec_add_admin_menu(): void {
-	add_theme_page(
-		__( 'Configuración', 'oec-theme' ),
-		__( 'Online Education Center', 'oec-theme' ),
+	add_menu_page(
+		__( 'Tema OEC', 'oec-theme' ),
+		__( 'Tema OEC', 'oec-theme' ),
 		'manage_options',
 		'oec-settings',
-		'oec_render_settings_page'
+		'oec_render_settings_page',
+		'dashicons-art',
+		59
 	);
+	foreach ( oec_admin_pages() as $slug => $page ) {
+		$callback = 'oec-newsletter' === $slug ? 'oec_nl_render_admin' : 'oec_render_settings_page';
+		add_submenu_page( 'oec-settings', $page['title'], $page['title'], 'manage_options', $slug, $callback );
+	}
 }
 add_action( 'admin_menu', 'oec_add_admin_menu' );
+
+/* Direcciones viejas (Apariencia → …, pestañas de la pantalla única) →
+ * su lugar nuevo, para no romper favoritos ni links guardados. */
+function oec_admin_legacy_redirect(): void {
+	global $pagenow;
+	$page = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	$tab  = sanitize_key( $_GET['tab'] ?? '' );  // phpcs:ignore WordPress.Security.NonceVerification
+	if ( ! in_array( $page, [ 'oec-settings', 'oec-newsletter' ], true ) || isset( $_GET['oec_action'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+		return;
+	}
+	$legacy_tabs = [
+		'logo'            => [ 'oec-settings', [] ],
+		'colores'         => [ 'oec-settings', [] ],
+		'rastreo'         => [ 'oec-integraciones', [] ],
+		'integraciones'   => [ 'oec-integraciones', [] ],
+		'actualizaciones' => [ 'oec-actualizaciones', [] ],
+		'asistente'       => [ 'oec-chat-log', [ 'tab' => 'chat' ] ],
+	];
+	if ( 'themes.php' === $pagenow ) {
+		$target = [ $page, $tab ? [ 'tab' => $tab ] : [] ];
+		if ( 'oec-settings' === $page && isset( $legacy_tabs[ $tab ] ) ) {
+			$target = $legacy_tabs[ $tab ];
+		}
+	} elseif ( 'admin.php' === $pagenow && 'oec-settings' === $page && isset( $legacy_tabs[ $tab ] ) ) {
+		$target = $legacy_tabs[ $tab ];
+	} else {
+		return;
+	}
+	if ( isset( $_GET['checked'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+		$target[1]['checked'] = '1';
+	}
+	wp_safe_redirect( oec_admin_url( $target[0], $target[1] ) );
+	exit;
+}
+add_action( 'admin_init', 'oec_admin_legacy_redirect' );
 
 /* ============================================================
    ENQUEUE ASSETS (solo en la página del tema)
    ============================================================ */
 function oec_admin_enqueue( string $hook ): void {
-	if ( 'appearance_page_oec-settings' !== $hook ) {
+	$page = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	if ( 'oec-newsletter' === $page || ! array_key_exists( $page, oec_admin_pages() ) ) {
 		return;
 	}
 
@@ -234,10 +322,7 @@ function oec_maybe_handle_force_check(): void {
 	// 3. Forzar re-verificación inmediata
 	wp_update_themes();
 
-	wp_safe_redirect( add_query_arg(
-		[ 'page' => 'oec-settings', 'tab' => 'actualizaciones', 'checked' => '1' ],
-		admin_url( 'themes.php' )
-	) );
+	wp_safe_redirect( oec_admin_url( 'oec-actualizaciones', [ 'checked' => '1' ] ) );
 	exit;
 }
 add_action( 'admin_init', 'oec_maybe_handle_force_check' );
@@ -250,71 +335,57 @@ function oec_render_settings_page(): void {
 		return;
 	}
 
-	$opts = oec_get_options();
-	$tab  = sanitize_key( $_GET['tab'] ?? 'identidad' );
-	// Pestañas viejas (antes separadas) → la nueva que las reúne.
-	if ( in_array( $tab, [ 'logo', 'colores' ], true ) ) {
-		$tab = 'identidad';
-	} elseif ( 'rastreo' === $tab ) {
-		$tab = 'integraciones';
-	}
-	$tabs = [
-		'identidad'       => [ 'label' => __( 'Identidad gráfica', 'oec-theme' ), 'icon' => '🎨' ],
-		'integraciones'   => [ 'label' => __( 'Integraciones', 'oec-theme' ),     'icon' => '🔌' ],
-		'actualizaciones' => [ 'label' => __( 'Actualizaciones', 'oec-theme' ),   'icon' => '🔄' ],
-		'asistente'       => [ 'label' => __( 'Asistente IA', 'oec-theme' ),       'icon' => '🤖' ],
-		'contenido'       => [ 'label' => __( 'Contenido', 'oec-theme' ),           'icon' => '🧭' ],
-	];
-
-	if ( ! array_key_exists( $tab, $tabs ) ) {
-		$tab = 'identidad';
+	$opts  = oec_get_options();
+	$pages = oec_admin_pages();
+	$slug  = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	$slug  = isset( $pages[ $slug ] ) ? $slug : 'oec-settings';
+	$tabs  = $pages[ $slug ]['tabs'];
+	$tab   = sanitize_key( $_GET['tab'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
+	if ( ! isset( $tabs[ $tab ] ) ) {
+		$tab = array_key_first( $tabs );
 	}
 
 	if ( isset( $_GET['settings-updated'] ) ) {
 		add_settings_error( 'oec_messages', 'oec_saved', __( 'Configuración guardada correctamente.', 'oec-theme' ), 'updated' );
 	}
 
-	// Keys that belong to each tab (for hidden-input preservation)
-	$tab_keys = [
-		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
-		'integraciones'   => [ 'oec_api_token', 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
-		'actualizaciones' => [],
-		'asistente'       => [ 'oec_anthropic_key' ],
-		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
-	];
-
-	$all_keys    = array_merge( ...array_values( $tab_keys ) );
-	$current_tab_keys = $tab_keys[ $tab ];
-	$other_keys  = array_diff( $all_keys, $current_tab_keys );
+	$section_keys = oec_admin_section_keys();
+	$has_form     = (bool) $section_keys[ $tab ];
+	$other_keys   = array_diff( array_merge( ...array_values( $section_keys ) ), $section_keys[ $tab ] );
 
 	oec_page_inline_styles();
 	?>
-	<div class="wrap oec-settings-wrap">
+	<div class="wrap oec-settings-wrap<?php echo 'conversaciones' === $tab ? ' oec-settings-wrap--wide' : ''; ?>">
 
-		<h1><?php esc_html_e( 'Configuración', 'oec-theme' ); ?></h1>
+		<h1><?php echo esc_html( $pages[ $slug ]['title'] ); ?></h1>
 
 		<?php settings_errors( 'oec_messages' ); ?>
 
-		<!-- Tabs -->
+		<?php if ( count( $tabs ) > 1 ) : ?>
 		<nav class="oec-tabs" aria-label="<?php esc_attr_e( 'Secciones', 'oec-theme' ); ?>">
-			<?php foreach ( $tabs as $key => $data ) : ?>
-			<a href="<?php echo esc_url( add_query_arg( [ 'page' => 'oec-settings', 'tab' => $key ], admin_url( 'themes.php' ) ) ); ?>"
+			<?php foreach ( $tabs as $key => $label ) : ?>
+			<a href="<?php echo esc_url( oec_admin_url( $slug, [ 'tab' => $key ] ) ); ?>"
 			   class="oec-tab <?php echo $tab === $key ? 'oec-tab--active' : ''; ?>">
-				<span class="oec-tab__icon" aria-hidden="true"><?php echo $data['icon']; // phpcs:ignore ?></span>
-				<?php echo esc_html( $data['label'] ); ?>
+				<?php echo esc_html( $label ); ?>
 			</a>
 			<?php endforeach; ?>
 		</nav>
+		<?php endif; ?>
 
-		<!-- Form -->
+		<?php if ( 'conversaciones' === $tab ) : ?>
+			<?php OEC_AI_Chat_Log::render_page(); ?>
+		<?php else : ?>
+
+		<?php if ( $has_form ) : ?>
 		<form method="post" action="options.php" class="oec-settings-form">
 			<?php settings_fields( 'oec_settings_group' ); ?>
 
-			<!-- Preserve other tabs' values as hidden inputs -->
+			<!-- Preserve other sections' values as hidden inputs -->
 			<?php foreach ( $other_keys as $key ) : ?>
 			<input type="hidden" name="<?php echo esc_attr( OEC_OPTION . '[' . $key . ']' ); ?>"
 			       value="<?php echo esc_attr( (string) ( $opts[ $key ] ?? '' ) ); ?>">
 			<?php endforeach; ?>
+		<?php endif; ?>
 
 			<div class="oec-settings-body">
 
@@ -516,51 +587,8 @@ function oec_render_settings_page(): void {
 
 				<?php elseif ( $tab === 'integraciones' ) : ?>
 				<!-- ================================================
-				     TAB: INTEGRACIONES (APIs + rastreo)
+				     INTEGRACIONES — créditos + rastreo
 				     ================================================ -->
-				<div class="oec-card">
-					<div class="oec-card__header">
-						<h2><?php esc_html_e( 'API de formaciones (OAS)', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Se usa server-side; nunca se expone al navegador.', 'oec-theme' ); ?></p>
-					</div>
-					<div class="oec-card__body">
-
-						<div class="oec-tracker-row">
-							<div class="oec-tracker-row__head">
-								<div class="oec-tracker-logo" style="background:#194872;font-size:.6rem;font-weight:900;">OEC</div>
-								<div>
-									<strong><?php esc_html_e( 'Token de la API OAS', 'oec-theme' ); ?></strong>
-									<p><?php esc_html_e( 'Sincroniza el catálogo de formaciones (listado de /formaciones y asistente IA) y trae las próximas formaciones del newsletter.', 'oec-theme' ); ?></p>
-								</div>
-								<div class="oec-tracker-status" id="status-oec_api_token">
-									<?php oec_tracker_badge( $opts['oec_api_token'] ); ?>
-								</div>
-							</div>
-
-							<div class="oec-tracker-row__field">
-								<label for="oec-api-token"><?php esc_html_e( 'API Token', 'oec-theme' ); ?></label>
-								<input type="password"
-								       id="oec-api-token"
-								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_token]"
-								       value="<?php echo esc_attr( $opts['oec_api_token'] ); ?>"
-								       class="regular-text oec-tracker-input"
-								       placeholder="PjTzQpp..."
-								       data-tracker="oec_api_token"
-								       autocomplete="new-password"
-								       spellcheck="false">
-								<p class="description">
-									<?php esc_html_e( 'Token de autenticación para la API de OEC. Lo encontrás en tu panel de administración de Online Education Center.', 'oec-theme' ); ?>
-									<?php if ( $opts['oec_api_token'] ) : ?>
-									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Token configurado.', 'oec-theme' ); ?></span>
-									<?php endif; ?>
-								</p>
-							</div>
-
-						</div>
-
-					</div>
-				</div>
-
 					<!-- Credits API -->
 					<div class="oec-card">
 						<div class="oec-card__header">
@@ -814,12 +842,10 @@ function oec_render_settings_page(): void {
 
 						<!-- Botón forzar verificación -->
 						<div style="margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid #f0f0f1;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
-							<a href="<?php echo esc_url( add_query_arg( [
-								'page'       => 'oec-settings',
-								'tab'        => 'actualizaciones',
+							<a href="<?php echo esc_url( oec_admin_url( 'oec-actualizaciones', [
 								'oec_action' => 'force_update_check',
 								'_nonce'     => wp_create_nonce( 'oec_force_update_check' ),
-							], admin_url( 'themes.php' ) ) ); ?>"
+							] ) ); ?>"
 							   class="button button-primary button-large">
 								🔄 <?php esc_html_e( 'Borrar caché y forzar verificación', 'oec-theme' ); ?>
 							</a>
@@ -836,7 +862,7 @@ function oec_render_settings_page(): void {
 
 				<?php if ( $has_update ) : ?>
 				<!-- Aviso de actualización disponible -->
-				<div class="oec-card" style="margin-top:1rem;border-color:#1e7e34;">
+				<div class="oec-card" style="border-color:#1e7e34;">
 					<div class="oec-card__body" style="display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1.25rem 2rem;">
 						<div>
 							<strong style="color:#1e7e34;font-size:1rem;">
@@ -853,18 +879,10 @@ function oec_render_settings_page(): void {
 				</div>
 				<?php endif; ?>
 
-				<?php elseif ( $tab === 'asistente' ) : ?>
+				<?php elseif ( $tab === 'chat' ) : ?>
 				<!-- ================================================
-				     TAB: ASISTENTE IA
+				     CHAT IA → Configuración
 				     ================================================ -->
-				<?php
-				$ai_meta = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_meta() : [];
-				$ai_status = $ai_meta['status'] ?? 'never';
-				$ai_count  = (int) ( $ai_meta['count'] ?? 0 );
-				$ai_date   = $ai_meta['finished_at'] ?? '';
-				$ai_errors = $ai_meta['errors'] ?? [];
-				?>
-
 				<!-- API Key -->
 				<div class="oec-card">
 					<div class="oec-card__header">
@@ -904,11 +922,66 @@ function oec_render_settings_page(): void {
 					</div>
 				</div>
 
+				<?php elseif ( $tab === 'formaciones' ) : ?>
+				<!-- ================================================
+				     FORMACIONES — token OAS + catálogo
+				     ================================================ -->
+				<?php
+				$ai_meta = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_meta() : [];
+				$ai_status = $ai_meta['status'] ?? 'never';
+				$ai_count  = (int) ( $ai_meta['count'] ?? 0 );
+				$ai_date   = $ai_meta['finished_at'] ?? '';
+				$ai_errors = $ai_meta['errors'] ?? [];
+				?>
+
+				<div class="oec-card">
+					<div class="oec-card__header">
+						<h2><?php esc_html_e( 'API de formaciones (OAS)', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'Se usa server-side; nunca se expone al navegador.', 'oec-theme' ); ?></p>
+					</div>
+					<div class="oec-card__body">
+
+						<div class="oec-tracker-row">
+							<div class="oec-tracker-row__head">
+								<div class="oec-tracker-logo" style="background:#194872;font-size:.6rem;font-weight:900;">OEC</div>
+								<div>
+									<strong><?php esc_html_e( 'Token de la API OAS', 'oec-theme' ); ?></strong>
+									<p><?php esc_html_e( 'Sincroniza el catálogo de formaciones (listado de /formaciones y asistente IA) y trae las próximas formaciones del newsletter.', 'oec-theme' ); ?></p>
+								</div>
+								<div class="oec-tracker-status" id="status-oec_api_token">
+									<?php oec_tracker_badge( $opts['oec_api_token'] ); ?>
+								</div>
+							</div>
+
+							<div class="oec-tracker-row__field">
+								<label for="oec-api-token"><?php esc_html_e( 'API Token', 'oec-theme' ); ?></label>
+								<input type="password"
+								       id="oec-api-token"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_token]"
+								       value="<?php echo esc_attr( $opts['oec_api_token'] ); ?>"
+								       class="regular-text oec-tracker-input"
+								       placeholder="PjTzQpp..."
+								       data-tracker="oec_api_token"
+								       autocomplete="new-password"
+								       spellcheck="false">
+								<p class="description">
+									<?php esc_html_e( 'Token de autenticación para la API de OEC. Lo encontrás en tu panel de administración de Online Education Center.', 'oec-theme' ); ?>
+									<?php if ( $opts['oec_api_token'] ) : ?>
+									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Token configurado.', 'oec-theme' ); ?></span>
+									<?php endif; ?>
+								</p>
+							</div>
+
+						</div>
+
+					</div>
+				</div>
+
 				<!-- Catalog status -->
-				<div class="oec-card" style="margin-top:1rem;">
+				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Catálogo de formaciones', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'El asistente lee un catálogo local que se actualiza diariamente a las 3:00 AM.', 'oec-theme' ); ?></p>
+						<p><?php esc_html_e( 'Copia local de las formaciones de la API OAS, que se actualiza todos los días a las 3:00 AM. De acá salen el listado de /formaciones y las respuestas del asistente IA.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
@@ -1003,7 +1076,7 @@ function oec_render_settings_page(): void {
 				</div>
 
 				<!-- Redes sociales -->
-				<div class="oec-card" style="margin-top:1rem;">
+				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Redes sociales', 'oec-theme' ); ?></h2>
 						<p><?php esc_html_e( 'Se muestran como íconos en el pie de página. Dejá en blanco las que no uses.', 'oec-theme' ); ?></p>
@@ -1033,7 +1106,7 @@ function oec_render_settings_page(): void {
 				</div>
 
 				<!-- Footer -->
-				<div class="oec-card" style="margin-top:1rem;">
+				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Pie de página', 'oec-theme' ); ?></h2>
 						<p><?php esc_html_e( 'Texto bajo el logo y columnas de enlaces.', 'oec-theme' ); ?></p>
@@ -1093,11 +1166,15 @@ function oec_render_settings_page(): void {
 
 			</div><!-- .oec-settings-body -->
 
+		<?php if ( $has_form ) : ?>
 			<div class="oec-settings-footer">
 				<?php submit_button( __( 'Guardar cambios', 'oec-theme' ), 'primary large', 'submit', false ); ?>
 			</div>
 
 		</form>
+		<?php endif; ?>
+
+		<?php endif; ?>
 	</div><!-- .wrap -->
 	<?php
 }
@@ -1121,6 +1198,8 @@ function oec_page_inline_styles(): void {
 	<style>
 	/* ---- Layout ---- */
 	.oec-settings-wrap { max-width: 860px; }
+	.oec-settings-wrap--wide { max-width: none; }
+	.oec-settings-wrap > h1 { margin-bottom: 1rem; }
 
 	/* ---- Tabs ---- */
 	.oec-tabs {
@@ -1153,7 +1232,6 @@ function oec_page_inline_styles(): void {
 		border-bottom-color: #fff;
 		font-weight: 600;
 	}
-	.oec-tab__icon { font-size: 1rem; }
 
 	/* ---- Card ---- */
 	.oec-card {
@@ -1362,6 +1440,10 @@ add_action( 'wp_head', 'oec_output_dynamic_css', 100 );
 //   Se pierden las visitas que se van en menos de 4 s sin tocar nada (decisión de Mario).
 // - Clarity: en la primera interacción o 5 s después del load. Es el más
 //   pesado y solo aporta en sesiones con interacción.
+// "Interacción" = mouse, toque, tecla o scroll DE LA PÁGINA. El listener es en captura, así que
+// también recibe el scroll de cualquier elemento (scroll no burbujea, pero sí pasa por la
+// captura): el carrusel de opiniones del plugin, que se mueve solo, disparaba los tres
+// rastreadores a los ~2 s y anulaba la espera (visto en 1.0.102). Solo cuenta e.target === document.
 // Los stubs (dataLayer, fbq, clarity) se crean al toque: lo que se registre
 // antes queda en cola y se envía al cargar.
 // Clic en un enlace al checkout antes de que GTM y el Pixel estén listos: se
@@ -1385,7 +1467,7 @@ function oec_output_trackers_head(): void {
 if(new URLSearchParams(location.search).get('trackers')==='false')return;
 function add(u){var s=d.createElement('script');s.async=true;s.src=u;d.head.appendChild(s);}
 var ev=['mousemove','pointerdown','touchstart','keydown','scroll'],o={passive:true,capture:true};
-function onFirst(f){function h(){ev.forEach(function(e){w.removeEventListener(e,h,o)});f();}ev.forEach(function(e){w.addEventListener(e,h,o)});}
+function onFirst(f){function h(e){if(e.type==='scroll'&&e.target!==d)return;ev.forEach(function(e){w.removeEventListener(e,h,o)});f();}ev.forEach(function(e){w.addEventListener(e,h,o)});}
 function afterLoad(f){if(d.readyState==='complete')f();else w.addEventListener('load',f);}
 var main=c.gtm||c.pixel,started=0;
 if(c.gtm)w.dataLayer=w.dataLayer||[];
