@@ -14,6 +14,11 @@ class OEC_AI_Chat {
 	// tandas para no mandar el relleno por cada token (el tipeo lo hace el JS).
 	// Si el servidor deja de bufferizar: 0 y 0 vuelve al stream normal.
 	const SSE_PAD_BYTES = 8192;
+
+	// Línea oculta al final de cada respuesta con los ID de las formaciones que
+	// nombró la IA (ver system_prompt()): arma las tarjetas sin depender de
+	// cómo escribió cada título. El servidor la corta antes de enviar el texto.
+	const IDS_OPEN = '<<IDS:';
 	const SSE_BATCH_SEC = 0.3;
 
 	// Relleno de esta respuesta. ?nopad=1 lo desactiva solo en esa consulta,
@@ -352,6 +357,7 @@ class OEC_AI_Chat {
 			default => 'promedio',
 		};
 		$lines[] = "## {$f['title']} ({$f['type']})";
+		$lines[] = "ID: {$f['id']}";
 		$lines[] = "Relevance: {$f['relevance']} ({$rel_label})";
 		$modality_labels = [
 			'ONLINE'          => '100% online',
@@ -563,14 +569,23 @@ class OEC_AI_Chat {
 		$messages         = self::build_messages( $history, $message );
 
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total );
+		[ $reply, $ids ] = self::split_ids( $full_reply );
 
-		// Only return formations that the AI actually mentioned by title
-		$mentioned = array_values( array_filter(
-			$formations,
-			static fn( $f ) => self::title_in_text( $f['title'], $full_reply )
-		) );
-
-		$source = ! empty( $mentioned ) ? $mentioned : [];
+		// Tarjetas: las formaciones que la IA declaró en <<IDS:…>> (en ese
+		// orden) y, como respaldo por si omitió la línea, las que nombra por título.
+		$by_id  = array_column( $formations, null, 'id' );
+		$source = [];
+		foreach ( $ids as $id ) {
+			if ( isset( $by_id[ $id ] ) ) {
+				$source[ $id ] = $by_id[ $id ];
+			}
+		}
+		foreach ( $formations as $f ) {
+			if ( ! isset( $source[ $f['id'] ] ) && self::title_in_text( $f['title'], $reply ) ) {
+				$source[ $f['id'] ] = $f;
+			}
+		}
+		$source = array_values( $source );
 
 		$cards = array_map( static fn( $f ) => [
 			'id'    => $f['id'],
@@ -710,6 +725,7 @@ class OEC_AI_Chat {
 		$full_text = '';
 		$batch     = '';       // texto recibido aún no enviado al navegador
 		$last_send = microtime( true );
+		$hidden    = false;    // ya empezó la línea oculta <<IDS:…>>: no se reenvía
 
 		$ch = curl_init( 'https://api.anthropic.com/v1/messages' );
 		curl_setopt_array( $ch, [
@@ -722,7 +738,7 @@ class OEC_AI_Chat {
 				'content-type: application/json',
 			],
 			CURLOPT_TIMEOUT       => 60,
-			CURLOPT_WRITEFUNCTION => static function ( $ch, $raw ) use ( &$sse_buf, &$full_text, &$batch, &$last_send ): int {
+			CURLOPT_WRITEFUNCTION => static function ( $ch, $raw ) use ( &$sse_buf, &$full_text, &$batch, &$last_send, &$hidden ): int {
 				$sse_buf .= $raw;
 				while ( ( $pos = strpos( $sse_buf, "\n\n" ) ) !== false ) {
 					$block   = substr( $sse_buf, 0, $pos );
@@ -747,13 +763,24 @@ class OEC_AI_Chat {
 					) {
 						$chunk      = $evt['delta']['text'];
 						$full_text .= $chunk;
-						$batch     .= $chunk;
+						if ( ! $hidden ) {
+							$batch .= $chunk;
+							$cut    = strpos( $batch, self::IDS_OPEN );
+							if ( false !== $cut ) {
+								$batch  = rtrim( substr( $batch, 0, $cut ), " \t\n\r|" );
+								$hidden = true;
+							}
+						}
 					}
 				}
 
-				if ( '' !== $batch && microtime( true ) - $last_send >= self::SSE_BATCH_SEC ) {
-					self::sse_flush( 'data: ' . wp_json_encode( [ 't' => $batch ] ) . "\n\n" );
-					$batch     = '';
+				// Si el final del texto puede ser el comienzo de la línea oculta
+				// ("<", "<<", "<<ID"…), se retiene hasta el próximo fragmento.
+				$keep = $hidden ? '' : self::partial_open( $batch );
+				$send = substr( $batch, 0, strlen( $batch ) - strlen( $keep ) );
+				if ( '' !== $send && microtime( true ) - $last_send >= self::SSE_BATCH_SEC ) {
+					self::sse_flush( 'data: ' . wp_json_encode( [ 't' => $send ] ) . "\n\n" );
+					$batch     = $keep;
 					$last_send = microtime( true );
 				}
 				return strlen( $raw );
@@ -809,6 +836,27 @@ class OEC_AI_Chat {
 			}
 		}
 		return false;
+	}
+
+	/** Sufijo de $text que es un comienzo incompleto de IDS_OPEN ('' si no hay). */
+	private static function partial_open( string $text ): string {
+		for ( $n = min( strlen( self::IDS_OPEN ) - 1, strlen( $text ) ); $n > 0; $n-- ) {
+			$tail = substr( $text, -$n );
+			if ( str_starts_with( self::IDS_OPEN, $tail ) ) {
+				return $tail;
+			}
+		}
+		return '';
+	}
+
+	/** Separa la línea oculta <<IDS:a,b>> del texto → [texto sin la línea, [ids]]. */
+	private static function split_ids( string $text ): array {
+		$cut = strpos( $text, self::IDS_OPEN );
+		if ( false === $cut ) {
+			return [ $text, [] ];
+		}
+		preg_match_all( '/t-[A-Za-z0-9]{14}/', substr( $text, $cut ), $m );
+		return [ rtrim( substr( $text, 0, $cut ), " \t\n\r|" ), array_values( array_unique( $m[0] ) ) ];
 	}
 
 	/* Texto para comparar títulos: minúsculas, sin tildes, sin comillas ni signos. */
@@ -897,7 +945,7 @@ class OEC_AI_Chat {
 			return new \WP_Error( 'anthropic_empty', 'Respuesta vacía de la IA.' );
 		}
 
-		return $data['content'][0]['text'];
+		return self::split_ids( $data['content'][0]['text'] )[0];
 	}
 
 	/* ── System prompt ──────────────────────────────────────── */
@@ -946,6 +994,11 @@ SOBRE EL CATÁLOGO:
 - A continuación se muestran SOLO las más relevantes para esta consulta. No son todas — el sistema selecciona las más adecuadas por contexto.
 - Si alguien pregunta cuántas formaciones hay, respondé con el número real: {$total_formations}.
 - Nunca cuentes ni supongas el total a partir de las formaciones que ves aquí.
+
+LÍNEA FINAL OBLIGATORIA (el usuario no la ve):
+- Terminá SIEMPRE tu respuesta con una última línea, aparte, con los ID (campo "ID:") de las formaciones del contexto que nombraste o recomendaste, en el orden en que aparecen: <<IDS:t-xxxxxxxxxxxxxx,t-yyyyyyyyyyyyyy>>
+- Si no nombraste ninguna, igual escribí la línea vacía: <<IDS:>>
+- No pongas nada después de esa línea ni la menciones en el texto.
 
 FORMACIONES CON INSCRIPCIÓN CERRADA — cuando aparezcan en el contexto bajo esa sección:
 - Podés mencionar su existencia, docentes y temática si el usuario pregunta específicamente por esa formación o ese docente.
