@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.97
+Version: 1.0.98
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -225,12 +225,17 @@ section { padding-block: 4rem; }
 
 .header-search__icon {
   padding-left: 1rem;
-  color: rgba(var(--color-white-rgb),.45);
+  /* bi-stars: el campo es el asistente IA, no un buscador */
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--color-accent);
+  opacity: .8;
   flex-shrink: 0;
-  transition: color var(--transition);
+  transition: color var(--transition), opacity var(--transition);
   pointer-events: none;
 }
-.header-search__box:focus-within .header-search__icon { color: var(--color-accent); }
+.header-search__box:focus-within .header-search__icon { opacity: 1; }
+#search-toggle .bi { font-size: 1.15rem; line-height: 1; color: var(--color-accent); }
 
 .header-search__input {
   flex: 1;

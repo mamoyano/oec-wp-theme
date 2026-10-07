@@ -42,12 +42,7 @@
 			<!-- ── ASISTENTE IA (desktop) ───────────────────── -->
 			<div class="header-search" role="search" id="oec-ai-zone">
 				<div class="header-search__box" id="oec-ai-box">
-					<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
-					     fill="none" stroke="currentColor" stroke-width="2"
-					     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<circle cx="11" cy="11" r="8"/>
-						<path d="m21 21-4.35-4.35"/>
-					</svg>
+					<i class="bi bi-stars header-search__icon" aria-hidden="true"></i>
 					<input type="text"
 					       id="oec-ai-header-input"
 					       class="header-search__input"
@@ -81,12 +76,9 @@
 			<!-- ── ACCIONES MOBILE ────────────────────────── -->
 			<div class="header-mobile-btns">
 				<button class="header-icon-btn" id="search-toggle"
-				        aria-label="<?php esc_attr_e( 'Abrir buscador', 'oec-theme' ); ?>"
+				        aria-label="<?php esc_attr_e( 'Abrir asistente IA', 'oec-theme' ); ?>"
 				        aria-expanded="false" aria-controls="header-search-mobile">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-					     stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-						<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-					</svg>
+					<i class="bi bi-stars" aria-hidden="true"></i>
 				</button>
 
 				<button class="menu-toggle" id="menu-toggle"
@@ -103,11 +95,7 @@
 	<div class="header-search-mobile" id="header-search-mobile" hidden>
 		<div class="container">
 			<div class="header-search__box">
-				<svg class="header-search__icon" width="16" height="16" viewBox="0 0 24 24"
-				     fill="none" stroke="currentColor" stroke-width="2"
-				     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-					<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-				</svg>
+				<i class="bi bi-stars header-search__icon" aria-hidden="true"></i>
 				<input type="text" id="oec-ai-mobile-input" class="header-search__input"
 				       placeholder="<?php esc_attr_e( '¿Qué quieres aprender?', 'oec-theme' ); ?>"
 				       autocomplete="off" autofocus>
