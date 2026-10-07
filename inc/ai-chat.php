@@ -130,104 +130,103 @@ class OEC_AI_Chat {
 
 	/* ── Relevance pre-filter ───────────────────────────────── */
 
-	private static function prefilter( string $query ): array {
+	private static function prefilter( string $query, string $extra = '' ): array {
 		$index = OEC_AI_Catalog::get_index();
 		if ( empty( $index ) ) {
 			return [];
 		}
-
-		$query_lower = strtolower( $query );
-		$words       = array_filter(
-			explode( ' ', preg_replace( '/[^\w\s]/u', ' ', $query_lower ) ),
-			static fn( $w ) => strlen( $w ) >= 3
-		);
-
-		if ( empty( $words ) ) {
-			return self::load_formations( array_slice( $index, 0, 10 ) );
-		}
-
-		$scored = [];
-		foreach ( $index as $entry ) {
-			$score = 0;
-			foreach ( $words as $word ) {
-				if ( ! str_contains( $entry['keywords'], $word ) ) {
-					continue;
-				}
-				if ( str_contains( strtolower( $entry['title'] ), $word ) ) {
-					$score += 3;
-				} elseif ( str_contains( strtolower( implode( ' ', $entry['teachers'] ) ), $word ) ) {
-					$score += 2;
-				} else {
-					$score += 1;
-				}
-			}
-			if ( $score > 0 ) {
-				$scored[] = [ 'score' => $score, 'entry' => $entry ];
-			}
-		}
-
-		if ( empty( $scored ) ) {
-			// No keyword match: send top 10 most-urgent (by enrollment_end)
+		$top = self::rank( $index, $query, $extra, self::MAX_RESULTS );
+		if ( ! $top ) {
+			// Sin coincidencias: las 10 con cierre de inscripción más cercano
 			usort( $index, static fn( $a, $b ) => strcmp( $a['enrollment_end'], $b['enrollment_end'] ) );
 			return self::load_formations( array_slice( $index, 0, 10 ) );
 		}
-
-		usort( $scored, static fn( $a, $b ) => $b['score'] <=> $a['score'] );
-		$top = array_slice( $scored, 0, self::MAX_RESULTS );
-
-		return self::load_formations( array_column( $top, 'entry' ) );
+		return self::load_formations( $top );
 	}
 
 	/* ── Closed-formation lookup against historical index ───── */
 
-	private static function prefilter_closed( string $query, array $open_formations ): array {
-		$history = OEC_AI_Catalog::get_history_index();
-		if ( empty( $history ) ) {
-			return [];
-		}
-
+	private static function prefilter_closed( string $query, array $open_formations, string $extra = '' ): array {
 		$open_ids = array_flip( array_column( $open_formations, 'id' ) );
+		$history  = array_values( array_filter(
+			OEC_AI_Catalog::get_history_index(),
+			static fn( $e ) => ! isset( $open_ids[ $e['id'] ] )
+		) );
+		return $history ? self::rank( $history, $query, $extra, 4 ) : [];
+	}
 
-		$query_lower = strtolower( $query );
-		$words       = array_filter(
-			explode( ' ', preg_replace( '/[^\w\s]/u', ' ', $query_lower ) ),
-			static fn( $w ) => strlen( $w ) >= 3
-		);
+	/** Palabras que no ayudan a encontrar una formación. */
+	const SEARCH_STOPWORDS = [
+		'que', 'hay', 'uno', 'una', 'unos', 'unas', 'los', 'las', 'del', 'con', 'sin', 'para', 'por', 'sobre',
+		'algo', 'alguno', 'alguna', 'algun', 'como', 'cual', 'cuales', 'donde', 'cuando', 'tiene', 'tienen',
+		'tenes', 'tengo', 'quiero', 'queria', 'busco', 'buscando', 'necesito', 'llama', 'llamado', 'mas',
+		'muy', 'esta', 'este', 'ese', 'esa', 'eso', 'hola', 'gracias', 'curso', 'cursos', 'formacion',
+		'formaciones', 'otro', 'otra', 'les', 'mis', 'tus', 'sus', 'pero', 'porque', 'saber', 'conocer',
+	];
 
-		if ( empty( $words ) ) {
+	/**
+	 * Formaciones más relevantes para la consulta (las $limit primeras).
+	 *
+	 * - Cada palabra pesa según qué tan rara es en el catálogo: un apellido
+	 *   ("anselmi", 3 formaciones) vale mucho más que "fuerza" (decenas).
+	 * - Lo que escribió el usuario pesa más que la ampliación de la IA
+	 *   ($extra, que suma sinónimos genéricos y antes tapaba lo específico).
+	 * - Si la consulta contiene el nombre exacto de una formación, va primera.
+	 * - Sin tildes ni mayúsculas en ambos lados.
+	 */
+	private static function rank( array $entries, string $query, string $extra, int $limit ): array {
+		$tokens = static fn( string $t ) => array_values( array_unique( array_filter(
+			explode( ' ', self::title_norm( $t ) ),
+			static fn( $w ) => strlen( $w ) >= 3 && ! in_array( $w, self::SEARCH_STOPWORDS, true )
+		) ) );
+		$main  = $tokens( $query );
+		$added = array_values( array_diff( $tokens( $extra ), $main ) );
+		$q     = ' ' . self::title_norm( $query ) . ' ';
+		if ( ! $main && ! $added ) {
 			return [];
 		}
+
+		$docs = [];
+		$df   = [];
+		foreach ( $entries as $i => $e ) {
+			$docs[ $i ] = [
+				'kw'       => ' ' . self::title_norm( ( $e['keywords'] ?? '' ) . ' ' . ( $e['title'] ?? '' ) ) . ' ',
+				'title'    => ' ' . self::title_norm( $e['title'] ?? '' ) . ' ',
+				'teachers' => ' ' . self::title_norm( implode( ' ', $e['teachers'] ?? [] ) ) . ' ',
+			];
+			foreach ( array_merge( $main, $added ) as $w ) {
+				if ( str_contains( $docs[ $i ]['kw'], $w ) ) {
+					$df[ $w ] = ( $df[ $w ] ?? 0 ) + 1;
+				}
+			}
+		}
+		$n = count( $entries );
 
 		$scored = [];
-		foreach ( $history as $entry ) {
-			// Skip formations that are already in the open index
-			if ( isset( $open_ids[ $entry['id'] ] ) ) {
-				continue;
+		foreach ( $entries as $i => $e ) {
+			$d     = $docs[ $i ];
+			$score = 0.0;
+			// Nombre exacto de la formación dentro de la consulta (2+ palabras)
+			$t = trim( $d['title'] );
+			if ( substr_count( $t, ' ' ) >= 1 && strlen( $t ) >= 8 && str_contains( $q, ' ' . $t . ' ' ) ) {
+				$score += 100;
 			}
-			$score = 0;
-			foreach ( $words as $word ) {
-				if ( ! str_contains( $entry['keywords'] ?? '', $word ) ) {
-					continue;
-				}
-				if ( str_contains( strtolower( $entry['title'] ), $word ) ) {
-					$score += 3;
-				} elseif ( str_contains( strtolower( implode( ' ', $entry['teachers'] ?? [] ) ), $word ) ) {
-					$score += 2;
-				} else {
-					$score += 1;
+			foreach ( [ [ $main, 1.0 ], [ $added, 0.35 ] ] as [ $words, $weight ] ) {
+				foreach ( $words as $w ) {
+					if ( ! str_contains( $d['kw'], $w ) ) {
+						continue;
+					}
+					$field  = str_contains( $d['title'], $w ) ? 3 : ( str_contains( $d['teachers'], $w ) ? 3 : 1 );
+					$idf    = log( ( $n + 1 ) / ( ( $df[ $w ] ?? 0 ) + 1 ) ) + 1;
+					$score += $field * $idf * $weight;
 				}
 			}
 			if ( $score > 0 ) {
-				$scored[] = [ 'score' => $score, 'entry' => $entry ];
+				$scored[] = [ $score, $e ];
 			}
 		}
-
-		if ( empty( $scored ) ) {
-			return [];
-		}
-
-		usort( $scored, static fn( $a, $b ) => $b['score'] <=> $a['score'] );
-		return array_column( array_slice( $scored, 0, 4 ), 'entry' );
+		usort( $scored, static fn( $a, $b ) => $b[0] <=> $a[0] );
+		return array_column( array_slice( $scored, 0, $limit ), 1 );
 	}
 
 	private static function load_formations( array $entries ): array {
@@ -562,9 +561,10 @@ class OEC_AI_Chat {
 		$expanded = self::expand_query( $api_key, $message );
 
 		self::sse_status( 'Revisando el catálogo de formaciones...' );
-		$formations = self::prefilter( $expanded );
+		$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
+		$formations = self::prefilter( $message, $extra );
 		$formations = self::merge_mentioned( $formations, $mentioned_ids );
-		$closed     = self::prefilter_closed( $expanded, $formations );
+		$closed     = self::prefilter_closed( $message, $formations, $extra );
 
 		$prices = [];
 		if ( $country && $currency && ! empty( $formations ) ) {
