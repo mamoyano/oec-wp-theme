@@ -653,21 +653,28 @@
     }
   });
 
-  /* ── Video del hero ([oec-hero-video]): llega sin src para no competir
-     con la carga de la página. Se pide después del "load", salvo con
-     ahorro de datos o "reducir movimiento" (ahí queda el poster). ── */
+  /* ── Video del hero ([oec-hero-video]): llega sin src y se pide recién con
+     la primera interacción (mouse, toque, scroll o teclado), como los
+     trackers. Antes arrancaba en el "load": se bajaban 3–9 MB durante la
+     carga y el hero seguía cambiando (PageSpeed: Speed Index y peso total).
+     Mientras tanto se ve el poster. Nunca con ahorro de datos o "reducir
+     movimiento". ── */
   const heroVideos = document.querySelectorAll('video[data-oec-src]');
   if (heroVideos.length) {
     const conn = navigator.connection || {};
     const skip = conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '')
       || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const start = () => heroVideos.forEach((video) => {
-      video.src = video.dataset.oecSrc;
-      video.play().catch(() => {});
-    });
     if (!skip) {
-      if (document.readyState === 'complete') start();
-      else window.addEventListener('load', start, { once: true });
+      const evs = ['pointerdown', 'pointermove', 'touchstart', 'scroll', 'keydown', 'wheel'];
+      const opts = { passive: true, capture: true };
+      const start = () => {
+        evs.forEach((ev) => window.removeEventListener(ev, start, opts));
+        heroVideos.forEach((video) => {
+          video.src = video.dataset.oecSrc;
+          video.play().catch(() => {});
+        });
+      };
+      evs.forEach((ev) => window.addEventListener(ev, start, opts));
     }
   }
 
