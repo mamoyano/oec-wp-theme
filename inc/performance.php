@@ -271,6 +271,27 @@ add_filter( 'style_loader_tag', function ( string $tag, string $handle ): string
 	return $async === $tag ? $tag : $async . '<noscript>' . trim( $tag ) . "</noscript>\n";
 }, 10, 2 );
 
+// Precarga de la fuente recortada de íconos: sin esto el navegador la descubre recién al aplicar
+// el CSS y los íconos quedan invisibles un rato (font-display: block — a propósito: con swap, en
+// Android se verían cuadraditos en vez de íconos). La URL tiene que ser EXACTAMENTE la del @font-face
+// del recorte (mismo ?v=), si no se baja dos veces; por eso se lee del propio CSS generado.
+add_filter( 'wp_preload_resources', function ( array $resources ): array {
+	if ( ! wp_style_is( 'bootstrap-icons', 'enqueued' ) || ! wp_styles()->get_data( 'bootstrap-icons', 'oec_async' ) ) {
+		return $resources;
+	}
+	$subset = OEC_THEME_DIR . '/assets/fonts/bootstrap-icons/bootstrap-icons-subset.css';
+	if ( ! is_readable( $subset ) || ! preg_match( '#\{URL\}/(bootstrap-icons-subset\.woff2\?[^"\')]+)#', (string) file_get_contents( $subset ), $m ) ) {
+		return $resources;
+	}
+	$resources[] = [
+		'href'        => esc_url_raw( oec_unprefix_asset_src( OEC_THEME_URI . '/assets/fonts/bootstrap-icons' ) ) . '/' . $m[1],
+		'as'          => 'font',
+		'type'        => 'font/woff2',
+		'crossorigin' => 'anonymous',
+	];
+	return $resources;
+} );
+
 /* ============================================================
    12e. STYLE.CSS MINIFICADO
        style.css (~175 KB) bloquea el render y la mitad son comentarios y
