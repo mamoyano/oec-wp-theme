@@ -172,7 +172,8 @@ function oec_render_clases_shortcode( $atts, $content = '' ): string {
 				'name'         => $c['title'],
 				'description'  => $c['description'] ?: $c['title'],
 				'thumbnailUrl' => $c['thumb'],
-				'uploadDate'   => $c['date'] ?: null,
+				// Google exige fecha+hora con zona (ISO 8601); Vimeo solo da el día.
+				'uploadDate'   => $c['date'] ? ( new DateTime( $c['date'], wp_timezone() ) )->format( 'c' ) : null,
 				'duration'     => $c['duration'] ? 'PT' . $c['duration'] . 'S' : null,
 				'embedUrl'     => 'https://player.vimeo.com/video/' . $c['id'],
 				'url'          => $c['url'],
