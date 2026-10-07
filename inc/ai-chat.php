@@ -25,6 +25,10 @@ class OEC_AI_Chat {
 	// para comprobar si el servidor ya transmite sin buffer.
 	private static int $sse_pad = self::SSE_PAD_BYTES;
 
+	// Para el registro: momento del primer texto enviado y si se amplió la consulta con IA.
+	private static float $t_first   = 0;
+	private static bool $did_expand = false;
+
 	/* ── Bootstrap ─────────────────────────────────────────── */
 
 	public static function init(): void {
@@ -38,6 +42,10 @@ class OEC_AI_Chat {
 			'country'      => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
 			'currency'     => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
 			'mentioned_ids'=> [ 'required' => false, 'type' => 'array',  'default' => [] ],
+			// Para el registro (inc/ai-chat-log.php): conversación anónima, nº de consulta y página.
+			'cid'          => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
+			'turn'         => [ 'required' => false, 'type' => 'integer', 'default' => 0 ],
+			'page'         => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
 		];
 
 		register_rest_route( self::NAMESPACE, self::ROUTE, [
@@ -502,6 +510,8 @@ class OEC_AI_Chat {
 	/* ── Streaming handler (SSE) ────────────────────────────── */
 
 	public static function handle_stream( WP_REST_Request $request ): void {
+		$t0 = microtime( true ); // tiempos para el registro
+
 		while ( ob_get_level() ) {
 			ob_end_flush();
 		}
@@ -598,6 +608,27 @@ class OEC_AI_Chat {
 		], $source );
 
 		self::sse_data( [ 'done' => true, 'formations' => $cards ] );
+
+		// Se cierra la respuesta al usuario y recién después se guarda el
+		// registro: la escritura en la base no le suma espera a nadie.
+		if ( function_exists( 'fastcgi_finish_request' ) ) {
+			fastcgi_finish_request();
+		}
+		if ( class_exists( 'OEC_AI_Chat_Log' ) ) {
+			OEC_AI_Chat_Log::insert( [
+				'cid'        => $request->get_param( 'cid' ),
+				'turn'       => $request->get_param( 'turn' ),
+				'page'       => $request->get_param( 'page' ),
+				'country'    => $country,
+				'message'    => $message,
+				'reply'      => $reply,
+				'formations' => array_column( $source, 'id' ),
+				'expanded'   => self::$did_expand,
+				'ms_first'   => self::$t_first ? round( ( self::$t_first - $t0 ) * 1000 ) : 0,
+				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
+				'error'      => '' === trim( $reply ) ? 'Sin respuesta de la IA' : '',
+			] );
+		}
 		exit;
 	}
 
@@ -666,6 +697,7 @@ class OEC_AI_Chat {
 			return $cached ? $query . ' ' . $cached : $query;
 		}
 
+		self::$did_expand = true;
 		$body = wp_json_encode( [
 			'model'      => 'claude-haiku-4-5-20251001',
 			'max_tokens' => 80,
@@ -779,6 +811,7 @@ class OEC_AI_Chat {
 				$keep = $hidden ? '' : self::partial_open( $batch );
 				$send = substr( $batch, 0, strlen( $batch ) - strlen( $keep ) );
 				if ( '' !== $send && microtime( true ) - $last_send >= self::SSE_BATCH_SEC ) {
+					self::$t_first = self::$t_first ?: microtime( true );
 					self::sse_flush( 'data: ' . wp_json_encode( [ 't' => $send ] ) . "\n\n" );
 					$batch     = $keep;
 					$last_send = microtime( true );
@@ -791,6 +824,7 @@ class OEC_AI_Chat {
 		curl_close( $ch );
 
 		if ( '' !== $batch ) {
+			self::$t_first = self::$t_first ?: microtime( true );
 			self::sse_data( [ 't' => $batch ] );
 		}
 

@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.98' );
+define( 'OEC_THEME_VERSION', '1.0.99' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -84,6 +84,7 @@ function oec_enqueue_assets(): void {
 	wp_localize_script( 'oec-ai-chat', 'oecAiChat', [
 		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
 		'streamEndpoint' => esc_url( rest_url( 'oec/v1/chat-stream' ) ),
+		'clickEndpoint'  => esc_url( rest_url( 'oec/v1/chat-click' ) ),
 		'nonce'          => wp_create_nonce( 'wp_rest' ),
 	] );
 
@@ -448,6 +449,7 @@ require OEC_THEME_DIR . '/inc/sitios.php';
 require OEC_THEME_DIR . '/inc/tiras.php';
 require OEC_THEME_DIR . '/inc/formaciones.php';
 require OEC_THEME_DIR . '/inc/ai-chat.php';
+require OEC_THEME_DIR . '/inc/ai-chat-log.php';
 require OEC_THEME_DIR . '/inc/newsletter.php';
 require OEC_THEME_DIR . '/inc/seed.php';
 require OEC_THEME_DIR . '/inc/redirects.php';

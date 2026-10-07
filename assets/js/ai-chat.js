@@ -5,6 +5,7 @@
   const cfg            = window.oecAiChat || {};
   const endpoint       = cfg.endpoint || '';
   const streamEndpoint = cfg.streamEndpoint || '';
+  const clickEndpoint  = cfg.clickEndpoint || '';
   const nonce          = cfg.nonce || '';
   const botName        = 'Asistente OEC';
 
@@ -15,6 +16,83 @@
   let busy     = false;
   let overlayOpen = false;
   let locationFetched = false;
+
+  /* ── Conversación guardada en el navegador ───────────────── */
+  // Se mantiene entre páginas (localStorage) y se borra sola tras STORE_TTL
+  // sin actividad. cid = ID anónimo de la conversación (para el registro).
+  const STORE_KEY = 'oec_ai_chat';
+  const STORE_TTL = 2 * 60 * 60 * 1000;
+  const STORE_MAX = 40;   // mensajes guardados (el contexto de la IA ya va recortado)
+  let cid = '';
+  let saved = [];         // [{u: texto}] o [{a: texto con |||, f: tarjetas}]
+
+  function newCid() {
+    return (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+  }
+
+  function loadConversation() {
+    let s = null;
+    try { s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null'); } catch (_) {}
+    if (s && Date.now() - (s.updated || 0) < STORE_TTL) {
+      cid     = s.cid || newCid();
+      saved   = Array.isArray(s.log) ? s.log : [];
+      history = Array.isArray(s.history) ? s.history : [];
+      mentionedFormationIds = Array.isArray(s.mentioned) ? s.mentioned : [];
+    } else {
+      cid = newCid();
+      try { localStorage.removeItem(STORE_KEY); } catch (_) {}
+    }
+  }
+
+  function saveConversation() {
+    saved = saved.slice(-STORE_MAX);
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify({
+        cid, updated: Date.now(), log: saved, history, mentioned: mentionedFormationIds,
+      }));
+    } catch (_) {}
+    updateEntryPoints();
+  }
+
+  function hasConversation() { return saved.length > 0; }
+
+  function resetConversation() {
+    cid = newCid();
+    saved = [];
+    history = [];
+    mentionedFormationIds = [];
+    try { localStorage.removeItem(STORE_KEY); } catch (_) {}
+    const list = document.getElementById('oec-overlay-messages');
+    if (list) list.innerHTML = '';
+    updateEntryPoints();
+    document.getElementById('oec-overlay-input')?.focus();
+  }
+
+  // Con una conversación en curso: el campo del header invita a seguirla
+  // (Enter con el campo vacío la reabre) y el chat muestra "Nueva conversación".
+  function updateEntryPoints() {
+    const has = hasConversation();
+    ['oec-ai-header', 'oec-ai-mobile'].forEach(p => {
+      const input = document.getElementById(p + '-input');
+      const btn   = document.getElementById(p + '-send');
+      if (!input) return;
+      if (!input.dataset.placeholder) input.dataset.placeholder = input.placeholder;
+      input.placeholder = has ? 'Continuá tu conversación…' : input.dataset.placeholder;
+      if (btn) btn.disabled = !input.value.trim() && !has;
+    });
+    const nb = document.getElementById('oec-overlay-new');
+    if (nb) nb.hidden = !has;
+  }
+
+  /* ── Clics en tarjetas → registro (no frena la navegación) ── */
+  function trackClick(id) {
+    if (!clickEndpoint || !id || !navigator.sendBeacon) return;
+    try {
+      navigator.sendBeacon(clickEndpoint, new Blob([JSON.stringify({ cid, id })], { type: 'application/json' }));
+    } catch (_) {}
+  }
 
   /* ── Helpers ─────────────────────────────────────────────── */
   function escAttr(s) {
@@ -65,6 +143,9 @@
       <div id="oec-overlay-topbar">
         <button class="oec-overlay-brand" id="oec-overlay-logo-close" aria-label="Cerrar asistente">
           ${logoHtml}
+        </button>
+        <button id="oec-overlay-new" class="oec-overlay-new" type="button" hidden>
+          <i class="bi bi-plus-lg" aria-hidden="true"></i> Nueva conversación
         </button>
         <button id="oec-overlay-close" aria-label="Cerrar asistente">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -132,14 +213,38 @@
     overlay.offsetHeight; // force reflow → CSS transition starts
     overlay.classList.add('oec-overlay--open');
     fitToViewport();
+    renderSaved();
 
     setTimeout(() => {
-      appendMsg('user', firstMessage);
-      setBusy(true);
-      fetchReply(firstMessage);
+      // Sin mensaje nuevo = solo reabrir la conversación guardada
+      if (firstMessage) {
+        appendMsg('user', firstMessage);
+        setBusy(true);
+        fetchReply(firstMessage);
+      }
       const input = document.getElementById('oec-overlay-input');
       if (input) input.focus();
     }, 560);
+  }
+
+  /* ── Conversación guardada → mensajes en pantalla (sin animación) ── */
+  function renderSaved() {
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list || list.children.length || !saved.length) return;
+    saved.forEach(m => {
+      if (m.u !== undefined) { appendMsg('user', m.u); return; }
+      const bubbles = String(m.a || '').split('|||').map(p => p.trim()).filter(Boolean).map(part => {
+        const b = createAssistantBubble();
+        if (b) b.innerHTML = renderMarkdown(part);
+        return b;
+      }).filter(Boolean);
+      if (m.f && m.f.length) {
+        upgradeFormationLinks(bubbles, m.f);
+        renderCards(m.f);
+      }
+    });
+    updateEntryPoints();
+    scrollBody();
   }
 
   /* ── Close overlay ───────────────────────────────────────── */
@@ -263,6 +368,7 @@
       const card = document.createElement('a');
       card.href = f.path || f.url || '#';
       card.className = 'oec-course-card';
+      card.dataset.id = f.id || '';
       card.setAttribute('aria-label', f.title || '');
 
       const imgHtml = f.image
@@ -355,6 +461,7 @@
         const card = document.createElement('a');
         card.href      = f.path || f.url;
         card.className = 'oec-inline-card';
+        card.dataset.id = f.id || '';
         card.innerHTML = '<strong class="oec-inline-card__title">' + escText(f.title) + '</strong>'
                        + '<span class="oec-inline-card__meta">'
                        + escText(f.type || '')
@@ -451,7 +558,10 @@
       const req = {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-        body:    JSON.stringify({ message, history, country, currency, mentioned_ids: mentionedFormationIds }),
+        body:    JSON.stringify({
+          message, history, country, currency, mentioned_ids: mentionedFormationIds,
+          cid, turn: saved.filter(m => m.u !== undefined).length, page: location.pathname,
+        }),
       };
       let res = await fetch(streamEndpoint, req);
       // Si una regla del servidor intercepta la ruta exacta y da 404, la misma
@@ -550,6 +660,10 @@
     history.push({ role: 'user',      content: message    });
     history.push({ role: 'assistant', content: cleanReply });
     if (history.length > 10) history = history.slice(-10);
+
+    // Guardar para seguirla en otra página
+    saved.push({ u: message }, { a: fullText.trim(), f: formations || [] });
+    saveConversation();
   }
 
   /* ── Send from overlay input ─────────────────────────────── */
@@ -572,8 +686,8 @@
   /* ── Trigger from header input ───────────────────────────── */
   function triggerFromInput(inputEl) {
     const msg = inputEl.value.trim();
-    if (!msg || busy) return;
-    openWithMorph(msg);
+    if (busy || (!msg && !hasConversation())) return;
+    openWithMorph(msg); // vacío + conversación guardada = reabrirla
   }
 
   /* ── Hero "¿Qué quieres aprender?" → tipea "Hola" y abre el chat ── */
@@ -669,13 +783,16 @@
       }
       if (e.target.closest('#oec-overlay-close') || e.target.closest('#oec-overlay-logo-close')) { closeOverlay(); return; }
       if (e.target.closest('#oec-overlay-send'))  { sendOverlayMessage(); return; }
+      if (e.target.closest('#oec-overlay-new'))   { if (!busy) resetConversation(); return; }
+      const card = e.target.closest('.oec-course-card[data-id], .oec-inline-card[data-id]');
+      if (card) trackClick(card.dataset.id);
     });
 
     document.addEventListener('input', (e) => {
       const id = e.target?.id;
       if (id === 'oec-ai-header-input' || id === 'oec-ai-mobile-input') {
         ensureLocation();
-        const hasText = !!e.target.value.trim();
+        const hasText = !!e.target.value.trim() || hasConversation();
         if (id === 'oec-ai-header-input') {
           const btn = document.getElementById('oec-ai-header-send');
           if (btn) btn.disabled = !hasText;
@@ -711,8 +828,10 @@
 
   /* ── Init ────────────────────────────────────────────────── */
   function init() {
+    loadConversation();
     buildOverlay();
     wireEvents();
+    updateEntryPoints();
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', fitToViewport);
       window.visualViewport.addEventListener('scroll', fitToViewport);
