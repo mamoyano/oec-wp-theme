@@ -47,7 +47,6 @@ class OEC_Images {
 		add_action( 'add_attachment', [ __CLASS__, 'on_add_attachment' ] );
 		add_action( self::CRON_HOOK, [ __CLASS__, 'run_pending' ] );
 		add_action( self::RUN_HOOK, [ __CLASS__, 'run_pending' ] );
-		add_action( 'admin_menu', [ __CLASS__, 'admin_menu' ] );
 		add_action( 'wp_ajax_oec_images_batch', [ __CLASS__, 'ajax_batch' ] );
 
 		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
@@ -353,17 +352,8 @@ class OEC_Images {
 		}
 	}
 
-	/* ── Pantalla Medios → Optimizar imágenes ───────────────── */
-
-	public static function admin_menu(): void {
-		add_media_page(
-			__( 'Optimizar imágenes', 'oec-theme' ),
-			__( 'Optimizar imágenes', 'oec-theme' ),
-			'manage_options',
-			'oec-images',
-			[ __CLASS__, 'render_page' ]
-		);
-	}
+	/* ── Pantalla Tema OEC → Optimizar imágenes ───────────────
+	   El submenú se registra en oec_add_admin_menu() (inc/admin-settings.php). */
 
 	public static function render_page(): void {
 		$pending = count( self::pending_ids() );

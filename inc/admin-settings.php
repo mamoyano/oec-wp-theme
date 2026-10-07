@@ -169,8 +169,8 @@ function oec_sanitize_options( $raw ): array {
    ============================================================ */
 
 /* Pantallas del menú (slug → título y pestañas). Cada pestaña es una
- * sección de oec_render_settings_page(); Newsletter tiene su propia
- * pantalla (inc/newsletter.php). Las conversaciones del chat y el
+ * sección de oec_render_settings_page(); Newsletter y Optimizar imágenes
+ * tienen su propia pantalla (inc/newsletter.php, inc/images.php). Las conversaciones del chat y el
  * newsletter solo existen en el sitio de configuración (/es/). */
 function oec_admin_pages(): array {
 	$pages = [
@@ -185,6 +185,7 @@ function oec_admin_pages(): array {
 		] ],
 		'oec-newsletter'      => [ 'title' => __( 'Newsletter', 'oec-theme' ), 'tabs' => [] ],
 		'oec-integraciones'   => [ 'title' => __( 'Integraciones', 'oec-theme' ), 'tabs' => [ 'integraciones' => '' ] ],
+		'oec-images'          => [ 'title' => __( 'Optimizar imágenes', 'oec-theme' ), 'tabs' => [] ],
 		'oec-actualizaciones' => [ 'title' => __( 'Actualizaciones', 'oec-theme' ), 'tabs' => [ 'actualizaciones' => '' ] ],
 	];
 	if ( ! oec_is_config_site() ) {
@@ -224,7 +225,10 @@ function oec_add_admin_menu(): void {
 		59
 	);
 	foreach ( oec_admin_pages() as $slug => $page ) {
-		$callback = 'oec-newsletter' === $slug ? 'oec_nl_render_admin' : 'oec_render_settings_page';
+		$callback = [
+			'oec-newsletter' => 'oec_nl_render_admin',
+			'oec-images'     => [ 'OEC_Images', 'render_page' ],
+		][ $slug ] ?? 'oec_render_settings_page';
 		add_submenu_page( 'oec-settings', $page['title'], $page['title'], 'manage_options', $slug, $callback );
 	}
 }
@@ -236,7 +240,7 @@ function oec_admin_legacy_redirect(): void {
 	global $pagenow;
 	$page = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
 	$tab  = sanitize_key( $_GET['tab'] ?? '' );  // phpcs:ignore WordPress.Security.NonceVerification
-	if ( ! in_array( $page, [ 'oec-settings', 'oec-newsletter' ], true ) || isset( $_GET['oec_action'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
+	if ( ! in_array( $page, [ 'oec-settings', 'oec-newsletter', 'oec-images' ], true ) || isset( $_GET['oec_action'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 		return;
 	}
 	$legacy_tabs = [
@@ -247,7 +251,9 @@ function oec_admin_legacy_redirect(): void {
 		'actualizaciones' => [ 'oec-actualizaciones', [] ],
 		'asistente'       => [ 'oec-chat-log', [ 'tab' => 'chat' ] ],
 	];
-	if ( 'themes.php' === $pagenow ) {
+	if ( 'upload.php' === $pagenow && 'oec-images' === $page ) {
+		$target = [ $page, [] ];
+	} elseif ( 'themes.php' === $pagenow ) {
 		$target = [ $page, $tab ? [ 'tab' => $tab ] : [] ];
 		if ( 'oec-settings' === $page && isset( $legacy_tabs[ $tab ] ) ) {
 			$target = $legacy_tabs[ $tab ];
@@ -270,7 +276,7 @@ add_action( 'admin_init', 'oec_admin_legacy_redirect' );
    ============================================================ */
 function oec_admin_enqueue( string $hook ): void {
 	$page = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
-	if ( 'oec-newsletter' === $page || ! array_key_exists( $page, oec_admin_pages() ) ) {
+	if ( in_array( $page, [ 'oec-newsletter', 'oec-images' ], true ) || ! array_key_exists( $page, oec_admin_pages() ) ) {
 		return;
 	}
 
