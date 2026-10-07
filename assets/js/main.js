@@ -667,7 +667,10 @@
     if (!skip) {
       const evs = ['pointerdown', 'pointermove', 'touchstart', 'scroll', 'keydown', 'wheel'];
       const opts = { passive: true, capture: true };
-      const start = () => {
+      const start = (e) => {
+        // En captura llegan también los scroll de los carruseles que se mueven
+        // solos: solo cuenta el de la página (mismo filtro que los trackers).
+        if (e && e.type === 'scroll' && e.target !== document) return;
         evs.forEach((ev) => window.removeEventListener(ev, start, opts));
         heroVideos.forEach((video) => {
           video.src = video.dataset.oecSrc;
