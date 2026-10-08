@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.118
+Version: 1.0.119
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4831,6 +4831,9 @@ body.oec-chat-open { overflow: hidden; }
 
 /* Chat anónimo (Botmaker): mientras se descarga el widget tras el clic. */
 .oec-botmaker-trigger.oec-bm-loading { cursor: progress; opacity: .7; }
+/* Con el chat abierto, Botmaker pone su cruz de cerrar justo donde está la
+   burbuja: se la esconde hasta que se cierre. */
+body.oec-bm-chat-open .oec-float-botmaker { display: none !important; }
 
 /* ============================================================
    DESTACADAS DE LA TEMÁTICA (inc/destacadas.php)

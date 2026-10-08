@@ -9,7 +9,9 @@
      cada visita aunque casi nadie abriera el chat.
    - Su "pelotita" flotante se esconde siempre (bmHide + CSS del contenido
      con body.oec-bm-chat-open); solo se ve mientras el usuario lo abrió
-     desde un .oec-botmaker-trigger.
+     desde un .oec-botmaker-trigger. Mientras está abierto se esconde
+     nuestra burbuja (.oec-float-botmaker, CSS en style.css): en su lugar
+     Botmaker muestra su cruz de cerrar.
    - bmHide/bmShow/bmMaximize/bmSendMessage no están documentadas por
      Botmaker: si dejan de existir, el botón no abre nada pero no rompe.
    ============================================================ */
@@ -36,6 +38,23 @@
     if (triesLeft <= 0) return; // Botmaker no cargó (bloqueado, caído…)
     setTimeout(() => whenReady(fn, triesLeft - 1), 200);
   }
+
+  // Las funciones bm* aparecen ANTES de que Botmaker termine de conectarse
+  // con su servidor, y bmSendMessage descarta el mensaje sin avisar mientras
+  // no tenga usuario ("No user or business defined yet"). Con la carga al
+  // vuelo eso pasaba casi siempre: se espera a que bmInfo() traiga el
+  // contacto. Si bmInfo deja de existir, se vuelve al retraso fijo de antes.
+  function whenConnected(fn, triesLeft) {
+    if (typeof window.bmInfo !== 'function') { setTimeout(fn, 500); return; }
+    let info = null;
+    try { info = window.bmInfo(); } catch (err) { /* todavía montándose */ }
+    if ((info && info.platformContactId) || triesLeft <= 0) { fn(); return; }
+    setTimeout(() => whenConnected(fn, triesLeft - 1), 200);
+  }
+
+  // El mensaje de cada botón se manda una sola vez por visita: reabrir el
+  // chat no lo repite en la conversación.
+  const sent = new Set();
 
   const bmIframe = () => document.querySelector('iframe[name="Botmaker"]');
 
@@ -79,7 +98,10 @@
         window.bmShow();
         window.bmMaximize();
         const msg = trigger.getAttribute('data-msg') || '';
-        if (msg) setTimeout(() => window.bmSendMessage(msg), 500);
+        if (msg && !sent.has(msg)) {
+          sent.add(msg);
+          whenConnected(() => window.bmSendMessage(msg), 75);
+        }
       }, 75);
     });
   });
@@ -88,6 +110,13 @@
   // reescribe su documento y a veces reusa el botón de la sesión anterior.
   setInterval(() => {
     if (!userWantsOpen) return;
+    // Minimizado por otra vía (no por "Cerrar chat"): vuelve la burbuja.
+    try {
+      if (typeof window.bmInfo === 'function' && window.bmInfo().isMinimized) {
+        setOpen(false);
+        return;
+      }
+    } catch (err) { /* sigue el vigía de abajo */ }
     try {
       const iframe = bmIframe();
       const closeBtn = iframe && iframe.contentDocument
