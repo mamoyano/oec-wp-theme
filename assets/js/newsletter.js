@@ -382,11 +382,43 @@
   }
 
   /* ── 4. Mis suscripciones (/mis-suscripciones/) ──────────────
-     Sin ?acceso= pide el email y manda el link; con ?acceso= (token del link)
-     carga las listas, deja tildar/destildar y guarda. */
+     Entra con:
+     - ?acceso= (token del link que llega por email), o
+     - ?email=&clave= (link "Gestionar mis suscripciones" de los newsletters), o
+     - el email + clave guardados en este navegador (la última vez que entró).
+     Si no, pide el email y manda el link. Una vez adentro guarda email + clave
+     en localStorage para no volver a validar; "¿No sos vos?" lo olvida. */
+  var LS_ACCESS = 'oec_nl_access';
+
+  function readAccess() {
+    try {
+      var a = JSON.parse(localStorage.getItem(LS_ACCESS) || 'null');
+      return a && a.email && a.clave ? a : null;
+    } catch (_e) { return null; }
+  }
+  function saveAccess(email, clave) {
+    try { localStorage.setItem(LS_ACCESS, JSON.stringify({ email: email, clave: clave })); } catch (_e) {}
+  }
+  function forgetAccess() {
+    try { localStorage.removeItem(LS_ACCESS); } catch (_e) {}
+  }
+
   function initManage(root) {
     var params = new URLSearchParams(window.location.search);
+    // Elastic Email no codifica {email}: un "+" llega como espacio.
+    var urlEmail = (params.get('email') || '').replace(/ /g, '+');
+    var urlClave = params.get('clave') || '';
     var token = params.get('acceso') || '';
+    var stored = readAccess();
+    // Identidad para la API: token del email, clave del newsletter o la recordada.
+    var identity = token ? { token: token }
+      : (urlEmail && urlClave && urlClave.indexOf('{') === -1) ? { email: urlEmail, clave: urlClave }
+      : (stored && (!urlEmail || urlEmail.toLowerCase() === stored.email.toLowerCase())) ? { email: stored.email, clave: stored.clave }
+      : null;
+    // El acceso no debe quedar en la barra de direcciones ni en el historial.
+    if ((token || urlClave) && window.history && history.replaceState) {
+      history.replaceState(null, '', window.location.pathname);
+    }
     var states = {};
     root.querySelectorAll('[data-state]').forEach(function (el) { states[el.dataset.state] = el; });
     function show(name) {
@@ -402,7 +434,7 @@
     var reqMsg = states.request.querySelector('.oec-nl-manage__msg');
     var reqBtn = reqForm.querySelector('button');
     var emailIn = reqForm.querySelector('[name="email"]');
-    emailIn.value = params.get('email') || getEmail();
+    emailIn.value = urlEmail || (stored && stored.email) || getEmail();
     reqForm.addEventListener('submit', function (e) {
       e.preventDefault();
       if (!emailIn.value || !emailIn.checkValidity()) {
@@ -426,7 +458,7 @@
         .finally(function () { setBusy(reqBtn, false); });
     });
 
-    if (!token) { show('request'); return; }
+    if (!identity) { show('request'); return; }
 
     // 2. Con el link: listas.
     var form = states.prefs.querySelector('.oec-nl-manage__form');
@@ -436,6 +468,11 @@
     var noneBtn = states.prefs.querySelector('.oec-nl-manage__none');
 
     function render(data) {
+      if (data.clave) {
+        // Ya validado: de ahora en más se entra con email + clave.
+        identity = { email: data.email, clave: data.clave };
+        saveAccess(data.email, data.clave);
+      }
       states.prefs.querySelector('.oec-nl-manage__email').textContent = data.email;
       list.innerHTML = '';
       data.lists.forEach(function (l) {
@@ -477,9 +514,9 @@
     function save(lists, btn) {
       msg.hidden = true;
       setBusy(btn, true);
-      post(root.dataset.save, { token: token, lists: lists })
+      post(root.dataset.save, Object.assign({ lists: lists }, identity))
         .then(function (data) {
-          if (data.code === 'expired') return fail(data.message);
+          if (data.code === 'expired') { forgetAccess(); return fail(data.message); }
           if (data.lists) render(data);
           setMsg(msg, data.message || 'Ocurrió un error. Probá de nuevo.', !data.ok);
           if (data.ok && data.balance !== null && data.balance !== undefined) storeCredits(data.email, data.balance);
@@ -500,11 +537,28 @@
       save([], noneBtn);
     });
 
+    // "¿No sos vos?": olvida este navegador y vuelve a pedir el email.
+    states.prefs.querySelector('.oec-nl-manage__forget').addEventListener('click', function () {
+      forgetAccess();
+      identity = null;
+      emailIn.value = '';
+      reqForm.hidden = false;
+      reqMsg.hidden = true;
+      show('request');
+      emailIn.focus();
+    });
+
     show('loading');
-    post(root.dataset.prefs, { token: token })
+    post(root.dataset.prefs, identity)
       .then(function (data) {
-        if (!data.ok) return fail(data.message || 'El link no es válido o venció.');
-        render(data);
+        if (data.ok) return render(data);
+        if (!identity.token) {
+          // Clave vieja o inválida: se olvida y se pide el link (con el email ya cargado).
+          forgetAccess();
+          emailIn.value = identity.email || emailIn.value;
+          return show('request');
+        }
+        fail(data.message || 'El link no es válido o venció.');
       })
       .catch(function () { fail('No pudimos conectar. Recargá la página para intentar de nuevo.'); });
   }

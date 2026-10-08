@@ -26,6 +26,59 @@ const OEC_NL_MANAGE_SLUG    = 'mis-suscripciones';
 const OEC_NL_MANAGE_HOURS   = 48;
 const OEC_NL_COMPOSE_OPTION = 'oec_newsletter_compose';
 const OEC_NL_ADMIN_PER_PAGE = 50;
+// Campo de contacto de Elastic Email con la clave de cada suscriptor (lo
+// creó una importación de CSV el 2026-10-08; desde el panel solo se pueden
+// crear campos con plan PRO). Los newsletters lo usan como {oecclave} en
+// "Gestionar mis suscripciones" para entrar sin pedir el link por email.
+const OEC_NL_KEY_FIELD      = 'oecclave';
+const OEC_NL_KEYS_JOB       = 'oec_newsletter_keys_job';
+const OEC_NL_KEYS_CRON      = 'oec_nl_keys_tick';
+const OEC_NL_KEYS_PER_RUN   = 300;
+
+/**
+ * Clave personal de un suscriptor: firma de su email que solo el sitio puede
+ * generar (no vence; cambiar las salts de WordPress invalida todas).
+ */
+function oec_nl_member_key( string $email ): string {
+	return 'k1' . substr( oec_nl_b64( hash_hmac( 'sha256', 'member|' . strtolower( trim( $email ) ), oec_nl_secret(), true ) ), 0, 22 );
+}
+
+/**
+ * Guarda la clave en el contacto si no la tiene (sin perder sus otros datos:
+ * oec_nl_update_contact reenvía el contacto completo).
+ *
+ * @return bool true si ya la tenía o se guardó.
+ */
+function oec_nl_ensure_member_key( string $email, ?array $contact = null ): bool {
+	if ( null === $contact ) {
+		$contact = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $email ) );
+		if ( is_wp_error( $contact ) ) {
+			return false;
+		}
+	}
+	$key = oec_nl_member_key( $email );
+	if ( ( $contact['CustomFields'][ OEC_NL_KEY_FIELD ] ?? '' ) === $key ) {
+		return true;
+	}
+	$res = oec_nl_update_contact( $email, [], [ OEC_NL_KEY_FIELD => $key ], $contact );
+	return ! is_wp_error( $res );
+}
+
+/**
+ * Quién está gestionando: por el token del link del email (?acceso=) o por
+ * email + clave (link de los newsletters o el dispositivo recordado).
+ */
+function oec_nl_manage_identity( WP_REST_Request $request ): ?string {
+	$token = (string) $request->get_param( 'token' );
+	if ( '' !== $token ) {
+		$data = oec_nl_read_manage_token( $token );
+		return $data ? $data['e'] : null;
+	}
+	// Elastic Email no codifica {email} en la URL: un "+" llega como espacio.
+	$email = sanitize_email( str_replace( ' ', '+', (string) $request->get_param( 'email' ) ) );
+	$clave = (string) $request->get_param( 'clave' );
+	return ( is_email( $email ) && '' !== $clave && hash_equals( oec_nl_member_key( $email ), $clave ) ) ? $email : null;
+}
 
 function oec_nl_manage_url( string $email = '' ): string {
 	$url = oec_config_url( '/' . OEC_NL_MANAGE_SLUG . '/' );
@@ -154,6 +207,9 @@ function oec_nl_rest_manage_link( WP_REST_Request $request ): WP_REST_Response {
 
 	$contact = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $email ) );
 	$first   = is_wp_error( $contact ) ? '' : (string) ( $contact['FirstName'] ?? '' );
+	if ( ! is_wp_error( $contact ) ) {
+		oec_nl_ensure_member_key( $email, $contact ); // así sus próximos newsletters ya traen el acceso directo
+	}
 	$token   = oec_nl_sign_token( [ 'e' => $email, 'p' => 'manage', 'exp' => time() + OEC_NL_MANAGE_HOURS * HOUR_IN_SECONDS ] );
 	// ?acceso= y no ?m=: 'm' es una variable reservada de WordPress (archivo por mes) y da 404.
 	$url     = add_query_arg( 'acceso', $token, oec_nl_manage_url() );
@@ -181,7 +237,7 @@ function oec_nl_prefs_payload( string $email, array $member_of ): array {
 		$l['subscribed'] = in_array( $l['name'], $member_of, true );
 		$lists[]         = $l;
 	}
-	return [ 'email' => $email, 'lists' => $lists, 'credits' => OEC_NL_SUBSCRIBE_CREDITS ];
+	return [ 'email' => $email, 'clave' => oec_nl_member_key( $email ), 'lists' => $lists, 'credits' => OEC_NL_SUBSCRIBE_CREDITS ];
 }
 
 /** POST { token } → listas y cuáles tiene. */
@@ -189,17 +245,20 @@ function oec_nl_rest_prefs( WP_REST_Request $request ): WP_REST_Response {
 	if ( oec_nl_rate_limited( 'prefs', 20 ) ) {
 		return oec_nl_json( [ 'ok' => false, 'message' => __( 'Demasiados intentos. Probá de nuevo en un minuto.', 'oec-theme' ) ], 429 );
 	}
-	$data = oec_nl_read_manage_token( (string) $request->get_param( 'token' ) );
-	if ( ! $data ) {
+	$email = oec_nl_manage_identity( $request );
+	if ( ! $email ) {
 		return oec_nl_json( [ 'ok' => false, 'code' => 'expired', 'message' => __( 'El link no es válido o venció. Pedí uno nuevo con tu email.', 'oec-theme' ) ], 400 );
 	}
-	oec_nl_forget_member( $data['e'] ); // datos frescos: puede haber cambiado algo desde Elastic Email
-	$member_of = oec_nl_member_of( $data['e'] );
+	oec_nl_forget_member( $email ); // datos frescos: puede haber cambiado algo desde Elastic Email
+	$member_of = oec_nl_member_of( $email );
 	if ( is_wp_error( $member_of ) ) {
-		oec_nl_log( 'error', 'Mis suscripciones (' . $data['e'] . '): ' . $member_of->get_error_message() );
+		oec_nl_log( 'error', 'Mis suscripciones (' . $email . '): ' . $member_of->get_error_message() );
 		return oec_nl_json( [ 'ok' => false, 'message' => __( 'No pudimos consultar tus suscripciones. Probá de nuevo en unos minutos.', 'oec-theme' ) ], 502 );
 	}
-	return oec_nl_json( [ 'ok' => true ] + oec_nl_prefs_payload( $data['e'], $member_of ) );
+	if ( '' !== (string) $request->get_param( 'token' ) && $member_of ) {
+		oec_nl_ensure_member_key( $email ); // entró con el link del email: que sus newsletters traigan la clave
+	}
+	return oec_nl_json( [ 'ok' => true ] + oec_nl_prefs_payload( $email, $member_of ) );
 }
 
 /** POST { token, lists[] } → suma y saca de listas. */
@@ -207,11 +266,10 @@ function oec_nl_rest_prefs_save( WP_REST_Request $request ): WP_REST_Response {
 	if ( oec_nl_rate_limited( 'prefs_save', 10 ) ) {
 		return oec_nl_json( [ 'ok' => false, 'message' => __( 'Demasiados intentos. Probá de nuevo en un minuto.', 'oec-theme' ) ], 429 );
 	}
-	$data = oec_nl_read_manage_token( (string) $request->get_param( 'token' ) );
-	if ( ! $data ) {
+	$email = oec_nl_manage_identity( $request );
+	if ( ! $email ) {
 		return oec_nl_json( [ 'ok' => false, 'code' => 'expired', 'message' => __( 'El link venció. Pedí uno nuevo con tu email.', 'oec-theme' ) ], 400 );
 	}
-	$email     = $data['e'];
 	$available = oec_nl_subscribable_lists();
 	$wanted    = array_values( array_intersect( array_map( 'sanitize_text_field', (array) $request->get_param( 'lists' ) ), $available ) );
 
@@ -332,7 +390,10 @@ function oec_nl_render_manage_page(): void {
 
 		<div class="oec-nl-landing__state" data-state="prefs" hidden>
 			<h1 class="oec-nl-landing__title"><?php esc_html_e( 'Tus newsletters', 'oec-theme' ); ?></h1>
-			<p class="oec-nl-landing__note"><?php esc_html_e( 'Suscripciones de', 'oec-theme' ); ?> <strong class="oec-nl-manage__email"></strong></p>
+			<p class="oec-nl-landing__note">
+				<?php esc_html_e( 'Suscripciones de', 'oec-theme' ); ?> <strong class="oec-nl-manage__email"></strong>
+				· <button type="button" class="oec-nl-manage__forget"><?php esc_html_e( '¿No sos vos? Cambiar de email', 'oec-theme' ); ?></button>
+			</p>
 			<form class="oec-nl-manage__form" novalidate>
 				<ul class="oec-nl-manage__lists"></ul>
 				<p class="oec-nl-manage__hint">
@@ -421,6 +482,7 @@ function oec_nl_render_admin_subscribers(): void {
 	$search = sanitize_email( wp_unslash( $_GET['buscar'] ?? '' ) );
 	// phpcs:enable
 	$base = oec_admin_url( 'oec-newsletter', [ 'view' => 'suscriptos' ] );
+	oec_nl_render_keys_card();
 	?>
 	<div class="oec-card">
 		<div class="oec-card__header">
@@ -778,3 +840,193 @@ add_action( 'admin_post_oec_nl_compose', function () {
 
 	oec_nl_redirect_notice( 'error', __( 'Acción desconocida.', 'oec-theme' ), 'enviar' );
 } );
+
+/* ============================================================
+   CLAVES DE LOS SUSCRIPTORES ACTUALES (segundo plano)
+   Recorre las listas del sitio y, a cada contacto activo sin su clave,
+   se la guarda en OEC_NL_KEY_FIELD. Va de a pedazos desde WP-Cron (en
+   producción, el cron del servidor cada 5 minutos) para no saturar la API.
+   Cada escritura reenvía el contacto completo (oec_nl_update_contact), que
+   es la única forma de no borrarle los otros campos.
+   ============================================================ */
+function oec_nl_keys_job(): array {
+	return wp_parse_args( (array) oec_config_get_option( OEC_NL_KEYS_JOB, [] ), [
+		'status'     => 'idle', // idle | running | paused | done
+		'lists'      => [],
+		'list'       => 0,
+		'offset'     => 0,
+		'done'       => 0,
+		'skipped'    => 0,
+		'errors'     => 0,
+		'last_error' => '',
+		'started'    => 0,
+		'updated'    => 0,
+	] );
+}
+
+function oec_nl_keys_job_save( array $job ): void {
+	$job['updated'] = time();
+	oec_config_update_option( OEC_NL_KEYS_JOB, $job, false );
+}
+
+add_filter( 'cron_schedules', function ( $schedules ) {
+	$schedules['oec_minute'] = [ 'interval' => MINUTE_IN_SECONDS, 'display' => 'Cada minuto (OEC)' ];
+	return $schedules;
+} );
+
+function oec_nl_keys_schedule( bool $on ): void {
+	$next = wp_next_scheduled( OEC_NL_KEYS_CRON );
+	if ( $on && ! $next ) {
+		wp_schedule_event( time() + 30, 'oec_minute', OEC_NL_KEYS_CRON );
+	} elseif ( ! $on && $next ) {
+		wp_clear_scheduled_hook( OEC_NL_KEYS_CRON );
+	}
+}
+
+add_action( OEC_NL_KEYS_CRON, 'oec_nl_keys_tick' );
+
+function oec_nl_keys_tick(): void {
+	if ( ! oec_is_config_site() ) {
+		return;
+	}
+	$job = oec_nl_keys_job();
+	if ( 'running' !== $job['status'] ) {
+		oec_nl_keys_schedule( false );
+		return;
+	}
+	if ( get_transient( 'oec_nl_keys_lock' ) ) {
+		return; // la pasada anterior todavía está corriendo
+	}
+	set_transient( 'oec_nl_keys_lock', 1, 5 * MINUTE_IN_SECONDS );
+
+	$deadline = time() + 100;
+	$written  = 0;
+	while ( $written < OEC_NL_KEYS_PER_RUN && time() < $deadline ) {
+		$list = $job['lists'][ $job['list'] ] ?? null;
+		if ( null === $list ) {
+			$job['status'] = 'done';
+			break;
+		}
+		$page = oec_nl_api( 'GET', '/lists/' . rawurlencode( $list ) . '/contacts', null, [ 'limit' => 100, 'offset' => $job['offset'] ] );
+		if ( is_wp_error( $page ) ) {
+			++$job['errors'];
+			$job['last_error'] = $list . ': ' . $page->get_error_message();
+			break; // se reintenta en la próxima pasada
+		}
+		foreach ( (array) $page as $c ) {
+			$email = (string) ( $c['Email'] ?? '' );
+			$key   = is_email( $email ) ? oec_nl_member_key( $email ) : '';
+			if ( ! $key || ! in_array( $c['Status'] ?? '', [ 'Active', 'Engaged' ], true ) || ( $c['CustomFields'][ OEC_NL_KEY_FIELD ] ?? '' ) === $key ) {
+				++$job['skipped'];
+				continue;
+			}
+			$res = oec_nl_update_contact( $email, [], [ OEC_NL_KEY_FIELD => $key ], $c );
+			if ( is_wp_error( $res ) ) {
+				++$job['errors'];
+				$job['last_error'] = $email . ': ' . $res->get_error_message();
+			} else {
+				++$job['done'];
+			}
+			++$written;
+		}
+		$job['offset'] += count( (array) $page );
+		if ( count( (array) $page ) < 100 ) {
+			++$job['list'];
+			$job['offset'] = 0;
+		}
+		oec_nl_keys_job_save( $job ); // progreso por página: si se corta, sigue desde acá
+	}
+
+	if ( 'done' === $job['status'] ) {
+		oec_nl_keys_schedule( false );
+		oec_nl_log( 'success', sprintf( 'Claves de "Gestionar mis suscripciones": terminado (%s guardadas, %s ya estaban o no corresponden, %s errores).', number_format_i18n( $job['done'] ), number_format_i18n( $job['skipped'] ), number_format_i18n( $job['errors'] ) ) );
+	}
+	oec_nl_keys_job_save( $job );
+	delete_transient( 'oec_nl_keys_lock' );
+}
+
+add_action( 'admin_post_oec_nl_keys', function () {
+	if ( ! current_user_can( 'manage_options' ) || ! oec_is_config_site() ) {
+		wp_die( esc_html__( 'Sin permisos.', 'oec-theme' ) );
+	}
+	check_admin_referer( 'oec_nl_keys' );
+	$job = oec_nl_keys_job();
+	$do  = sanitize_key( wp_unslash( $_POST['do'] ?? '' ) );
+
+	if ( 'start' === $do || 'restart' === $do ) {
+		$job = array_merge( oec_nl_keys_job(), [
+			'status' => 'running', 'lists' => oec_nl_subscribable_lists(), 'list' => 0, 'offset' => 0,
+			'done' => 0, 'skipped' => 0, 'errors' => 0, 'last_error' => '', 'started' => time(),
+		] );
+		oec_nl_log( 'info', 'Claves de "Gestionar mis suscripciones": proceso iniciado.' );
+	} elseif ( 'pause' === $do && 'running' === $job['status'] ) {
+		$job['status'] = 'paused';
+	} elseif ( 'resume' === $do && 'paused' === $job['status'] ) {
+		$job['status'] = 'running';
+	}
+	oec_nl_keys_job_save( $job );
+	oec_nl_keys_schedule( 'running' === $job['status'] );
+	oec_nl_redirect_notice( 'success', __( 'Listo.', 'oec-theme' ), 'suscriptos' );
+} );
+
+/** Tarjeta del admin (pestaña Suscriptos). */
+function oec_nl_render_keys_card(): void {
+	$job = oec_nl_keys_job();
+	if ( 'running' === $job['status'] ) {
+		oec_nl_keys_schedule( true ); // por si el evento se perdió
+	}
+	$with_key = get_transient( 'oec_nl_keys_count' );
+	if ( false === $with_key ) {
+		$with_key = oec_nl_api_v2( '/contact/count', [ 'rule' => OEC_NL_KEY_FIELD . " <> ''" ] );
+		$with_key = is_wp_error( $with_key ) ? null : (int) $with_key;
+		set_transient( 'oec_nl_keys_count', $with_key, 5 * MINUTE_IN_SECONDS );
+	}
+	$labels = [
+		'idle'    => __( 'Sin iniciar', 'oec-theme' ),
+		'running' => __( 'En curso', 'oec-theme' ),
+		'paused'  => __( 'Pausado', 'oec-theme' ),
+		'done'    => __( 'Terminado', 'oec-theme' ),
+	];
+	$total_lists = count( $job['lists'] );
+	$current     = $job['lists'][ $job['list'] ] ?? '';
+	?>
+	<div class="oec-card">
+		<div class="oec-card__header">
+			<h2><?php esc_html_e( 'Acceso directo desde los newsletters', 'oec-theme' ); ?></h2>
+			<p><?php printf( esc_html__( '"Gestionar mis suscripciones" entra directo si el contacto tiene su clave en el campo %s de Elastic Email. Los nuevos la reciben solos; este proceso se la carga a los suscriptores actuales, de a pedazos y en segundo plano (puede tardar horas con listas grandes).', 'oec-theme' ), '<code>' . esc_html( OEC_NL_KEY_FIELD ) . '</code>' ); ?></p>
+		</div>
+		<div class="oec-card__body">
+			<dl class="oec-nl-facts">
+				<dt><?php esc_html_e( 'Contactos con clave', 'oec-theme' ); ?></dt><dd><?php echo esc_html( oec_nl_format_number( $with_key ) ); ?></dd>
+				<dt><?php esc_html_e( 'Estado', 'oec-theme' ); ?></dt><dd><strong><?php echo esc_html( $labels[ $job['status'] ] ?? $job['status'] ); ?></strong>
+					<?php if ( in_array( $job['status'], [ 'running', 'paused' ], true ) && $current ) : ?>
+						— <?php printf( esc_html__( 'lista %1$d de %2$d (%3$s), contacto %4$s', 'oec-theme' ), (int) $job['list'] + 1, (int) $total_lists, esc_html( oec_nl_list_label( $current ) ), esc_html( number_format_i18n( (int) $job['offset'] ) ) ); ?>
+					<?php endif; ?>
+				</dd>
+				<?php if ( $job['started'] ) : ?>
+				<dt><?php esc_html_e( 'Progreso', 'oec-theme' ); ?></dt>
+				<dd><?php printf( esc_html__( '%1$s claves guardadas · %2$s ya la tenían o no reciben campañas · %3$s errores', 'oec-theme' ), esc_html( number_format_i18n( (int) $job['done'] ) ), esc_html( number_format_i18n( (int) $job['skipped'] ) ), esc_html( number_format_i18n( (int) $job['errors'] ) ) ); ?>
+					<?php if ( $job['updated'] ) : ?><br><span class="description"><?php printf( esc_html__( 'Última actividad: %s', 'oec-theme' ), esc_html( wp_date( 'j/m H:i', (int) $job['updated'] ) ) ); ?></span><?php endif; ?>
+				</dd>
+				<?php endif; ?>
+				<?php if ( $job['last_error'] ) : ?>
+				<dt><?php esc_html_e( 'Último error', 'oec-theme' ); ?></dt><dd style="color:#b32d2e"><?php echo esc_html( $job['last_error'] ); ?></dd>
+				<?php endif; ?>
+			</dl>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="oec-nl-actions" style="margin-top:1rem;">
+				<input type="hidden" name="action" value="oec_nl_keys">
+				<?php wp_nonce_field( 'oec_nl_keys' ); ?>
+				<?php if ( 'idle' === $job['status'] ) : ?>
+					<button type="submit" name="do" value="start" class="button button-primary"><?php esc_html_e( 'Cargar claves en los suscriptores actuales', 'oec-theme' ); ?></button>
+				<?php elseif ( 'running' === $job['status'] ) : ?>
+					<button type="submit" name="do" value="pause" class="button"><?php esc_html_e( 'Pausar', 'oec-theme' ); ?></button>
+				<?php elseif ( 'paused' === $job['status'] ) : ?>
+					<button type="submit" name="do" value="resume" class="button button-primary"><?php esc_html_e( 'Reanudar', 'oec-theme' ); ?></button>
+				<?php else : ?>
+					<button type="submit" name="do" value="restart" class="button"><?php esc_html_e( 'Volver a recorrer las listas', 'oec-theme' ); ?></button>
+				<?php endif; ?>
+			</form>
+		</div>
+	</div>
+	<?php
+}

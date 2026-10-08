@@ -545,6 +545,8 @@ function oec_nl_add_contact( string $email, string $first, string $last, array $
 				'ConsentDate'     => gmdate( 'Y-m-d\TH:i:s' ),
 				'ConsentTracking' => 'Allow',
 			],
+			// Clave para "Gestionar mis suscripciones" (contacto nuevo: no hay otros campos que perder).
+			'CustomFields' => function_exists( 'oec_nl_member_key' ) ? [ OEC_NL_KEY_FIELD => oec_nl_member_key( $email ) ] : [],
 		] ], [ 'listnames' => $lists ] );
 		if ( is_wp_error( $res ) ) {
 			return $res;
@@ -570,11 +572,16 @@ function oec_nl_add_contact( string $email, string $first, string $last, array $
 			oec_nl_log( 'error', 'No se pudo activar ' . $email . ': ' . $changed->get_error_message() );
 		}
 	}
-	// Nombre: solo si falta o cambió, y reenviando todos los campos personalizados.
-	$first = '' !== $first ? $first : (string) ( $contact['FirstName'] ?? '' );
-	$last  = '' !== $last ? $last : (string) ( $contact['LastName'] ?? '' );
-	if ( $first !== (string) ( $contact['FirstName'] ?? '' ) || $last !== (string) ( $contact['LastName'] ?? '' ) ) {
-		$upd = oec_nl_update_contact( $email, [ 'FirstName' => $first, 'LastName' => $last ], [], $contact );
+	// Nombre (si falta o cambió) y clave de "Gestionar mis suscripciones" (si
+	// no la tiene), en una sola escritura que reenvía todos los campos.
+	$first  = '' !== $first ? $first : (string) ( $contact['FirstName'] ?? '' );
+	$last   = '' !== $last ? $last : (string) ( $contact['LastName'] ?? '' );
+	$custom = [];
+	if ( function_exists( 'oec_nl_member_key' ) && ( $contact['CustomFields'][ OEC_NL_KEY_FIELD ] ?? '' ) !== oec_nl_member_key( $email ) ) {
+		$custom[ OEC_NL_KEY_FIELD ] = oec_nl_member_key( $email );
+	}
+	if ( $custom || $first !== (string) ( $contact['FirstName'] ?? '' ) || $last !== (string) ( $contact['LastName'] ?? '' ) ) {
+		$upd = oec_nl_update_contact( $email, [ 'FirstName' => $first, 'LastName' => $last ], $custom, $contact );
 		if ( is_wp_error( $upd ) ) {
 			oec_nl_log( 'error', 'No se pudo actualizar el nombre de ' . $email . ': ' . $upd->get_error_message() );
 		}
@@ -793,7 +800,8 @@ function oec_nl_personalize_html( string $html, string $email, string $first, st
 		'{{ encodeURIComponent(email) }}'     => rawurlencode( $email ),
 		'{{ encodeURIComponent(firstname) }}' => rawurlencode( $first ),
 		'{{ encodeURIComponent(lastname) }}'  => rawurlencode( $last ),
-		'{email}'                             => rawurlencode( $email ), // solo aparece en el link de créditos
+		'{email}'                             => rawurlencode( $email ), // solo aparece en links (créditos, gestionar suscripciones)
+		'{oecclave}'                          => function_exists( 'oec_nl_member_key' ) ? oec_nl_member_key( $email ) : '',
 		'{firstname}'                         => esc_html( $first ),
 		'{lastname}'                          => esc_html( $last ),
 		'{country}'                           => '',
@@ -1600,6 +1608,7 @@ function oec_nl_public_html( string $html ): string {
 		'{firstname}'                              => '',
 		'{lastname}'                               => '',
 		'{email}'                                  => '',
+		'{oecclave}'                               => '',
 		'{country}'                                => '',
 		'{unsubscribe}'                            => '#',
 		'{view}'                                   => '#',
