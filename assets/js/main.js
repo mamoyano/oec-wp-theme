@@ -731,6 +731,61 @@
     requestAnimationFrame(tick);
   });
 
+  /* ── Aviso "antes de irte" ([oec-imperdible], inc/destacadas.php): una vez
+     por sesión, cuando el mouse sale por arriba de la ventana o al llegar
+     al final de la página. Nunca en los primeros segundos ni si ya se hizo
+     clic en esa formación. ── */
+  /* [oec-imperdible] de una formación que cerró inscripción desde que se
+     guardó la página (Cloudflare la tiene hasta un día): fuera la sección
+     entera, y con ella el aviso de salida. */
+  document.querySelectorAll('[data-oec-imperdible]').forEach((el) => {
+    if (Date.parse(el.dataset.cierre || '') < Date.now()) {
+      (el.closest('.oec-landing-block') || el).remove();
+      document.querySelectorAll('[data-oec-antes-irte]').forEach((a) => a.remove());
+    }
+  });
+
+  const antes = document.querySelector('[data-oec-antes-irte]');
+  if (antes) {
+    document.body.appendChild(antes); // fuera del hero/secciones: position fixed sin sorpresas
+    const KEY = 'oec_antes_irte';
+    const slug = antes.dataset.slug;
+    const t0 = Date.now();
+    let listo = false, clic = false;
+    try { listo = !!sessionStorage.getItem(KEY); } catch (e) {}
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[href]');
+      if (a && slug && a.href.indexOf(slug) !== -1) clic = true;
+    }, true);
+
+    const onOut = (e) => { if (!e.relatedTarget && e.clientY <= 0) mostrar(); };
+    const onScroll = () => {
+      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight * 0.85) mostrar();
+    };
+    const mostrar = () => {
+      if (listo || clic || Date.now() - t0 < 8000) return;
+      listo = true;
+      try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
+      document.removeEventListener('mouseout', onOut);
+      window.removeEventListener('scroll', onScroll);
+      const img = antes.querySelector('img[data-src]');
+      if (img) img.src = img.dataset.src;
+      antes.hidden = false;
+      void antes.offsetHeight; // aplica el estado inicial antes de animar la entrada
+      antes.classList.add('is-open');
+    };
+    const cerrar = () => {
+      antes.classList.remove('is-open');
+      setTimeout(() => { antes.hidden = true; }, 450);
+    };
+    if (!listo) {
+      document.addEventListener('mouseout', onOut);
+      window.addEventListener('scroll', onScroll, { passive: true });
+    }
+    antes.querySelector('[data-oec-antes-irte-close]').addEventListener('click', cerrar);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && antes.classList.contains('is-open')) cerrar(); });
+  }
+
   /* ── Fade-in on scroll ──────────────────────────────────── */
   const observer = new IntersectionObserver(
     (entries) => entries.forEach((e) => {

@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.110
+Version: 1.0.111
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4824,3 +4824,248 @@ body.oec-chat-open { overflow: hidden; }
 
 /* Chat anónimo (Botmaker): mientras se descarga el widget tras el clic. */
 .oec-botmaker-trigger.oec-bm-loading { cursor: progress; opacity: .7; }
+
+/* ============================================================
+   DESTACADAS DE LA TEMÁTICA (inc/destacadas.php)
+   [oec-estrella] en el hero, [oec-imperdible], el aviso "antes de
+   irte" y [oec-suscribite] (créditos + newsletter, fuera del hero).
+   Colores: las --tematica-* de cada landing, con fallback al tema.
+   ============================================================ */
+.oec-estrella,
+.oec-imperdible,
+.oec-antes-irte,
+.oec-suscribite {
+  --dest-acc:  var(--tematica-accent, var(--color-accent));
+  --dest-dk:   var(--tematica-dark, var(--color-dark));
+  --dest-dk-2: var(--tematica-dark-2, var(--color-primary));
+}
+
+/* ── [oec-estrella]: todas en la misma celda (cambiar no mueve el hero) ── */
+.oec-estrella { position: relative; color: var(--color-white); padding-top: 48px; }
+.oec-estrella__stack { display: grid; }
+.oec-estrella__item {
+  grid-area: 1 / 1;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  border-radius: 20px;
+  background: rgba(var(--color-white-rgb), .07);
+  border: 1px solid rgba(var(--color-white-rgb), .16);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity .45s ease, visibility 0s linear .45s;
+}
+.oec-estrella__item.is-active { visibility: visible; opacity: 1; transition: opacity .45s ease; }
+.oec-estrella__body { padding: 24px; min-width: 0; }
+.oec-estrella__item--recorte .oec-estrella__body { padding-right: calc(42% + 4px); }
+
+/* Recorte: el docente "sale" por arriba de la tarjeta, parado sobre su borde inferior. */
+.oec-estrella__foto { position: relative; }
+.oec-estrella__item--recorte .oec-estrella__foto { position: absolute; right: 0; bottom: 0; width: 42%; height: calc(100% + 48px); }
+.oec-estrella__item--recorte .oec-estrella__foto::before {
+  content: ''; position: absolute; left: 50%; top: 18%; width: 92%; aspect-ratio: 1; transform: translateX(-50%);
+  border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--dest-acc) 45%, transparent) 0%, transparent 68%);
+}
+.oec-estrella__item--recorte .oec-estrella__foto img {
+  position: relative; display: block; width: 100%; height: 100%; object-fit: cover; object-position: center top; border-bottom-right-radius: 19px;
+  /* Los recortes terminan en un corte vertical a los costados: el derecho
+     apoya en el borde de la tarjeta; el izquierdo se desvanece. */
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30%);
+  mask-image: linear-gradient(to right, transparent 0, #000 30%);
+}
+/* Foto del catálogo (con fondo): círculo arriba a la derecha. */
+.oec-estrella__item:not(.oec-estrella__item--recorte) .oec-estrella__foto {
+  position: absolute; top: 22px; right: 22px; width: 76px; height: 76px; border-radius: 50%; overflow: hidden;
+  border: 3px solid var(--dest-acc); z-index: 1;
+}
+.oec-estrella__item:not(.oec-estrella__item--recorte) .oec-estrella__foto img { width: 100%; height: 100%; object-fit: cover; }
+.oec-estrella__item:not(.oec-estrella__item--recorte) :is(.oec-estrella__kicker, .oec-estrella__presenta, .oec-estrella__title) { margin-right: 92px; }
+
+.oec-estrella__kicker {
+  display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px;
+  background: var(--dest-acc); color: var(--dest-dk); font-size: 11.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.oec-estrella__presenta { margin: 12px 0 4px; font-size: 14px; font-weight: 600; color: rgba(var(--color-white-rgb), .82); }
+.oec-estrella__title { margin: 0 0 12px; font-size: clamp(19px, 2vw, 23px); font-weight: 800; line-height: 1.2; color: var(--color-white); }
+.oec-estrella__title a { color: inherit !important; text-decoration: none !important; }
+.oec-estrella__title a:hover { text-decoration: underline !important; text-decoration-color: var(--dest-acc) !important; }
+.oec-estrella__stats { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; }
+.oec-estrella__stats li { display: inline-flex; align-items: center; gap: 5px; }
+.oec-estrella__stats i { color: var(--dest-acc); }
+.oec-estrella__stats span { color: rgba(var(--color-white-rgb), .7); }
+.oec-estrella__quote {
+  margin: 0 0 18px; padding: 0 0 0 12px; border-left: 3px solid var(--dest-acc);
+  font-size: 13.5px; font-style: italic; line-height: 1.5; color: rgba(var(--color-white-rgb), .86);
+}
+.oec-estrella__quote cite { display: block; margin-top: 4px; font-size: 12px; font-style: normal; color: rgba(var(--color-white-rgb), .6); }
+.oec-estrella__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.oec-estrella__cta {
+  display: inline-flex; align-items: center; gap: 8px; padding: 11px 20px; border-radius: 8px;
+  background: var(--dest-acc); color: var(--dest-dk) !important; font-weight: 700; font-size: 14px; text-decoration: none !important;
+  transition: transform .2s, filter .2s;
+}
+.oec-estrella__cta:hover { transform: translateY(-2px); filter: brightness(.94); }
+.oec-estrella__fecha { font-size: 12.5px; color: rgba(var(--color-white-rgb), .72); }
+.oec-estrella__nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 12px; font-size: 12.5px; color: rgba(var(--color-white-rgb), .7); }
+.oec-estrella__arrow {
+  display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  border: 1px solid rgba(var(--color-white-rgb), .3); background: transparent; color: var(--color-white); cursor: pointer; transition: border-color .2s, background .2s;
+}
+.oec-estrella__arrow:hover { border-color: var(--dest-acc); background: rgba(var(--color-white-rgb), .08); }
+@media (max-width: 560px) {
+  .oec-estrella { padding-top: 32px; }
+  /* Una sola en el flujo: apiladas, todas medían lo que la más alta (la del
+     recorte) y las otras quedaban con aire. La elección inicial es antes del
+     primer pintado, así que cambiar de alto solo pasa al tocar las flechas. */
+  .oec-estrella__item:not(.is-active) { display: none; }
+  /* En el celular la foto va arriba (más chica) y el texto debajo, a lo ancho. */
+  .oec-estrella__item--recorte { grid-template-columns: minmax(0, 1fr); }
+  .oec-estrella__item--recorte .oec-estrella__foto { position: relative; justify-self: center; width: 58%; max-width: 220px; height: auto; margin-top: -32px; }
+  .oec-estrella__item--recorte .oec-estrella__foto img {
+    height: auto; border-radius: 0;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%), linear-gradient(#000 78%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image: linear-gradient(to right, transparent 0, #000 22%, #000 78%, transparent 100%), linear-gradient(#000 78%, transparent);
+    mask-composite: intersect;
+  }
+  .oec-estrella__item--recorte .oec-estrella__body { padding: 0 20px 20px; margin-top: -24px; position: relative; }
+  .oec-estrella__body { padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { .oec-estrella__item, .oec-estrella__item.is-active { transition: none; } }
+
+/* ── [oec-imperdible]: la número 1 de la temática ── */
+.oec-imperdible {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  grid-template-areas: "media body" "ops ops";
+  column-gap: 56px;
+  padding: 56px 56px 0;
+  border-radius: 28px;
+  background: linear-gradient(140deg, var(--dest-dk) 0%, var(--dest-dk-2) 100%);
+  color: var(--color-white);
+  overflow: hidden;
+  box-shadow: 0 30px 60px -30px rgba(var(--color-shadow-rgb), .45);
+}
+.oec-imperdible::before {
+  content: ''; position: absolute; inset: -40% auto auto -20%; width: 70%; aspect-ratio: 1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--dest-acc) 22%, transparent) 0%, transparent 65%);
+}
+.oec-imperdible__media { grid-area: media; position: relative; align-self: end; }
+.oec-imperdible__foto img { position: relative; display: block; width: 100%; height: auto; }
+/* Recorte: pegado al borde izquierdo de la tarjeta (ese costado lo cierra el
+   borde) y con el derecho desvanecido — el mismo criterio que en el hero. */
+.oec-imperdible--recorte .oec-imperdible__media { margin-left: -56px; }
+.oec-imperdible--recorte .oec-imperdible__foto img {
+  -webkit-mask-image: linear-gradient(to left, transparent 0, #000 30%);
+  mask-image: linear-gradient(to left, transparent 0, #000 30%);
+}
+.oec-imperdible:not(.oec-imperdible--recorte) .oec-imperdible__media { align-self: center; padding-bottom: 40px; }
+.oec-imperdible:not(.oec-imperdible--recorte) .oec-imperdible__foto img { aspect-ratio: 4 / 5; object-fit: cover; border-radius: 20px; border: 4px solid var(--dest-acc); }
+.oec-imperdible__chip {
+  position: absolute; z-index: 1; display: inline-flex; align-items: center; gap: 6px; max-width: 70%;
+  padding: 9px 14px; border-radius: 12px; background: var(--color-white); color: var(--color-text);
+  font-size: 13px; line-height: 1.3; box-shadow: 0 12px 30px -8px rgba(var(--color-shadow-rgb), .4);
+  animation: oec-imperdible-flota 5s ease-in-out infinite;
+}
+.oec-imperdible__chip strong { font-size: 16px; color: var(--dest-dk); }
+.oec-imperdible__chip i { color: #f5a623; }
+.oec-imperdible__chip--a { top: 22%; left: 24px; }
+.oec-imperdible--recorte .oec-imperdible__chip--a { left: 56px; }
+.oec-imperdible__chip--b { top: 52%; right: -6px; animation-delay: -2.5s; }
+/* Más aire antes de la franja oscura del newsletter, que viene justo debajo. */
+.oec-landing-block:has(> .oec-landing-container > .oec-imperdible) { padding-bottom: 7.5rem; }
+@media (max-width: 900px) { .oec-landing-block:has(> .oec-landing-container > .oec-imperdible) { padding-bottom: 5rem; } }
+@keyframes oec-imperdible-flota { 50% { transform: translateY(-8px); } }
+.oec-imperdible__body { grid-area: body; position: relative; align-self: center; padding-bottom: 48px; }
+.oec-imperdible__eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--dest-acc); }
+.oec-imperdible__title { margin: 14px 0 16px; font-size: clamp(26px, 3.4vw, 40px); font-weight: 800; line-height: 1.12; color: var(--color-white); }
+.oec-imperdible__docente { margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: rgba(var(--color-white-rgb), .8); }
+.oec-imperdible__docente strong { color: var(--color-white); }
+.oec-imperdible__puntos { display: grid; gap: 10px; margin: 0 0 28px; padding: 0; list-style: none; font-size: 15px; line-height: 1.5; }
+.oec-imperdible__puntos li { display: flex; gap: 10px; }
+.oec-imperdible__puntos i { flex-shrink: 0; margin-top: 3px; color: var(--dest-acc); }
+.oec-imperdible__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; }
+.oec-imperdible__cta {
+  display: inline-flex; align-items: center; gap: 10px; padding: 15px 30px; border-radius: 8px;
+  background: var(--dest-acc); color: var(--dest-dk) !important; font-weight: 700; font-size: 15px; text-decoration: none !important;
+  transition: transform .2s, filter .2s;
+}
+.oec-imperdible__cta:hover { transform: translateY(-2px); filter: brightness(.95); }
+.oec-imperdible__fecha { font-size: 13.5px; color: rgba(var(--color-white-rgb), .75); }
+/* Opiniones: banda al pie, sobre la que "se para" la foto. */
+.oec-imperdible__opiniones {
+  grid-area: ops; position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;
+  margin: 0 -56px; padding: 28px 56px 32px; background: rgba(var(--color-shadow-rgb), .22);
+}
+.oec-imperdible__opinion { margin: 0; display: flex; flex-direction: column; gap: 10px; }
+.oec-imperdible__stars { display: flex; gap: 2px; font-size: 12px; color: #f5a623; }
+.oec-imperdible__opinion blockquote { margin: 0; flex: 1; font-size: 14px; line-height: 1.55; color: rgba(var(--color-white-rgb), .88); }
+.oec-imperdible__opinion figcaption { display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700; color: var(--color-white); }
+.oec-imperdible__opinion img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
+@media (max-width: 900px) {
+  .oec-imperdible { grid-template-columns: minmax(0, 1fr); grid-template-areas: "body" "media" "ops"; padding: 36px 24px 0; }
+  .oec-imperdible__body { padding-bottom: 28px; }
+  .oec-imperdible__media { justify-self: center; width: min(340px, 80%); }
+  .oec-imperdible--recorte .oec-imperdible__media { margin-left: 0; }
+  /* Más abajo que en desktop: con la foto angosta, a media altura tapaban la cara. */
+  .oec-imperdible__chip--a, .oec-imperdible--recorte .oec-imperdible__chip--a { top: 58%; left: -6px; }
+  .oec-imperdible__chip--b { top: 78%; }
+  .oec-imperdible--recorte .oec-imperdible__foto img {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 20%, #000 80%, transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 20%, #000 80%, transparent 100%);
+  }
+  .oec-imperdible__opiniones { grid-template-columns: minmax(0, 1fr); margin: 0 -24px; padding: 24px; }
+  .oec-imperdible__opinion:nth-child(3) { display: none; }
+}
+@media (max-width: 560px) {
+  .oec-imperdible__docente { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+  .oec-imperdible__opinion:nth-child(n+2) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .oec-imperdible__chip { animation: none; } }
+
+/* ── Aviso "antes de irte" (abajo a la izquierda: a la derecha está el chat) ── */
+.oec-antes-irte {
+  position: fixed; left: 20px; bottom: 20px; z-index: 9990;
+  display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: end;
+  width: min(400px, calc(100vw - 32px)); border-radius: 18px; overflow: hidden;
+  background: var(--color-white); color: var(--color-text);
+  box-shadow: 0 24px 60px -12px rgba(var(--color-shadow-rgb), .45);
+  transform: translateY(calc(100% + 40px)); transition: transform .45s cubic-bezier(.2, .9, .3, 1.2);
+}
+.oec-antes-irte[hidden] { display: none; }
+.oec-antes-irte.is-open { transform: none; }
+.oec-antes-irte__foto { align-self: stretch; display: flex; align-items: flex-end; background: linear-gradient(160deg, var(--dest-dk-2), var(--dest-dk)); }
+.oec-antes-irte__foto img { display: block; width: 100%; height: auto; }
+.oec-antes-irte__body { padding: 16px 18px 16px 16px; }
+.oec-antes-irte__kicker { margin: 0 24px 4px 0; font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--dest-dk-2); }
+.oec-antes-irte__t { margin: 0 0 8px; font-size: 15.5px; font-weight: 800; line-height: 1.25; color: var(--color-dark); }
+.oec-antes-irte__stats { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 0 0 12px; padding: 0; list-style: none; font-size: 12px; color: var(--color-muted); }
+.oec-antes-irte__stats i { color: #f5a623; }
+.oec-antes-irte__stats strong { color: var(--color-text); }
+.oec-antes-irte__cta {
+  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 8px;
+  background: var(--dest-dk); color: var(--color-white) !important; font-weight: 700; font-size: 13.5px; text-decoration: none !important;
+}
+.oec-antes-irte__cta:hover { filter: brightness(1.2); }
+.oec-antes-irte__close {
+  position: absolute; top: 8px; right: 8px; display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--color-muted); cursor: pointer;
+}
+.oec-antes-irte__close:hover { background: var(--color-light); color: var(--color-text); }
+@media (max-width: 560px) { .oec-antes-irte { left: 16px; bottom: 16px; grid-template-columns: 88px minmax(0, 1fr); } }
+@media (prefers-reduced-motion: reduce) { .oec-antes-irte { transition: none; } }
+
+/* Temática sin destacadas abiertas: fuera la sección entera (inc/destacadas.php, oec_destacada_vacia()). */
+.oec-landing-block:has(> .oec-landing-container > .oec-destacada-vacia) { display: none; }
+
+/* ── [oec-suscribite]: créditos + newsletter de la temática, más abajo ── */
+.oec-suscribite { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 48px; align-items: center; }
+.oec-suscribite__eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--dest-acc); }
+.oec-suscribite h2 { margin: 12px 0 14px; font-size: clamp(24px, 3vw, 34px); font-weight: 800; line-height: 1.15; color: var(--color-white); }
+.oec-suscribite p { margin: 0 0 18px; font-size: 16px; line-height: 1.6; color: rgba(var(--color-white-rgb), .8); }
+.oec-suscribite ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 15px; color: rgba(var(--color-white-rgb), .88); }
+.oec-suscribite li { display: flex; gap: 10px; }
+.oec-suscribite li i { color: var(--dest-acc); }
+@media (max-width: 900px) { .oec-suscribite { grid-template-columns: minmax(0, 1fr); gap: 28px; } }

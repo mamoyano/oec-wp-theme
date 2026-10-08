@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.110' );
+define( 'OEC_THEME_VERSION', '1.0.111' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -448,6 +448,7 @@ require OEC_THEME_DIR . '/inc/clases.php';
 require OEC_THEME_DIR . '/inc/blog-home.php';
 require OEC_THEME_DIR . '/inc/sitios.php';
 require OEC_THEME_DIR . '/inc/tiras.php';
+require OEC_THEME_DIR . '/inc/destacadas.php';
 require OEC_THEME_DIR . '/inc/formaciones.php';
 require OEC_THEME_DIR . '/inc/ai-chat.php';
 require OEC_THEME_DIR . '/inc/ai-chat-log.php';
