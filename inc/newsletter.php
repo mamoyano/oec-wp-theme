@@ -528,35 +528,89 @@ function oec_nl_forget_member( string $email ): void {
  * @return true|WP_Error
  */
 function oec_nl_add_contact( string $email, string $first, string $last, array $lists ) {
-	$payload = [ [
-		'Email'     => $email,
-		'Status'    => 'Active',
-		'FirstName' => $first,
-		'LastName'  => $last,
-		'Consent'   => [
-			'ConsentIP'       => oec_nl_client_ip(),
-			'ConsentDate'     => gmdate( 'Y-m-d\TH:i:s' ),
-			'ConsentTracking' => 'Allow',
-		],
-	] ];
+	$contact = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $email ) );
 
-	$res = oec_nl_api( 'POST', '/contacts', $payload, [ 'listnames' => $lists ] );
-	if ( is_wp_error( $res ) ) {
-		// Contacto existente: actualizamos nombre y lo sumamos a cada lista.
-		$upd = oec_nl_api( 'PUT', '/contacts/' . rawurlencode( $email ), [ 'FirstName' => $first, 'LastName' => $last ] );
-		if ( is_wp_error( $upd ) ) {
+	// Contacto nuevo: alta con estado, nombre, consentimiento y listas.
+	if ( is_wp_error( $contact ) ) {
+		if ( ! oec_nl_is_not_found( $contact ) ) {
+			return $contact;
+		}
+		$res = oec_nl_api( 'POST', '/contacts', [ [
+			'Email'     => $email,
+			'Status'    => 'Active',
+			'FirstName' => $first,
+			'LastName'  => $last,
+			'Consent'   => [
+				'ConsentIP'       => oec_nl_client_ip(),
+				'ConsentDate'     => gmdate( 'Y-m-d\TH:i:s' ),
+				'ConsentTracking' => 'Allow',
+			],
+		] ], [ 'listnames' => $lists ] );
+		if ( is_wp_error( $res ) ) {
 			return $res;
 		}
-		foreach ( $lists as $list ) {
-			$add = oec_nl_api( 'POST', '/lists/' . rawurlencode( $list ) . '/contacts', [ 'Emails' => [ $email ] ] );
-			if ( is_wp_error( $add ) ) {
-				return $add;
-			}
+		oec_nl_forget_member( $email );
+		return true;
+	}
+
+	// Contacto existente. OJO: POST /contacts y PUT /contacts con algunos
+	// campos REEMPLAZAN todos sus campos personalizados (país, ciudad,
+	// organización…): se borraban. Acá solo se usan llamadas que no los tocan.
+	foreach ( $lists as $list ) {
+		$add = oec_nl_api( 'POST', '/lists/' . rawurlencode( $list ) . '/contacts', [ 'Emails' => [ $email ] ] );
+		if ( is_wp_error( $add ) ) {
+			return $add;
+		}
+	}
+	if ( ! in_array( $contact['Status'] ?? '', [ 'Active', 'Engaged' ], true ) ) {
+		// Transactional, Inactive…: sin esto no recibe campañas. (Bajas y
+		// quejas no se pueden cambiar por API: las maneja oec_nl_handle_suppression.)
+		$changed = oec_nl_api_v2( '/contact/changestatus', [ 'emails' => $email, 'status' => 'Active' ] );
+		if ( is_wp_error( $changed ) ) {
+			oec_nl_log( 'error', 'No se pudo activar ' . $email . ': ' . $changed->get_error_message() );
+		}
+	}
+	// Nombre: solo si falta o cambió, y reenviando todos los campos personalizados.
+	$first = '' !== $first ? $first : (string) ( $contact['FirstName'] ?? '' );
+	$last  = '' !== $last ? $last : (string) ( $contact['LastName'] ?? '' );
+	if ( $first !== (string) ( $contact['FirstName'] ?? '' ) || $last !== (string) ( $contact['LastName'] ?? '' ) ) {
+		$upd = oec_nl_update_contact( $email, [ 'FirstName' => $first, 'LastName' => $last ], [], $contact );
+		if ( is_wp_error( $upd ) ) {
+			oec_nl_log( 'error', 'No se pudo actualizar el nombre de ' . $email . ': ' . $upd->get_error_message() );
 		}
 	}
 
-	delete_transient( 'oec_nl_sub_' . md5( strtolower( $email ) ) );
+	oec_nl_forget_member( $email );
 	return true;
+}
+
+/**
+ * Actualiza un contacto existente SIN perder datos: PUT /contacts de Elastic
+ * Email reemplaza todos los campos personalizados, así que se leen los
+ * actuales, se combinan con los nuevos y se envían completos.
+ *
+ * @param array $fields  FirstName / LastName a cambiar.
+ * @param array $custom  Campos personalizados a cambiar (nombre => valor).
+ * @param array|null $contact El contacto ya leído (evita otra consulta).
+ * @return true|WP_Error
+ */
+function oec_nl_update_contact( string $email, array $fields, array $custom = [], ?array $contact = null ) {
+	if ( null === $contact ) {
+		$contact = oec_nl_api( 'GET', '/contacts/' . rawurlencode( $email ) );
+		if ( is_wp_error( $contact ) ) {
+			return $contact;
+		}
+	}
+	$merged = array_merge( (array) ( $contact['CustomFields'] ?? [] ), $custom );
+	// Un texto vacío en un campo de fecha se guarda como "01/01/0001": vacío = null.
+	$merged = array_map( fn( $v ) => '' === $v ? null : $v, $merged );
+	$body   = [
+		'FirstName'    => array_key_exists( 'FirstName', $fields ) ? $fields['FirstName'] : ( $contact['FirstName'] ?? null ),
+		'LastName'     => array_key_exists( 'LastName', $fields ) ? $fields['LastName'] : ( $contact['LastName'] ?? null ),
+		'CustomFields' => $merged,
+	];
+	$res = oec_nl_api( 'PUT', '/contacts/' . rawurlencode( $email ), $body );
+	return is_wp_error( $res ) ? $res : true;
 }
 
 /**
