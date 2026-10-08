@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.112
+Version: 1.0.113
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4858,7 +4858,7 @@ body.oec-chat-open { overflow: hidden; }
 }
 .oec-estrella__item.is-active { visibility: visible; opacity: 1; transition: opacity .45s ease; }
 /* Portada de la formación (panorámica): arriba, fundida hacia la tarjeta. */
-.oec-estrella__portada { position: relative; aspect-ratio: 5 / 2; background: rgba(var(--color-white-rgb), .06); }
+.oec-estrella__portada { position: relative; aspect-ratio: 7 / 2; background: rgba(var(--color-white-rgb), .06); }
 .oec-estrella__portada img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .oec-estrella__portada::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 35%, rgba(var(--tematica-dark-rgb, var(--color-dark-rgb)), .75) 100%); }
 .oec-estrella__kicker {
@@ -4869,14 +4869,14 @@ body.oec-chat-open { overflow: hidden; }
 }
 .oec-estrella__body { position: relative; flex: 1; display: flex; flex-direction: column; align-items: flex-start; padding: 0 24px 22px; min-width: 0; }
 /* Docentes: círculos iguales, montados sobre el borde de la portada. */
-.oec-estrella__caras { display: flex; gap: 10px; margin: -44px 0 12px; position: relative; z-index: 1; }
+.oec-estrella__caras { display: flex; gap: 10px; margin: -38px 0 10px; position: relative; z-index: 1; }
 .oec-estrella__caras__cara,
 .oec-antes-irte__caras__cara {
   flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 50%;
   border: 3px solid var(--dest-acc); background: var(--dest-dk); color: var(--dest-dk);
   box-shadow: 0 6px 18px rgba(var(--color-shadow-rgb), .35); font-weight: 800;
 }
-.oec-estrella__caras__cara { width: 84px; height: 84px; font-size: 22px; }
+.oec-estrella__caras__cara { width: 76px; height: 76px; font-size: 21px; }
 /* Las fotos del catálogo vienen con cualquier encuadre (muchas de medio
    cuerpo): un poco de zoom hacia arriba deja la cara más grande. */
 :is(.oec-estrella__caras__cara, .oec-antes-irte__caras__cara) img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%; transform: scale(1.25); transform-origin: 50% 25%; }
@@ -4884,7 +4884,7 @@ body.oec-chat-open { overflow: hidden; }
 :is(.oec-estrella__caras__cara, .oec-antes-irte__caras__cara):is(.oec-estrella__caras__cara--mas, .oec-antes-irte__caras__cara--mas) { background: var(--color-white); font-size: 15px; }
 .oec-estrella__presenta { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: rgba(var(--color-white-rgb), .82); }
 .oec-estrella__title { margin: 0 0 12px; font-size: clamp(19px, 2vw, 23px); font-weight: 800; line-height: 1.2; color: var(--color-white); }
-.oec-estrella__title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: inherit !important; text-decoration: none !important; }
+.oec-estrella__title a { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: inherit !important; text-decoration: none !important; }
 .oec-estrella__title a:hover { text-decoration: underline !important; text-decoration-color: var(--dest-acc) !important; }
 .oec-estrella__stats { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; padding: 0; list-style: none; font-size: 13px; }
 .oec-estrella__stats li { display: inline-flex; align-items: center; gap: 5px; }
@@ -4909,12 +4909,15 @@ body.oec-chat-open { overflow: hidden; }
   border: 1px solid rgba(var(--color-white-rgb), .3); background: transparent; color: var(--color-white); cursor: pointer; transition: border-color .2s, background .2s;
 }
 .oec-estrella__arrow:hover { border-color: var(--dest-acc); background: rgba(var(--color-white-rgb), .08); }
+/* Hero en una columna (celular/tablet): aire entre los botones del hero,
+   la tarjeta y los números de abajo. */
+@media (max-width: 900px) { .oec-estrella { margin: 24px 0 16px; } }
 @media (max-width: 560px) {
   /* Una sola en el flujo: apiladas, todas medían lo que la más alta. La
      elección inicial es antes del primer pintado, así que cambiar de alto
      solo pasa al tocar las flechas. */
   .oec-estrella__item:not(.is-active) { display: none; }
-  .oec-estrella__portada { aspect-ratio: 5 / 2; }
+  .oec-estrella__portada { aspect-ratio: 3 / 1; }
   .oec-estrella__body { padding: 0 20px 20px; }
   .oec-estrella__caras__cara { width: 72px; height: 72px; }
   .oec-estrella__caras { margin-top: -38px; }
@@ -4999,7 +5002,7 @@ body.oec-chat-open { overflow: hidden; }
   .oec-imperdible__docentes[data-n="3"] .oec-imperdible__docente-bio { display: none; }
   .oec-imperdible__opiniones { grid-template-columns: minmax(0, 1fr); margin: 32px -24px 0; padding: 24px; }
   .oec-imperdible__opinion:nth-child(3) { display: none; }
-  .oec-landing-block:has(> .oec-landing-container > .oec-imperdible) { padding-bottom: 5rem; }
+  .oec-landing-block:has(> .oec-landing-container > .oec-imperdible) { padding-block: 4.5rem 5.5rem; }
 }
 @media (max-width: 560px) {
   .oec-imperdible__docentes[data-n="1"] .oec-imperdible__docente-bio { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6; overflow: hidden; }

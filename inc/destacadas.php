@@ -295,7 +295,9 @@ function oec_render_estrella_shortcode( $atts ): string {
 	<div class="oec-estrella" data-oec-estrella>
 		<div class="oec-estrella__stack">
 		<?php foreach ( $items as $i => $d ) :
-			$carga   = 0 === $i ? 'eager' : 'data';
+			// Todas sin src: el script de abajo se lo pone solo a la elegida, antes
+			// del primer pintado (así no se baja la portada de una que no sale).
+			$carga   = 'data';
 			$quien   = oec_destacada_docentes_txt( $d );
 			$quote   = $d['opiniones'][0] ?? null;
 			$fecha   = oec_destacada_fecha_txt( $d );
@@ -303,14 +305,14 @@ function oec_render_estrella_shortcode( $atts ): string {
 			<article class="oec-estrella__item<?php echo 0 === $i ? ' is-active' : ''; ?>" data-peso="<?php echo esc_attr( $d['peso'] ); ?>" data-cierre="<?php echo esc_attr( $d['cierre'] ); ?>"<?php echo 0 === $i ? '' : ' aria-hidden="true"'; ?>>
 				<div class="oec-estrella__portada">
 					<?php echo oec_destacada_portada( $d, 800, $carga ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
-					<span class="oec-estrella__kicker"><i class="bi bi-stars" aria-hidden="true"></i> <?php esc_html_e( 'Imperdible', 'oec-theme' ); ?></span>
+					<span class="oec-estrella__kicker"><i class="bi bi-fire" aria-hidden="true"></i> <?php esc_html_e( 'Imperdible', 'oec-theme' ); ?></span>
 				</div>
 				<div class="oec-estrella__body">
 					<?php echo oec_destacada_caras( $d, 'oec-estrella__caras', 144, 3, $carga ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					<?php if ( $quien ) : ?>
 					<p class="oec-estrella__presenta"><?php echo esc_html( sprintf( count( $d['docentes'] ) > 1 ? __( '%s te presentan', 'oec-theme' ) : __( '%s te presenta', 'oec-theme' ), $quien ) ); ?></p>
 					<?php endif; ?>
-					<h2 class="oec-estrella__title"><a href="<?php echo esc_url( $d['url'] ); ?>"<?php echo $d['attrs']; // phpcs:ignore WordPress.Security.EscapeOutput ?> tabindex="<?php echo 0 === $i ? '0' : '-1'; ?>"><?php echo esc_html( $d['title'] ); ?></a></h2>
+					<p class="oec-estrella__title"><a href="<?php echo esc_url( $d['url'] ); ?>"<?php echo $d['attrs']; // phpcs:ignore WordPress.Security.EscapeOutput ?> tabindex="<?php echo 0 === $i ? '0' : '-1'; ?>"><?php echo esc_html( $d['title'] ); ?></a></p>
 					<?php echo oec_destacada_stats( $d, 'oec-estrella__stats' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					<?php if ( $quote ) : ?>
 					<blockquote class="oec-estrella__quote">“<?php echo esc_html( oec_destacada_recortar( $quote['comment'], 120 ) ); ?>” <cite>— <?php echo esc_html( $quote['author'] ); ?></cite></blockquote>
@@ -352,7 +354,8 @@ function oec_render_estrella_shortcode( $atts ): string {
 				it.classList.toggle('is-active', on);
 				on ? it.removeAttribute('aria-hidden') : it.setAttribute('aria-hidden', 'true');
 				it.querySelectorAll('a').forEach(function (a) { a.tabIndex = on ? 0 : -1; });
-				if (on) it.querySelectorAll('img[data-src]').forEach(function (img) { img.src = img.dataset.src; img.removeAttribute('data-src'); });
+				// Prioridad baja: que no le compita a la imagen principal del hero (el LCP).
+				if (on) it.querySelectorAll('img[data-src]').forEach(function (img) { img.fetchPriority = 'low'; img.src = img.dataset.src; img.removeAttribute('data-src'); });
 			});
 			if (n) n.textContent = cur + 1;
 		}
