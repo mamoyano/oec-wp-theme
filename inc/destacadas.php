@@ -558,7 +558,7 @@ function oec_render_suscribite_shortcode( $atts ): string {
 			</ul>
 			<p class="oec-suscribite__links">
 				<?php if ( $latest ) : ?><a href="<?php echo esc_url( $latest ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver el último newsletter', 'oec-theme' ); ?> <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a><?php endif; ?>
-				<a href="<?php echo esc_url( home_url( '/creditos-por-descuentos/' ) ); ?>"><?php esc_html_e( '¿Ya tenés créditos? Consultá tu saldo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+				<a href="<?php echo esc_url( home_url( user_trailingslashit( '/creditos-por-descuentos' ) ) ); ?>"><?php esc_html_e( '¿Ya tenés créditos? Consultá tu saldo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
 			</p>
 		</div>
 		<?php

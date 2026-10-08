@@ -328,7 +328,7 @@ function oec_render_credits_widget_shortcode( $atts = [] ): string {
 			<p class="oec-credits-widget__balance-msg">Canjealos por un descuento en tu próxima formación.</p>
 			<div class="oec-credits-widget__actions">
 				<?php // Secundarios a propósito: las formaciones ya están debajo del hero. ?>
-				<a href="<?php echo esc_url( 0 === strpos( $atts['ayuda'], '#' ) ? $atts['ayuda'] : home_url( $atts['ayuda'] ) ); ?>" class="oec-credits-widget__btn oec-credits-widget__btn--ghost oec-credits-widget__btn--quiet"><i class="bi bi-question-circle" aria-hidden="true"></i> ¿Cómo se usan?</a>
+				<a href="<?php echo esc_url( 0 === strpos( $atts['ayuda'], '#' ) ? $atts['ayuda'] : home_url( user_trailingslashit( untrailingslashit( $atts['ayuda'] ) ) ) ); ?>" class="oec-credits-widget__btn oec-credits-widget__btn--ghost oec-credits-widget__btn--quiet"><i class="bi bi-question-circle" aria-hidden="true"></i> ¿Cómo se usan?</a>
 				<button type="button" class="oec-credits-widget__btn oec-credits-widget__btn--ghost oec-credits-widget__btn--quiet" data-action="reset">Otro email</button>
 			</div>
 			<?php
