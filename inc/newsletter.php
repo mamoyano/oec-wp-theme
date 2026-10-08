@@ -73,6 +73,7 @@ const OEC_NL_API_V2  = 'https://api.elasticemail.com/v2';
 const OEC_NL_LOG_MAX = 30;
 
 require __DIR__ . '/newsletter-emails.php';
+require __DIR__ . '/newsletter-manage.php';
 
 /* ============================================================
    OPCIONES Y ESTADO
@@ -476,10 +477,22 @@ function oec_nl_list_names( $data ): array {
  * @return bool|WP_Error
  */
 function oec_nl_is_subscribed( string $email, array $lists ) {
+	$member_of = oec_nl_member_of( $email );
+	return is_wp_error( $member_of ) ? $member_of : (bool) array_intersect( $lists, $member_of );
+}
+
+/**
+ * Listas a las que el email está suscripto de verdad (contacto Active o
+ * Engaged: un dado de baja sigue figurando en sus listas). Cacheado 1 h por
+ * email; se borra al suscribir o cambiar listas (oec_nl_forget_member).
+ *
+ * @return string[]|WP_Error
+ */
+function oec_nl_member_of( string $email ) {
 	$cache_key = 'oec_nl_sub_' . md5( strtolower( $email ) );
 	$cached    = get_transient( $cache_key );
 	if ( is_array( $cached ) ) {
-		return (bool) array_intersect( $lists, $cached );
+		return $cached;
 	}
 
 	$member_of = [];
@@ -500,8 +513,13 @@ function oec_nl_is_subscribed( string $email, array $lists ) {
 		}
 	}
 
-	set_transient( $cache_key, array_values( array_unique( $member_of ) ), HOUR_IN_SECONDS );
-	return (bool) array_intersect( $lists, $member_of );
+	$member_of = array_values( array_unique( $member_of ) );
+	set_transient( $cache_key, $member_of, HOUR_IN_SECONDS );
+	return $member_of;
+}
+
+function oec_nl_forget_member( string $email ): void {
+	delete_transient( 'oec_nl_sub_' . md5( strtolower( $email ) ) );
 }
 
 /**
@@ -1045,7 +1063,9 @@ function oec_nl_rest_confirm( WP_REST_Request $request ): WP_REST_Response {
 		return oec_nl_json( [ 'ok' => false, 'message' => __( 'Demasiados intentos. Probá de nuevo en un minuto.', 'oec-theme' ) ], 429 );
 	}
 	$data = oec_nl_read_token( (string) $request->get_param( 'token' ) );
-	if ( ! $data || ! is_email( $data['e'] ?? '' ) ) {
+	// 'p' marca tokens de otro propósito (p. ej. 'manage', el link de
+	// "Gestionar mis suscripciones"): no sirven para confirmar.
+	if ( ! $data || ! is_email( $data['e'] ?? '' ) || ! empty( $data['p'] ) ) {
 		return oec_nl_json( [ 'ok' => false, 'message' => __( 'El link de confirmación no es válido o venció. Volvé a suscribirte desde el sitio.', 'oec-theme' ) ], 400 );
 	}
 
@@ -1349,6 +1369,7 @@ function oec_nl_create_pages(): void {
 	$pages = [
 		'newsletter-confirmado' => [ 'Newsletter confirmado', 'page-newsletter-confirmado.php' ],
 		'otorgar-creditos'      => [ 'Créditos semanales', 'page-otorgar-creditos.php' ],
+		'mis-suscripciones'     => [ 'Mis suscripciones', 'page-mis-suscripciones.php' ],
 	];
 	foreach ( $pages as $slug => [ $title, $template ] ) {
 		if ( get_page_by_path( $slug ) ) {
@@ -1368,16 +1389,19 @@ function oec_nl_create_pages(): void {
 }
 add_action( 'after_switch_theme', 'oec_nl_create_pages' );
 add_action( 'admin_init', function () {
-	if ( get_transient( 'oec_nl_pages_created' ) ) {
+	// La marca incluye la versión de la lista de páginas: al sumar una
+	// (p. ej. mis-suscripciones) se vuelve a revisar sin esperar un año.
+	$mark = 'oec_nl_pages_v2';
+	if ( get_transient( $mark ) ) {
 		return;
 	}
 	oec_nl_create_pages();
-	set_transient( 'oec_nl_pages_created', true, YEAR_IN_SECONDS );
+	set_transient( $mark, true, YEAR_IN_SECONDS );
 } );
 
-// Ninguna de las dos páginas tiene sentido en buscadores.
+// Ninguna de estas páginas tiene sentido en buscadores.
 add_action( 'wp_head', function () {
-	if ( is_page_template( [ 'page-newsletter-confirmado.php', 'page-otorgar-creditos.php' ] ) ) {
+	if ( is_page_template( [ 'page-newsletter-confirmado.php', 'page-otorgar-creditos.php', 'page-mis-suscripciones.php' ] ) ) {
 		echo '<meta name="robots" content="noindex,nofollow">' . "\n";
 	}
 }, 1 );
@@ -1607,6 +1631,47 @@ function oec_nl_build_email( array $list, int $sent_at, int $since ) {
  * @return string|WP_Error 'sent' | 'draft' | 'empty'
  */
 /**
+ * Crea en Elastic Email el template y la campaña a una lista (mismo flujo que
+ * el script original de G-SE). La usan el envío semanal y el envío manual del
+ * admin.
+ *
+ * @param string $status 'Active' (se envía) o 'Draft' (queda en Elastic Email).
+ * @return true|WP_Error
+ */
+function oec_nl_post_campaign( string $name, string $subject, string $html, string $list, string $status = 'Active', string $utm_campaign = 'newsletter+semanal' ) {
+	$tpl = oec_nl_api( 'POST', '/templates', [
+		'Name'          => $name,
+		'Subject'       => $subject,
+		'Body'          => [ [ 'ContentType' => 'HTML', 'Content' => $html, 'Charset' => 'utf-8' ] ],
+		'TemplateScope' => 'Global',
+	] );
+	if ( is_wp_error( $tpl ) ) {
+		return new WP_Error( $tpl->get_error_code(), 'template: ' . $tpl->get_error_message() );
+	}
+	$camp = oec_nl_api( 'POST', '/campaigns', [
+		'Name'       => $name,
+		'Status'     => $status,
+		'Content'    => [ [
+			'From'         => OEC_NL_FROM,
+			'ReplyTo'      => OEC_NL_FROM,
+			'Subject'      => $subject,
+			'TemplateName' => $tpl['Name'] ?? $name,
+			'Utm'          => [ 'Source' => 'newsletter', 'Medium' => 'email', 'Campaign' => $utm_campaign ],
+		] ],
+		'Recipients' => [ 'ListNames' => [ $list ] ],
+		'Options'    => [
+			'DeliveryOptimization' => 'ToEngagedFirst',
+			'TrackOpens'           => true,
+			'TrackClicks'          => true,
+		],
+	] );
+	if ( is_wp_error( $camp ) ) {
+		return new WP_Error( $camp->get_error_code(), 'campaña: ' . $camp->get_error_message() );
+	}
+	return true;
+}
+
+/**
  * @param string $only_to Lista destino de una PRUEBA (OEC_NL_TEST_LIST): manda
  *                        el contenido de $list_name a esa lista, con [PRUEBA]
  *                        en el asunto, sin tocar el último envío ni el
@@ -1643,37 +1708,10 @@ function oec_nl_send_digest( string $list_name, string $only_to = '' ) {
 	$subject  = ( $test ? '[PRUEBA] ' : '' ) . oec_nl_subject( $list );
 	$template = sprintf( '%sNewsletter %s %s %d', $test ? 'PRUEBA ' : '', $list_name, wp_date( 'Y-m-d' ), $sent_at );
 
-	$tpl = oec_nl_api( 'POST', '/templates', [
-		'Name'          => $template,
-		'Subject'       => $subject,
-		'Body'          => [ [ 'ContentType' => 'HTML', 'Content' => $html, 'Charset' => 'utf-8' ] ],
-		'TemplateScope' => 'Global',
-	] );
-	if ( is_wp_error( $tpl ) ) {
-		oec_nl_log( 'error', sprintf( '%s (template): %s', $list_name, $tpl->get_error_message() ) );
-		return $tpl;
-	}
-
 	$status = 'draft' === oec_nl_opts()['send_mode'] ? 'Draft' : 'Active';
-	$camp   = oec_nl_api( 'POST', '/campaigns', [
-		'Name'       => $template,
-		'Status'     => $status,
-		'Content'    => [ [
-			'From'         => OEC_NL_FROM,
-			'ReplyTo'      => OEC_NL_FROM,
-			'Subject'      => $subject,
-			'TemplateName' => $tpl['Name'] ?? $template,
-			'Utm'          => [ 'Source' => 'newsletter', 'Medium' => 'email', 'Campaign' => 'newsletter+semanal' ],
-		] ],
-		'Recipients' => [ 'ListNames' => [ $test ? $only_to : $list_name ] ],
-		'Options'    => [
-			'DeliveryOptimization' => 'ToEngagedFirst',
-			'TrackOpens'           => true,
-			'TrackClicks'          => true,
-		],
-	] );
+	$camp   = oec_nl_post_campaign( $template, $subject, $html, $test ? $only_to : $list_name, $status );
 	if ( is_wp_error( $camp ) ) {
-		oec_nl_log( 'error', sprintf( '%s (campaña): %s', $list_name, $camp->get_error_message() ) );
+		oec_nl_log( 'error', sprintf( '%s: %s', $list_name, $camp->get_error_message() ) );
 		return $camp;
 	}
 
@@ -1795,9 +1833,9 @@ add_action( OEC_NL_CRON, function () {
 // La configuración vive en un solo sitio de la red (/es/). El submenú se
 // registra en oec_add_admin_menu() (inc/admin-settings.php).
 
-function oec_nl_redirect_notice( string $type, string $message ): void {
+function oec_nl_redirect_notice( string $type, string $message, string $view = '' ): void {
 	set_transient( 'oec_nl_notice_' . get_current_user_id(), [ 'type' => $type, 'msg' => $message ], 60 );
-	wp_safe_redirect( oec_admin_url( 'oec-newsletter' ) );
+	wp_safe_redirect( oec_admin_url( 'oec-newsletter', $view ? [ 'view' => $view ] : [] ) );
 	exit;
 }
 
@@ -2020,6 +2058,17 @@ function oec_nl_render_admin(): void {
 		<?php if ( $notice ) : ?>
 		<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> is-dismissible"><p><?php echo esc_html( $notice['msg'] ); ?></p></div>
 		<?php endif; ?>
+
+		<?php
+		// Pestañas: Configuración (esta pantalla) · Suscriptos · Enviar un email.
+		$view = oec_nl_admin_view();
+		oec_nl_admin_tabs( $view );
+		if ( 'config' !== $view ) {
+			'suscriptos' === $view ? oec_nl_render_admin_subscribers() : oec_nl_render_admin_compose();
+			echo '</div>';
+			return;
+		}
+		?>
 
 		<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<input type="hidden" name="action" value="oec_nl_save">

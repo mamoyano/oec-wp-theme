@@ -195,7 +195,9 @@ function oec_nl_email_footer( bool $subscribed ): string {
 	}
 
 	$reason = $subscribed
-		? 'Recibís este email porque estás suscripto al newsletter de ' . esc_html( OEC_NL_BRAND ) . '.<br><a href="{view}" style="' . $link . '">Ver en el navegador</a> &nbsp;·&nbsp; <a href="{unsubscribe}" style="' . $link . '">Darme de baja</a>'
+		? 'Recibís este email porque estás suscripto al newsletter de ' . esc_html( OEC_NL_BRAND ) . '.<br><a href="{view}" style="' . $link . '">Ver en el navegador</a> &nbsp;·&nbsp; '
+			. ( function_exists( 'oec_nl_manage_url' ) ? '<a href="' . esc_attr( oec_nl_manage_url() ) . '?email={email}" style="' . $link . '">Gestionar mis suscripciones</a> &nbsp;·&nbsp; ' : '' )
+			. '<a href="{unsubscribe}" style="' . $link . '">Darme de baja</a>'
 		: 'Recibís este email porque pediste suscribirte al newsletter de ' . esc_html( OEC_NL_BRAND ) . '. Si no fuiste vos, ignoralo: no te vamos a escribir.';
 
 	$address = $subscribed

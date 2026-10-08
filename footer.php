@@ -15,6 +15,10 @@ $_nav = [
 	[ __( 'Organizaciones', 'oec-theme' ), function_exists( 'oec_organizaciones_url' ) ? oec_organizaciones_url() : home_url( '/organizaciones/' ) ],
 	[ __( 'Artículos', 'oec-theme' ),      function_exists( 'oec_articulos_url' ) ? oec_articulos_url( [] ) : home_url( '/articulos/' ) ],
 ];
+// Gestión de suscripciones al newsletter (inc/newsletter-manage.php).
+if ( function_exists( 'oec_nl_manage_url' ) && function_exists( 'oec_nl_api_key' ) && oec_nl_api_key() ) {
+	$_nav[] = [ __( 'Newsletter', 'oec-theme' ), oec_nl_manage_url() ];
+}
 
 $_col_count = 2 + ( ! empty( $_landings ) ? 1 : 0 ) + ( ! empty( $_legal ) ? 1 : 0 );
 

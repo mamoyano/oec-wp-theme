@@ -381,8 +381,137 @@
     });
   }
 
+  /* ── 4. Mis suscripciones (/mis-suscripciones/) ──────────────
+     Sin ?acceso= pide el email y manda el link; con ?acceso= (token del link)
+     carga las listas, deja tildar/destildar y guarda. */
+  function initManage(root) {
+    var params = new URLSearchParams(window.location.search);
+    var token = params.get('acceso') || '';
+    var states = {};
+    root.querySelectorAll('[data-state]').forEach(function (el) { states[el.dataset.state] = el; });
+    function show(name) {
+      Object.keys(states).forEach(function (k) { states[k].hidden = k !== name; });
+    }
+    function fail(text) {
+      states.error.querySelector('.oec-nl-landing__error').textContent = text;
+      show('error');
+    }
+
+    // 1. Pedir el link.
+    var reqForm = states.request.querySelector('.oec-nl-manage__request');
+    var reqMsg = states.request.querySelector('.oec-nl-manage__msg');
+    var reqBtn = reqForm.querySelector('button');
+    var emailIn = reqForm.querySelector('[name="email"]');
+    emailIn.value = params.get('email') || getEmail();
+    reqForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      if (!emailIn.value || !emailIn.checkValidity()) {
+        setMsg(reqMsg, 'Ingresá un email válido.', true);
+        emailIn.focus();
+        return;
+      }
+      setBusy(reqBtn, true);
+      post(root.dataset.link, { email: emailIn.value.trim(), website: reqForm.querySelector('[name="website"]').value })
+        .then(function (data) {
+          setMsg(reqMsg, data.message || 'Ocurrió un error. Probá de nuevo.', !data.ok);
+          if (data.ok) reqForm.hidden = true;
+          if (data.code === 'unsubscribed') {
+            var sub = states.request.querySelector('.oec-nl-manage__subscribe');
+            var subEmail = sub.querySelector('[name="email"]');
+            if (subEmail) subEmail.value = emailIn.value.trim();
+            sub.hidden = false;
+          }
+        })
+        .catch(function () { setMsg(reqMsg, 'No pudimos conectar. Probá de nuevo en unos segundos.', true); })
+        .finally(function () { setBusy(reqBtn, false); });
+    });
+
+    if (!token) { show('request'); return; }
+
+    // 2. Con el link: listas.
+    var form = states.prefs.querySelector('.oec-nl-manage__form');
+    var list = states.prefs.querySelector('.oec-nl-manage__lists');
+    var msg = states.prefs.querySelector('.oec-nl-manage__msg');
+    var saveBtn = states.prefs.querySelector('.oec-nl-manage__save');
+    var noneBtn = states.prefs.querySelector('.oec-nl-manage__none');
+
+    function render(data) {
+      states.prefs.querySelector('.oec-nl-manage__email').textContent = data.email;
+      list.innerHTML = '';
+      data.lists.forEach(function (l) {
+        var li = document.createElement('li');
+        li.className = 'oec-nl-manage__item' + (l.subscribed ? ' is-on' : '');
+        if (l.accent) li.style.setProperty('--nl-accent', l.accent);
+        var label = document.createElement('label');
+        var input = document.createElement('input');
+        input.type = 'checkbox';
+        input.name = 'lists[]';
+        input.value = l.name;
+        input.checked = !!l.subscribed;
+        input.addEventListener('change', function () { li.classList.toggle('is-on', input.checked); });
+        var body = document.createElement('span');
+        body.className = 'oec-nl-manage__body';
+        var title = document.createElement('strong');
+        title.textContent = l.label;
+        body.appendChild(title);
+        if (!l.subscribed) {
+          var badge = document.createElement('span');
+          badge.className = 'oec-nl-manage__badge';
+          badge.textContent = '+' + data.credits + ' créditos';
+          body.appendChild(badge);
+        }
+        if (l.desc) {
+          var desc = document.createElement('span');
+          desc.className = 'oec-nl-manage__desc';
+          desc.textContent = l.desc;
+          body.appendChild(desc);
+        }
+        label.appendChild(input);
+        label.appendChild(body);
+        li.appendChild(label);
+        list.appendChild(li);
+      });
+      show('prefs');
+    }
+
+    function save(lists, btn) {
+      msg.hidden = true;
+      setBusy(btn, true);
+      post(root.dataset.save, { token: token, lists: lists })
+        .then(function (data) {
+          if (data.code === 'expired') return fail(data.message);
+          if (data.lists) render(data);
+          setMsg(msg, data.message || 'Ocurrió un error. Probá de nuevo.', !data.ok);
+          if (data.ok && data.balance !== null && data.balance !== undefined) storeCredits(data.email, data.balance);
+          if (data.ok) track('newsletter_prefs_saved', { newsletter_lists: lists.length });
+        })
+        .catch(function () { setMsg(msg, 'No pudimos conectar. Probá de nuevo en unos segundos.', true); })
+        .finally(function () { setBusy(btn, false); });
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var lists = Array.prototype.map.call(list.querySelectorAll('input:checked'), function (el) { return el.value; });
+      save(lists, saveBtn);
+    });
+    noneBtn.addEventListener('click', function () {
+      if (!window.confirm('¿Darte de baja de todos los newsletters de G-SE?')) return;
+      list.querySelectorAll('input').forEach(function (el) { el.checked = false; });
+      save([], noneBtn);
+    });
+
+    show('loading');
+    post(root.dataset.prefs, { token: token })
+      .then(function (data) {
+        if (!data.ok) return fail(data.message || 'El link no es válido o venció.');
+        render(data);
+      })
+      .catch(function () { fail('No pudimos conectar. Recargá la página para intentar de nuevo.'); });
+  }
+
   function init() {
     document.querySelectorAll('.oec-nl-hero').forEach(initHero);
+    document.querySelectorAll('.oec-nl-manage').forEach(initManage);
     document.querySelectorAll('.oec-nl').forEach(initForm);
     document.querySelectorAll('[data-oec-nl-aware]').forEach(initAware);
     document.querySelectorAll('[data-oec-nl-landing]').forEach(initLanding);
