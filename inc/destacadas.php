@@ -513,35 +513,61 @@ function oec_destacada_vacia(): string {
 /**
  * [oec-suscribite tematica="nutricion-deportiva"]
  *
- * Créditos de bienvenida + newsletter de la temática, como sección propia
- * (antes estaba en el hero, que ahora es de [oec-estrella]). Va dentro de
- * un .oec-landing-block--dark: el widget lleva .oec-tematica-hero__credits
- * para tomar los mismos colores "sobre oscuro" que tenía en el hero.
+ * Franja del newsletter de la temática: arranca directo con la suscripción
+ * a su lista (la del admin de Newsletter para esa landing) y los créditos
+ * como premio — antes era el widget de créditos, que recién mostraba el
+ * newsletter después de pedir el email. Si ya estás suscripto, el mismo
+ * bloque lo dice y ofrece reenviarte el de la semana (oec_nl_render_aware).
+ * Sin newsletter configurado, queda el widget de créditos como antes.
+ * Va dentro de un .oec-landing-block--dark.
  */
 add_shortcode( 'oec-suscribite', 'oec_render_suscribite_shortcode' );
 function oec_render_suscribite_shortcode( $atts ): string {
 	$atts     = shortcode_atts( [ 'tematica' => '' ], $atts, 'oec-suscribite' );
 	$tematica = sanitize_title( $atts['tematica'] );
-	if ( $tematica && ! oec_destacadas( $tematica ) ) {
-		return oec_destacada_vacia(); // los créditos quedaron en el hero ([oec-estrella])
+	$nombre   = $tematica ? oec_destacada_tematica_nombre( $tematica ) : '';
+	$nl_on    = function_exists( 'oec_nl_render_aware' ) && oec_nl_api_key();
+	$list     = $nl_on ? ( ( $tematica ? oec_nl_list_for_tematica( $tematica ) : '' ) ?: OEC_NL_GENERAL_LIST ) : '';
+	$general  = OEC_NL_GENERAL_LIST === $list;
+
+	// Sin newsletter: el widget de créditos (si no quedó ya en el hero, que
+	// es lo que pasa cuando la temática no tiene destacadas).
+	if ( ! $nl_on ) {
+		if ( $tematica && ! oec_destacadas( $tematica ) ) {
+			return oec_destacada_vacia();
+		}
+		return '<div class="oec-suscribite__widget oec-tematica-hero__credits">' . do_shortcode( '[oec-credits-widget tematica="' . esc_attr( $tematica ) . '"]' ) . '</div>';
 	}
-	$nombre = $tematica ? oec_destacada_tematica_nombre( $tematica ) : '';
+
+	$sub     = (int) OEC_NL_SUBSCRIBE_CREDITS;
+	$weekly  = (int) OEC_NL_WEEKLY_CREDITS;
+	$weekday = oec_nl_weekday_plural();
+	$latest  = isset( oec_nl_all_lists()[ $list ] ) ? oec_nl_latest_url( $list ) : '';
 	ob_start();
 	?>
 	<div class="oec-suscribite">
 		<div class="oec-suscribite__text">
-			<span class="oec-suscribite__eyebrow"><i class="bi bi-envelope-paper-heart" aria-hidden="true"></i> <?php echo esc_html( $nombre ? sprintf( __( 'Newsletter de %s', 'oec-theme' ), $nombre ) : __( 'Newsletter', 'oec-theme' ) ); ?></span>
+			<span class="oec-suscribite__eyebrow"><i class="bi bi-envelope-paper-heart" aria-hidden="true"></i> <?php echo esc_html( $nombre && ! $general ? sprintf( __( 'Newsletter de %s', 'oec-theme' ), $nombre ) : __( 'Newsletter semanal', 'oec-theme' ) ); ?></span>
 			<h2><?php echo esc_html( $nombre ? sprintf( __( 'Lo mejor de %s, en tu correo', 'oec-theme' ), mb_strtolower( $nombre ) ) : __( 'Lo mejor de cada semana, en tu correo', 'oec-theme' ) ); ?></h2>
-			<p><?php esc_html_e( 'Dejá tu email y te regalamos 50 créditos para usar como descuento en tu próxima formación.', 'oec-theme' ); ?></p>
+			<p><?php printf( esc_html__( 'Suscribite y sumá %1$d créditos al confirmar. Después, cada %2$s, %3$d más con un solo clic.', 'oec-theme' ), $sub, esc_html( $weekday ), $weekly ); ?></p>
 			<ul>
-				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php esc_html_e( 'Formaciones nuevas y cierres de inscripción', 'oec-theme' ); ?></li>
-				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php esc_html_e( 'Artículos y novedades de la temática', 'oec-theme' ); ?></li>
-				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php esc_html_e( 'Te das de baja cuando quieras', 'oec-theme' ); ?></li>
+				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php printf( esc_html__( 'Un solo correo por semana, los %s.', 'oec-theme' ), esc_html( $weekday ) ); ?></li>
+				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php echo esc_html( $nombre && ! $general ? sprintf( __( 'Artículos y formaciones de %s.', 'oec-theme' ), mb_strtolower( $nombre ) ) : __( 'Artículos nuevos y formaciones seleccionadas.', 'oec-theme' ) ); ?></li>
+				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php printf( esc_html__( 'Botón «Obtener mis créditos»: +%d por semana.', 'oec-theme' ), $weekly ); ?></li>
+				<li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php esc_html_e( 'Te das de baja cuando quieras.', 'oec-theme' ); ?></li>
 			</ul>
+			<p class="oec-suscribite__links">
+				<?php if ( $latest ) : ?><a href="<?php echo esc_url( $latest ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver el último newsletter', 'oec-theme' ); ?> <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a><?php endif; ?>
+				<a href="<?php echo esc_url( home_url( '/creditos-por-descuentos/' ) ); ?>"><?php esc_html_e( '¿Ya tenés créditos? Consultá tu saldo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+			</p>
 		</div>
-		<div class="oec-suscribite__widget oec-tematica-hero__credits">
-			<?php echo do_shortcode( '[oec-credits-widget tematica="' . esc_attr( $tematica ) . '"]' ); // phpcs:ignore WordPress.Security.EscapeOutput ?>
-		</div>
+		<?php
+		echo oec_nl_render_aware( $list, [ // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+			'title'  => sprintf( __( 'Suscribite y sumá %d créditos', 'oec-theme' ), $sub ),
+			'text'   => __( 'Completá tus datos y confirmá desde el email que te enviamos.', 'oec-theme' ),
+			'button' => __( 'Suscribirme', 'oec-theme' ),
+		] );
+		?>
 	</div>
 	<?php
 	return ob_get_clean();

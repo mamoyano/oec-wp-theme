@@ -1300,9 +1300,11 @@ function oec_nl_render_offer( string $list = OEC_NL_GENERAL_LIST ): string {
 }
 
 /**
- * [oec_newsletter title="" text="" button="" topics="yes"]
+ * [oec_newsletter title="" text="" button="" topics="yes" list=""]
  * Formulario autónomo: nombres, apellidos, email y (si topics="yes")
- * las temáticas activas además del newsletter general.
+ * las temáticas activas además del newsletter general. Con topics="no",
+ * suscribe a "list" (por defecto la general; en una landing, la de su
+ * temática).
  */
 function oec_nl_render_form( $atts = [] ): string {
 	$atts = shortcode_atts( [
@@ -1310,7 +1312,11 @@ function oec_nl_render_form( $atts = [] ): string {
 		'text'   => sprintf( __( 'Un correo por semana, todos los %s, con artículos y formaciones. Al confirmar sumás %d créditos.', 'oec-theme' ), oec_nl_weekday_plural(), OEC_NL_SUBSCRIBE_CREDITS ),
 		'button' => __( 'Suscribirme', 'oec-theme' ),
 		'topics' => 'yes',
+		'list'   => OEC_NL_GENERAL_LIST,
 	], (array) $atts, 'oec_newsletter' );
+	$list = in_array( $atts['list'], oec_nl_subscribable_lists(), true ) ? $atts['list'] : OEC_NL_GENERAL_LIST;
+	// "Ver el último enviado" solo si la página puede mostrarlo (lista activa).
+	$latest = isset( oec_nl_all_lists()[ $list ] ) ? oec_nl_latest_url( $list ) : '';
 
 	if ( ! oec_nl_api_key() ) {
 		return current_user_can( 'manage_options' )
@@ -1328,7 +1334,7 @@ function oec_nl_render_form( $atts = [] ): string {
 	<form class="oec-nl" <?php echo oec_nl_endpoints_attrs(); // phpcs:ignore ?> novalidate>
 		<?php if ( $atts['title'] ) : ?><h3 class="oec-nl__title"><?php echo esc_html( $atts['title'] ); ?></h3><?php endif; ?>
 		<?php if ( $atts['text'] ) : ?>
-		<p class="oec-nl__text"><?php echo esc_html( $atts['text'] ); ?> <a href="<?php echo esc_url( oec_nl_latest_url() ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver el último enviado', 'oec-theme' ); ?></a></p>
+		<p class="oec-nl__text"><?php echo esc_html( $atts['text'] ); ?><?php if ( $latest ) : ?> <a href="<?php echo esc_url( $latest ); ?>" target="_blank" rel="noopener"><?php esc_html_e( 'Ver el último enviado', 'oec-theme' ); ?></a><?php endif; ?></p>
 		<?php endif; ?>
 
 		<?php if ( $topics ) : ?>
@@ -1342,7 +1348,7 @@ function oec_nl_render_form( $atts = [] ): string {
 			<?php endforeach; ?>
 		</fieldset>
 		<?php else : ?>
-		<input type="hidden" name="lists[]" value="<?php echo esc_attr( OEC_NL_GENERAL_LIST ); ?>">
+		<input type="hidden" name="lists[]" value="<?php echo esc_attr( $list ); ?>">
 		<?php endif; ?>
 
 		<div class="oec-nl__fields">
@@ -1366,6 +1372,39 @@ function oec_nl_render_form( $atts = [] ): string {
 	return (string) ob_get_clean();
 }
 add_shortcode( 'oec_newsletter', 'oec_nl_render_form' );
+
+/**
+ * Formulario de suscripción a $list que "sabe" si ya estás suscripto
+ * (newsletter.js, initAware): si conocemos el email (localStorage, el
+ * mismo del widget de créditos) y está suscripto a $list, cambia el
+ * formulario por "¡Ya estás suscripto!" + el recordatorio de los créditos
+ * de la semana si no los reclamó. Lo usan /creditos-por-descuentos/
+ * (lista general) y [oec-suscribite] en cada landing (su temática).
+ * $form: los atributos de oec_nl_render_form() (title, text, button).
+ */
+function oec_nl_render_aware( string $list, array $form ): string {
+	$weekly  = (int) OEC_NL_WEEKLY_CREDITS;
+	$weekday = oec_nl_weekday_plural();
+	$general = OEC_NL_GENERAL_LIST === $list;
+	ob_start();
+	?>
+	<div class="cred-nl__form" data-oec-nl-aware data-list="<?php echo esc_attr( $list ); ?>" <?php echo oec_nl_endpoints_attrs(); // phpcs:ignore ?>>
+		<?php echo oec_nl_render_form( array_merge( $form, [ 'topics' => 'no', 'list' => $list ] ) ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?>
+		<div class="cred-nl__subscribed" data-nl-subscribed hidden>
+			<span class="cred-nl__check" aria-hidden="true"><i class="bi bi-envelope-check"></i></span>
+			<h3><?php echo esc_html( $general ? __( '¡Ya estás suscripto!', 'oec-theme' ) : sprintf( __( '¡Ya estás suscripto al newsletter de %s!', 'oec-theme' ), oec_nl_list_label( $list ) ) ); ?></h3>
+			<p><?php esc_html_e( 'Recibís el newsletter en', 'oec-theme' ); ?> <strong data-nl-email></strong>.</p>
+			<div class="cred-nl__weekly" data-nl-weekly hidden>
+				<p><?php printf( esc_html__( 'Tenés %s sin reclamar del newsletter del', 'oec-theme' ), '<strong>+' . (int) $weekly . ' ' . esc_html__( 'créditos', 'oec-theme' ) . '</strong>' ); // phpcs:ignore ?> <span data-nl-date></span>. <?php esc_html_e( 'Si no lo encontrás, te lo reenviamos.', 'oec-theme' ); ?></p>
+				<button type="button" class="btn btn-primary" data-nl-resend><?php esc_html_e( 'Reenviámelo', 'oec-theme' ); ?> <i class="bi bi-envelope-arrow-up" aria-hidden="true"></i></button>
+			</div>
+			<p class="cred-nl__next" data-nl-next><?php printf( esc_html__( 'Te esperamos el próximo %1$s con +%2$d créditos.', 'oec-theme' ), esc_html( in_array( $weekday, [ 'sábados', 'domingos' ], true ) ? substr( $weekday, 0, -1 ) : $weekday ), (int) $weekly ); ?></p>
+			<p class="oec-nl__msg" data-nl-msg role="status" aria-live="polite" hidden></p>
+		</div>
+	</div>
+	<?php
+	return (string) ob_get_clean();
+}
 
 class OEC_Newsletter_Widget extends WP_Widget {
 

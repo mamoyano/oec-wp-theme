@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.114
+Version: 1.0.115
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -1853,6 +1853,9 @@ body.oec-chat-open { overflow: hidden; }
 .cred-nl__list i { color: var(--color-accent); }
 .cred-nl__latest { font-weight: 700; color: var(--color-accent); display: inline-flex; gap: .375rem; align-items: center; }
 .cred-nl__latest:hover { color: var(--color-white); }
+/* .oec-nl es display:grid y le ganaba al atributo hidden (fuera de .cred-page,
+   p. ej. en [oec-suscribite] de las landings). */
+.cred-nl__form [hidden] { display: none !important; }
 .cred-nl__form .oec-nl { background: var(--color-white); border: 0; box-shadow: 0 20px 50px rgba(var(--color-shadow-rgb), .25); padding: 2rem; }
 .cred-nl__form .oec-nl__title { font-size: 1.375rem; font-weight: 800; color: var(--color-dark); }
 .cred-nl__form .oec-nl__text a { display: none; } /* "Ver el último" ya está al lado */
@@ -5057,11 +5060,20 @@ body.oec-chat-open { overflow: hidden; }
 /* ── [oec-suscribite]: créditos + newsletter de la temática, más abajo ── */
 .oec-suscribite { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 48px; align-items: center; }
 .oec-suscribite__eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--dest-acc); }
-.oec-suscribite h2 { margin: 12px 0 14px; font-size: clamp(24px, 3vw, 34px); font-weight: 800; line-height: 1.15; color: var(--color-white); }
-.oec-suscribite p { margin: 0 0 18px; font-size: 16px; line-height: 1.6; color: rgba(var(--color-white-rgb), .8); }
-.oec-suscribite ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 15px; color: rgba(var(--color-white-rgb), .88); }
-.oec-suscribite li { display: flex; gap: 10px; }
-.oec-suscribite li i { color: var(--dest-acc); }
+.oec-suscribite__text h2 { margin: 12px 0 14px; font-size: clamp(24px, 3vw, 34px); font-weight: 800; line-height: 1.15; color: var(--color-white); }
+.oec-suscribite__text p { margin: 0 0 18px; font-size: 16px; line-height: 1.6; color: rgba(var(--color-white-rgb), .8); }
+.oec-suscribite__text ul { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; font-size: 15px; color: rgba(var(--color-white-rgb), .88); }
+.oec-suscribite__text li { display: flex; gap: 10px; }
+.oec-suscribite__text li i { color: var(--dest-acc); }
+.oec-suscribite__links { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 22px 0 0 !important; }
+.oec-suscribite__links a { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; color: var(--dest-acc) !important; text-decoration: none !important; }
+.oec-suscribite__links a:hover { color: var(--color-white) !important; }
+/* El formulario es el de /creditos-por-descuentos/ (tarjeta blanca, .cred-nl__*),
+   con el color de la temática en los botones. */
+.oec-suscribite .oec-nl__text a { display: none; } /* "Ver el último" ya está al lado */
+.oec-suscribite :is(.oec-nl__submit, [data-nl-resend]) { background: var(--dest-dk); border-color: var(--dest-dk); color: var(--color-white) !important; }
+.oec-suscribite :is(.oec-nl__submit, [data-nl-resend]):hover { background: var(--dest-dk-2); border-color: var(--dest-dk-2); }
+.oec-suscribite .oec-nl__title { color: var(--dest-dk); }
 @media (max-width: 900px) { .oec-suscribite { grid-template-columns: minmax(0, 1fr); gap: 28px; } }
 
 /* ============================================================

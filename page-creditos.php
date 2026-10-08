@@ -199,32 +199,12 @@ $oec_faqs = [
 				<?php endif; ?>
 			</div>
 			<?php
-			// data-oec-nl-aware: si ya conocemos el email (localStorage, el mismo
-			// del bloque de créditos) newsletter.js consulta /status y, si está
-			// suscripto, cambia el formulario por "Ya estás suscripto" (+ el
-			// recordatorio de los créditos de la semana si no los reclamó).
+			echo oec_nl_render_aware( OEC_NL_GENERAL_LIST, [ // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+				'title'  => sprintf( __( 'Quiero mis %d créditos', 'oec-theme' ), $oec_sub ),
+				'text'   => __( 'Completá tus datos y confirmá desde el email que te enviamos.', 'oec-theme' ),
+				'button' => __( 'Suscribirme', 'oec-theme' ),
+			] );
 			?>
-			<div class="cred-nl__form" data-oec-nl-aware data-list="<?php echo esc_attr( OEC_NL_GENERAL_LIST ); ?>" <?php echo oec_nl_endpoints_attrs(); // phpcs:ignore ?>>
-				<?php
-				echo oec_nl_render_form( [ // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
-					'title'  => sprintf( __( 'Quiero mis %d créditos', 'oec-theme' ), $oec_sub ),
-					'text'   => __( 'Completá tus datos y confirmá desde el email que te enviamos.', 'oec-theme' ),
-					'button' => __( 'Suscribirme', 'oec-theme' ),
-					'topics' => 'no',
-				] );
-				?>
-				<div class="cred-nl__subscribed" data-nl-subscribed hidden>
-					<span class="cred-nl__check" aria-hidden="true"><i class="bi bi-envelope-check"></i></span>
-					<h3><?php esc_html_e( '¡Ya estás suscripto!', 'oec-theme' ); ?></h3>
-					<p><?php esc_html_e( 'Recibís el newsletter en', 'oec-theme' ); ?> <strong data-nl-email></strong>.</p>
-					<div class="cred-nl__weekly" data-nl-weekly hidden>
-						<p><?php printf( esc_html__( 'Tenés %s sin reclamar del newsletter del', 'oec-theme' ), '<strong>+' . (int) $oec_weekly . ' ' . esc_html__( 'créditos', 'oec-theme' ) . '</strong>' ); // phpcs:ignore ?> <span data-nl-date></span>. <?php esc_html_e( 'Si no lo encontrás, te lo reenviamos.', 'oec-theme' ); ?></p>
-						<button type="button" class="btn btn-primary" data-nl-resend><?php esc_html_e( 'Reenviámelo', 'oec-theme' ); ?> <i class="bi bi-envelope-arrow-up" aria-hidden="true"></i></button>
-					</div>
-					<p class="cred-nl__next" data-nl-next><?php printf( esc_html__( 'Te esperamos el próximo %1$s con +%2$d créditos.', 'oec-theme' ), esc_html( in_array( $oec_weekday, [ 'sábados', 'domingos' ], true ) ? substr( $oec_weekday, 0, -1 ) : $oec_weekday ), (int) $oec_weekly ); ?></p>
-					<p class="oec-nl__msg" data-nl-msg role="status" aria-live="polite" hidden></p>
-				</div>
-			</div>
 		</div>
 	</section>
 	<?php endif; ?>
