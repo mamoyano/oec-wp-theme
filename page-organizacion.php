@@ -62,13 +62,15 @@ get_header();
 
 	<div class="art-grid">
 		<?php foreach ( $oec_org['formations'] as $f ) : ?>
-		<a class="org-formation-card" href="<?php echo esc_url( $f['url'] ); ?>">
+		<a class="org-formation-card" href="<?php echo esc_url( oec_formation_url( $f ) ); ?>"<?php echo oec_formation_link_attrs( $f ); // phpcs:ignore WordPress.Security.EscapeOutput ?>>
 			<?php if ( ! empty( $f['image'] ) ) : ?>
 			<div class="org-formation-card__thumb">
 				<img src="<?php echo esc_url( oec_cdn_resize( $f['image'], 640, 89 ) ); ?>" alt="" loading="lazy">
+				<?php echo oec_community_badge( $f, 'oec-community--card' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			</div>
 			<?php endif; ?>
 			<div class="org-formation-card__body">
+				<?php if ( empty( $f['image'] ) ) : ?><?php echo oec_community_badge( $f ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?><?php endif; ?>
 				<?php if ( ! empty( $f['type'] ) ) : ?>
 				<span class="post-tipo org-formation-card__type"><?php echo esc_html( $f['type'] ); ?></span>
 				<?php endif; ?>

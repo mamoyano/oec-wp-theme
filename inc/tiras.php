@@ -66,6 +66,7 @@ function oec_tira_catalogo(): array {
 			'relevance'      => (int) ( $f['relevance'] ?? 0 ),
 			'reviews'        => $f['reviews_summary'] ?? null,
 			'tags'           => $f['tags'] ?? [],
+			'community'      => $f['community'] ?? '',
 			'badges'         => array_keys( array_filter( [
 				'Docentes Destacados'   => ! empty( $f['great_lecturers'] ),
 				'Temática Destacada'    => ! empty( $f['great_topic'] ),
@@ -129,7 +130,8 @@ function oec_tira_capitalize( string $s ): string {
 /**
  * Card de una formación — mismo markup y clases que las del plugin, así
  * usan su CSS/JS tal cual. La usan las tiras y el listado de /formaciones.
- * $r: fila de oec_tira_catalogo() u OEC_AI_Catalog::get_listing().
+ * $r: fila de oec_tira_catalogo() u OEC_AI_Catalog::get_listing(). Si es
+ * de otra comunidad, lleva su logo y abre su sitio (inc/communities.php).
  * $o: almanaque (hoja con la fecha de inicio en la foto), countdown
  * (cuenta regresiva del cierre), org (organización bajo el título),
  * eager (foto sin lazy y con prioridad: las primeras de /formaciones,
@@ -163,11 +165,14 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 	$org      = ! empty( $o['org'] ) ? (string) ( $r['org'] ?? '' ) : '';
 	// Cierre al terminar el día, en la hora del sitio (mismo criterio que el plugin).
 	$cierre_iso = $r['enrollment_end'] ? ( new DateTime( $r['enrollment_end'] . ' 23:59:59', wp_timezone() ) )->format( 'c' ) : '';
+	// De otra comunidad (inc/communities.php): logo en la foto y link a su sitio en otra pestaña.
+	$external   = oec_formation_is_external( $r );
 
 	ob_start();
 	?>
-			<a href="<?php echo esc_url( trailingslashit( home_url( '/formacion' ) ) . $r['slug'] ); ?>" class="oec-card<?php echo $closed ? ' enrollment-closed' : ''; ?>" data-id="<?php echo esc_attr( $r['id'] ); ?>" data-start="<?php echo esc_attr( $is_async ? '' : $r['start'] ); ?>">
+			<a href="<?php echo esc_url( oec_formation_url( $r ) ); ?>"<?php echo oec_formation_link_attrs( $r ); // phpcs:ignore WordPress.Security.EscapeOutput ?> class="oec-card<?php echo $closed ? ' enrollment-closed' : ''; ?><?php echo $external ? ' oec-card--external' : ''; ?>" data-id="<?php echo esc_attr( $r['id'] ); ?>" data-start="<?php echo esc_attr( $is_async ? '' : $r['start'] ); ?>">
 				<div class="oec-image-wrapper">
+					<?php echo oec_community_badge( $r, 'oec-community--card' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					<?php if ( ! empty( $o['almanaque'] ) && ! $is_async && $r['start'] ) : ?>
 					<div class="oec-date-stamp" aria-hidden="true"><span class="oec-date-stamp__mon"><?php echo esc_html( $meses_ab[ (int) substr( $r['start'], 5, 2 ) - 1 ] ); ?></span><span class="oec-date-stamp__day"><?php echo (int) substr( $r['start'], 8, 2 ); ?></span></div>
 					<?php endif; ?>
@@ -214,7 +219,7 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 							<div class="fecha-contenedor"><span class="fecha-valor"><?php echo esc_html( oec_tira_format_date( $r['enrollment_end'] ) ); ?></span><span class="fecha-etiqueta"><?php esc_html_e( 'Cierre de inscripciones', 'oec-theme' ); ?></span></div>
 							<?php endif; ?>
 						</div>
-						<div class="oec-btn-fake"><?php echo esc_html( sprintf( __( 'Ver %s', 'oec-theme' ), $r['type'] ) ); ?></div>
+						<div class="oec-btn-fake"><?php echo esc_html( sprintf( __( 'Ver %s', 'oec-theme' ), $r['type'] ) ); ?><?php echo $external ? ' <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>' : ''; ?></div>
 					</div>
 					<?php if ( ! empty( $o['countdown'] ) && ! $is_async && ! $closed && $cierre_iso ) : ?>
 					<div class="oec-countdown" date="<?php echo esc_attr( $cierre_iso ); ?>">

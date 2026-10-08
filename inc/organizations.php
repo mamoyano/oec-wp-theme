@@ -295,7 +295,9 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 			<div class="oec-orgs__panels">
 				<?php foreach ( $orgs as $i => $o ) :
 					$det   = OEC_AI_Catalog::get_organization( $o['slug'] ) ?: [];
+					// Vitrina del home / landings: solo las del token principal.
 					$prox  = array_filter( $det['formations'] ?? [], fn( $f ) => ( $f['enrollment_end'] ?? '' ) >= $hoy
+						&& oec_formation_is_primary( $f )
 						&& ( '' === $tem || in_array( $tem, $f['tematicas'] ?? [], true ) ) );
 					usort( $prox, fn( $a, $b ) => strcmp( $a['enrollment_end'], $b['enrollment_end'] ) );
 					$prox  = array_slice( $prox, 0, 3 );
@@ -330,9 +332,8 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 					<?php if ( $prox ) : ?>
 					<div class="oec-orgs__formations">
 						<?php foreach ( $prox as $f ) :
-							$fslug = basename( (string) wp_parse_url( $f['url'] ?? '', PHP_URL_PATH ) );
 							?>
-						<a class="oec-orgs__formation" href="<?php echo esc_url( home_url( user_trailingslashit( '/formacion/' . $fslug ) ) ); ?>">
+						<a class="oec-orgs__formation" href="<?php echo esc_url( oec_formation_url( $f ) ); ?>"<?php echo oec_formation_link_attrs( $f ); // phpcs:ignore WordPress.Security.EscapeOutput ?>>
 							<?php if ( ! empty( $f['image'] ) ) : ?>
 							<span class="oec-orgs__formation-img"><img src="<?php echo esc_url( oec_cdn_resize( $f['image'], 480, 85 ) ); ?>" alt="" loading="lazy" decoding="async"></span>
 							<?php endif; ?>

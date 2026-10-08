@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.109' );
+define( 'OEC_THEME_VERSION', '1.0.110' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -438,6 +438,7 @@ require OEC_THEME_DIR . '/inc/crawlers.php';
 require OEC_THEME_DIR . '/inc/indexnow.php';
 require OEC_THEME_DIR . '/inc/admin-settings.php';
 require OEC_THEME_DIR . '/inc/credits.php';
+require OEC_THEME_DIR . '/inc/communities.php';
 require OEC_THEME_DIR . '/inc/ai-catalog.php';
 require OEC_THEME_DIR . '/inc/organizations.php';
 require OEC_THEME_DIR . '/inc/tematica-landing.php';

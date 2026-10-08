@@ -113,13 +113,15 @@ get_header();
 			<?php if ( $oec_abiertas ) : ?>
 			<div class="art-grid">
 				<?php foreach ( $oec_abiertas as $f ) : ?>
-				<a class="org-formation-card" href="<?php echo esc_url( home_url( user_trailingslashit( '/formacion/' . $f['slug'] ) ) ); ?>">
+				<a class="org-formation-card" href="<?php echo esc_url( oec_formation_url( $f ) ); ?>"<?php echo oec_formation_link_attrs( $f ); // phpcs:ignore WordPress.Security.EscapeOutput ?>>
 					<?php if ( $f['image'] ) : ?>
 					<div class="org-formation-card__thumb">
 						<img src="<?php echo esc_url( oec_cdn_resize( $f['image'], 640, 89 ) ); ?>" alt="" loading="lazy">
+						<?php echo oec_community_badge( $f, 'oec-community--card' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					</div>
 					<?php endif; ?>
 					<div class="org-formation-card__body">
+						<?php if ( ! $f['image'] ) : ?><?php echo oec_community_badge( $f ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?><?php endif; ?>
 						<?php if ( $f['type'] ) : ?>
 						<span class="post-tipo org-formation-card__type"><?php echo esc_html( $f['type'] ); ?></span>
 						<?php endif; ?>
@@ -172,7 +174,7 @@ get_header();
 				<?php foreach ( array_slice( $oec_cerradas, 0, 12 ) as $f ) : ?>
 				<li>
 					<?php if ( $f['type'] ) : ?><span class="docente-past__type"><?php echo esc_html( $f['type'] ); ?></span><?php endif; ?>
-					<a href="<?php echo esc_url( home_url( user_trailingslashit( '/formacion/' . $f['slug'] ) ) ); ?>"><?php echo esc_html( $f['title'] ); ?></a>
+					<a href="<?php echo esc_url( oec_formation_url( $f ) ); ?>"<?php echo oec_formation_link_attrs( $f ); // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php echo esc_html( $f['title'] ); ?><?php echo oec_community_badge( $f, 'oec-community--inline' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></a>
 				</li>
 				<?php endforeach; ?>
 			</ul>

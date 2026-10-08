@@ -162,6 +162,27 @@
   });
 
   /* ============================================================
+     TOKENS SECUNDARIOS (agregar / quitar filas)
+     ============================================================ */
+  $('#oec-api-token-add').on('click', function () {
+    var $rows = $('#oec-api-tokens');
+    var $row  = $rows.find('.oec-api-token-row').first().clone();
+    $row.find('input').val('');
+    $row.find('.description').remove();
+    $rows.append($row);
+    $row.find('input').trigger('focus');
+  });
+  $(document).on('click', '.oec-api-token-remove', function () {
+    var $row = $(this).closest('.oec-api-token-row');
+    if ($('#oec-api-tokens .oec-api-token-row').length > 1) {
+      $row.remove();
+    } else {
+      $row.find('input').val('');
+      $row.find('.description').remove();
+    }
+  });
+
+  /* ============================================================
      AI CATALOG SYNC
      ============================================================ */
   $(document).on('click', '#oec-ai-sync-now', function () {

@@ -659,7 +659,8 @@ function oec_sitemap_formations( bool $open ): array {
 	if ( ! class_exists( 'OEC_AI_Catalog' ) ) {
 		return [];
 	}
-	$rows = array_filter( OEC_AI_Catalog::get_listing(), fn( $r ) => (bool) $r['open'] === $open );
+	// Solo las del token principal y de este sitio: las de otra comunidad están en el sitemap de su dominio.
+	$rows = array_filter( OEC_AI_Catalog::get_listing(), fn( $r ) => (bool) $r['open'] === $open && ! oec_formation_is_external( $r ) );
 	// Abiertas: las que cierran antes, primero. Cerradas: más recientes primero.
 	usort( $rows, $open
 		? fn( $a, $b ) => strcmp( $a['enrollment_end'], $b['enrollment_end'] )

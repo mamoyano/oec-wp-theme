@@ -124,13 +124,50 @@ class OEC_AI_Catalog {
 
 	/* ── Public readers ─────────────────────────────────────── */
 
-	public static function get_index(): array {
+	/*
+	 * Fuentes: el token principal (el del sitio) y los secundarios (los de
+	 * otras comunidades: swimming.science, fisio.one…). Cada fila y cada
+	 * ficha guarda de qué fuente vino ("source") y su "primary". Los
+	 * lectores devuelven por defecto SOLO lo del token principal (home,
+	 * landings, sitemap, llms.txt, opiniones…); con $all = true, también lo
+	 * de los secundarios (chat IA, /formaciones, docentes, organización).
+	 * Una entrada sin "primary" (guardada antes de los secundarios) cuenta
+	 * como principal.
+	 */
+	public static function get_index( bool $all = false ): array {
 		$path = self::get_dir() . '/index.json';
 		if ( ! file_exists( $path ) ) {
 			return [];
 		}
 		$data = json_decode( file_get_contents( $path ), true );
-		return $data['formations'] ?? [];
+		return self::scope( $data['formations'] ?? [], $all );
+	}
+
+	/** Solo las entradas del token principal, salvo $all. */
+	private static function scope( array $rows, bool $all ): array {
+		return $all ? $rows : array_values( array_filter( $rows, 'oec_formation_is_primary' ) );
+	}
+
+	/**
+	 * Tokens configurados: clave de fuente => token. 'primary' es el token
+	 * principal; cada secundario se identifica con un hash corto de su
+	 * token (así sacar uno de la lista saca sus formaciones del catálogo).
+	 */
+	public static function sources(): array {
+		$opts    = oec_get_options();
+		$primary = trim( (string) ( $opts['oec_api_token'] ?? '' ) );
+		$out     = $primary ? [ 'primary' => $primary ] : [];
+		foreach ( (array) ( $opts['oec_api_tokens'] ?? [] ) as $token ) {
+			$token = trim( (string) $token );
+			if ( $token && $token !== $primary ) {
+				$out[ self::source_key( $token ) ] = $token;
+			}
+		}
+		return $out;
+	}
+
+	public static function source_key( string $token ): string {
+		return 's' . substr( md5( $token ), 0, 10 );
 	}
 
 	/**
@@ -138,14 +175,14 @@ class OEC_AI_Catalog {
 	 * page-formaciones.php, en el orden sugerido por la API: abiertas
 	 * primero, después cerradas. Lo arma el sync (save_listing()).
 	 */
-	public static function get_listing(): array {
+	public static function get_listing( bool $all = false ): array {
 		static $rows = null;
 		if ( null === $rows ) {
 			$path = self::get_dir() . '/listing.json';
 			$data = file_exists( $path ) ? json_decode( (string) file_get_contents( $path ), true ) : null;
 			$rows = $data['formations'] ?? [];
 		}
-		return $rows;
+		return $all ? $rows : self::scope( $rows, false );
 	}
 
 	public static function get_formation( string $id ): ?array {
@@ -223,6 +260,14 @@ class OEC_AI_Catalog {
 	 *
 	 * Día normal: ~15 páginas de listado + ~370 fichas ≈ 1 minuto, en 2-3
 	 * tandas. Primera vez (backfill de ~1850 cerradas): ~5 minutos, en ~15.
+	 *
+	 * Tokens secundarios (ver sources()): los listados se leen fuente por
+	 * fuente, uno detrás del otro (el principal primero; si una formación
+	 * viene en dos, gana la primera), y cada ficha se pide con el token de
+	 * su fuente, con los mismos lotes y pausas. Mismo criterio incremental
+	 * por fuente: cerradas releídas una vez por semana, fichas de cerradas
+	 * nunca repetidas. Si falla el principal se aborta como siempre; si
+	 * falla un secundario, sus formaciones quedan como en el sync anterior.
 	 */
 
 	/** Arranca un sync (cron diario / botón del admin). No pisa uno en curso. */
@@ -231,21 +276,32 @@ class OEC_AI_Catalog {
 		if ( ! $force && is_array( $job ) && time() - (int) ( $job['touched'] ?? 0 ) < HOUR_IN_SECONDS ) {
 			return; // hay uno andando: que siga ese
 		}
-		if ( ! self::ensure_dir() || ! ( oec_get_options()['oec_api_token'] ?? '' ) ) {
+		$sources = self::sources();
+		if ( ! self::ensure_dir() || empty( $sources['primary'] ) ) {
 			return;
 		}
 		$meta = self::get_meta();
 		self::delete_job_files();
+		// Fuentes cuyo listado de cerradas toca releer entero: la primera vez y una vez por semana.
+		$has_listing = file_exists( self::get_dir() . '/listing.json' );
+		$full_closed = array_values( array_filter( array_keys( $sources ), function ( $key ) use ( $meta, $has_listing ) {
+			$at = (int) ( $meta['closed_full'][ $key ] ?? ( 'primary' === $key ? ( $meta['closed_full_at'] ?? 0 ) : 0 ) );
+			return ! $has_listing || time() - $at > self::CLOSED_FULL_EVERY;
+		} ) );
 		update_option( self::OPTION_JOB, [
-			'phase'       => 'open_list',
-			'started_at'  => current_time( 'c' ),
-			'touched'     => time(),
-			'full_closed' => ! file_exists( self::get_dir() . '/listing.json' )
-				|| time() - (int) ( $meta['closed_full_at'] ?? 0 ) > self::CLOSED_FULL_EVERY,
-			'lists'       => [],
-			'queue'       => [],
-			'fetched'     => [], // cerradas bajadas en esta corrida (van al histórico)
-			'errors'      => [],
+			'phase'            => 'open_list',
+			'started_at'       => current_time( 'c' ),
+			'touched'          => time(),
+			'sources'          => array_keys( $sources ), // el principal primero
+			'src'              => 0,                      // fuente cuyo listado de abiertas se está leyendo
+			'full_closed'      => $full_closed,
+			'closed_full_done' => [],
+			'failed'           => [], // secundarios sin listado de abiertas: se conserva lo del sync anterior
+			'lists'            => [],
+			'queue'            => [],
+			'fetched'          => [], // cerradas bajadas en esta corrida (van al histórico)
+			'patched'          => [], // cerradas a las que se les corrigió fuente/comunidad
+			'errors'           => [],
 		], false );
 		self::save_meta( array_merge( $meta, [ 'status' => 'running', 'started_at' => current_time( 'c' ), 'progress' => '' ] ) );
 		self::run_slice();
@@ -260,6 +316,11 @@ class OEC_AI_Catalog {
 		if ( ! is_array( $job ) ) {
 			return;
 		}
+		if ( ! isset( $job['sources'] ) ) { // trabajo de antes de los tokens secundarios: se descarta
+			delete_option( self::OPTION_JOB );
+			self::delete_job_files();
+			return;
+		}
 		if ( get_transient( 'oec_ai_catalog_lock' ) ) {
 			return; // otra tanda está corriendo
 		}
@@ -270,10 +331,10 @@ class OEC_AI_Catalog {
 		wp_schedule_single_event( time() + 6 * MINUTE_IN_SECONDS, self::SLICE_HOOK );
 		@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- donde el hosting lo permita
 
-		$token = oec_get_options()['oec_api_token'] ?? '';
-		$until = microtime( true ) + ( $seconds ?: PHP_INT_MAX );
+		$tokens = self::sources();
+		$until  = microtime( true ) + ( $seconds ?: PHP_INT_MAX );
 		do {
-			$job = self::step( $job, $token );
+			$job = self::step( $job, $tokens );
 			$job['touched'] = time();
 			update_option( self::OPTION_JOB, $job, false ); // guardado paso a paso
 		} while ( 'done' !== $job['phase'] && microtime( true ) < $until );
@@ -297,19 +358,28 @@ class OEC_AI_Catalog {
 		}
 	}
 
-	/** Un paso del trabajo; devuelve el estado actualizado. */
-	private static function step( array $job, string $token ): array {
+	/** Un paso del trabajo; devuelve el estado actualizado. $tokens: ver sources(). */
+	private static function step( array $job, array $tokens ): array {
 		switch ( $job['phase'] ) {
 			case 'open_list':
-				$rows = self::step_listing( $job, $token, 'opened' );
+				$key  = $job['sources'][ $job['src'] ];
+				$rows = isset( $tokens[ $key ] ) ? self::step_listing( $job, $tokens[ $key ], 'opened', $key ) : null;
 				if ( false === $rows ) {
 					return $job; // faltan páginas: sigue en la próxima vuelta
 				}
-				if ( ! $rows ) {
+				if ( 'primary' === $key && ! $rows ) {
 					return self::abort( $job, 'No se pudo obtener el listado de formaciones.' );
 				}
-				self::write_job_file( 'open', $rows );
-				$job['queue'] = self::queue_open( $rows );
+				if ( null === $rows ) {
+					$job['errors'][] = sprintf( 'Token secundario %d: no se pudo leer el listado de abiertas; se conservan sus formaciones del sync anterior.', $job['src'] );
+					$job['failed'][] = $key;
+				} else {
+					self::append_rows( 'open', $rows, $key );
+				}
+				if ( ++$job['src'] < count( $job['sources'] ) ) {
+					return $job; // el listado de la fuente siguiente
+				}
+				$job['queue'] = self::queue_open( self::read_job_file( 'open' ) );
 				$job['total'] = count( $job['queue'] );
 				$job['phase'] = 'open_details';
 				return $job;
@@ -321,20 +391,32 @@ class OEC_AI_Catalog {
 					return $closed ? array_merge( $job, [ 'phase' => 'finish' ] ) : self::prepare_closed( $job );
 				}
 				self::load_summaries( $closed ? 'closed' : 'open' );
-				$batch = array_splice( $job['queue'], 0, self::BATCH_SIZE );
-				foreach ( self::fetch_batch( $batch, $token ) as $id => $data ) {
-					if ( isset( $data['error'] ) ) {
-						$job['errors'][] = $id . ': ' . $data['error'];
-						continue;
+				$origins = self::row_origins( $closed ? 'closed' : 'open' );
+				$batch   = array_splice( $job['queue'], 0, self::BATCH_SIZE );
+				// Cada ficha se pide con el token de la fuente de donde vino.
+				$groups = [];
+				foreach ( $batch as $id ) {
+					$groups[ $origins[ $id ]['source'] ?? 'primary' ][] = $id;
+				}
+				foreach ( $groups as $key => $ids ) {
+					if ( empty( $tokens[ $key ] ) ) {
+						continue; // token quitado a mitad del sync
 					}
-					self::save_formation( $id, array_merge(
-						self::process( $data['detail'], $data['reviews'] ),
-						[ '_fetched' => time() ]
-					) );
-					if ( $closed ) {
-						$job['fetched'][] = (string) $id;
-					} else {
-						$job['open_fetched'] = ( $job['open_fetched'] ?? 0 ) + 1;
+					foreach ( self::fetch_batch( $ids, $tokens[ $key ] ) as $id => $data ) {
+						if ( isset( $data['error'] ) ) {
+							$job['errors'][] = $id . ': ' . $data['error'];
+							continue;
+						}
+						self::save_formation( $id, array_merge(
+							self::process( $data['detail'], $data['reviews'] ),
+							$origins[ $id ] ?? self::origin( 'primary', '' ),
+							[ '_fetched' => time() ]
+						) );
+						if ( $closed ) {
+							$job['fetched'][] = (string) $id;
+						} else {
+							$job['open_fetched'] = ( $job['open_fetched'] ?? 0 ) + 1;
+						}
 					}
 				}
 				if ( $job['queue'] ) {
@@ -343,17 +425,23 @@ class OEC_AI_Catalog {
 				return $job;
 
 			case 'closed_list':
-				$rows = self::step_listing( $job, $token, 'closed' );
+				$key  = $job['full_closed'][ $job['csrc'] ];
+				$rows = isset( $tokens[ $key ] ) ? self::step_listing( $job, $tokens[ $key ], 'closed', $key ) : null;
 				if ( false === $rows ) {
 					return $job;
 				}
-				if ( ! $rows ) {
-					$job['errors'][] = 'Listado de cerradas incompleto: se conservan las del sync anterior.';
-					$job['full_closed'] = false;
-					return self::prepare_closed( $job );
+				if ( null === $rows || ( 'primary' === $key && ! $rows ) ) {
+					$job['errors'][] = 'primary' === $key
+						? 'Listado de cerradas incompleto: se conservan las del sync anterior.'
+						: sprintf( 'Token secundario %d: listado de cerradas incompleto; se conservan las del sync anterior.', array_search( $key, $job['sources'], true ) );
+				} else {
+					self::append_rows( 'closed_full', $rows, $key );
+					$job['closed_full_done'][] = $key;
 				}
-				$job['closed_full_done'] = true;
-				return self::queue_closed( $job, $rows );
+				if ( ++$job['csrc'] < count( $job['full_closed'] ) ) {
+					return $job;
+				}
+				return self::build_closed( $job );
 
 			case 'finish':
 				self::finish( $job );
@@ -363,31 +451,99 @@ class OEC_AI_Catalog {
 		return self::abort( $job, 'Estado de sincronización desconocido.' );
 	}
 
+	/** Suma al archivo del trabajo $name las filas de la fuente $key que no estén ya (gana la primera fuente). */
+	private static function append_rows( string $name, array $rows, string $key ): void {
+		$all  = self::read_job_file( $name );
+		$seen = array_flip( array_map( 'strval', array_column( $all, 'id' ) ) );
+		foreach ( $rows as $r ) {
+			if ( ! isset( $seen[ (string) $r['id'] ] ) ) {
+				$seen[ (string) $r['id'] ] = true;
+				$all[]                     = array_merge( $r, [ '_source' => $key ] );
+			}
+		}
+		self::write_job_file( $name, $all );
+	}
+
+	/** Fuente y comunidad de una formación, tal como se guardan en su ficha y en las filas. */
+	private static function origin( string $source, string $community ): array {
+		return [
+			'source'    => $source,
+			'primary'   => 'primary' === $source,
+			'community' => oec_community_origin( $community ),
+		];
+	}
+
+	/** id => origin() de las filas del archivo del trabajo ('open' | 'closed'). */
+	private static function row_origins( string $which ): array {
+		static $cache = [];
+		if ( ! isset( $cache[ $which ] ) ) {
+			$cache[ $which ] = [];
+			foreach ( self::read_job_file( $which ) as $r ) {
+				$cache[ $which ][ (string) $r['id'] ] = self::origin(
+					(string) ( $r['_source'] ?? 'primary' ),
+					(string) ( $r['community'] ?? $r['_listing']['community'] ?? '' )
+				);
+			}
+		}
+		return $cache[ $which ];
+	}
+
 	/**
-	 * Cerradas de esta corrida. Semanal / primera vez: releer el listado de
-	 * la API (fase closed_list). Si no: las del sync anterior + las que
-	 * estaban abiertas y hoy ya no, sin pedirle nada a la API.
+	 * Terminadas las abiertas: si alguna fuente tiene que releer su listado
+	 * de cerradas (semanal / primera vez), fase closed_list; si no, las
+	 * cerradas salen del sync anterior (build_closed()).
 	 */
 	private static function prepare_closed( array $job ): array {
-		if ( ! empty( $job['full_closed'] ) && empty( $job['lists']['closed'] ) ) {
+		if ( $job['full_closed'] && ! isset( $job['csrc'] ) ) {
+			$job['csrc']  = 0;
 			$job['phase'] = 'closed_list';
 			return $job;
 		}
-		$open_ids = array_flip( array_column( self::read_job_file( 'open' ), 'id' ) );
-		$fresh    = [];
-		$old      = [];
-		foreach ( self::get_listing() as $r ) {
-			if ( isset( $open_ids[ $r['id'] ] ) ) {
-				continue;
-			}
-			$row = [ '_listing' => $r, 'id' => $r['id'] ];
-			if ( ! empty( $r['open'] ) ) {
-				$fresh[] = $row; // recién cerrada: adelante
-			} else {
-				$old[] = $row;
+		return self::build_closed( $job );
+	}
+
+	/**
+	 * Cerradas de esta corrida, fuente por fuente (el principal primero):
+	 * las del listado de la API si se releyó entero; si no, las del sync
+	 * anterior + las que estaban abiertas y hoy ya no, sin pedirle nada a
+	 * la API. Las de un token que se sacó de la configuración no siguen.
+	 * Las de un secundario cuyo listado de abiertas falló hoy se conservan
+	 * tal cual estaban (archivo 'carry').
+	 */
+	private static function build_closed( array $job ): array {
+		$open_ids  = array_flip( array_map( 'strval', array_column( self::read_job_file( 'open' ), 'id' ) ) );
+		$full_done = array_flip( $job['closed_full_done'] ?? [] );
+		$failed    = array_flip( $job['failed'] ?? [] );
+		$buckets   = array_fill_keys( $job['sources'], [ 'full' => [], 'fresh' => [], 'old' => [] ] );
+		$carry     = [];
+
+		foreach ( self::read_job_file( 'closed_full' ) as $r ) {
+			if ( ! isset( $open_ids[ (string) $r['id'] ] ) && isset( $buckets[ $r['_source'] ] ) ) {
+				$buckets[ $r['_source'] ]['full'][] = $r;
 			}
 		}
-		return self::queue_closed( $job, array_merge( $fresh, $old ) );
+		foreach ( self::get_listing( true ) as $r ) {
+			$src = (string) ( $r['source'] ?? 'primary' );
+			if ( ! isset( $buckets[ $src ] ) ) {
+				continue; // token quitado
+			}
+			if ( isset( $failed[ $src ] ) ) {
+				$carry[] = $r;
+				continue;
+			}
+			if ( isset( $full_done[ $src ] ) || isset( $open_ids[ (string) $r['id'] ] ) ) {
+				continue;
+			}
+			// recién cerrada (estaba abierta en el sync anterior): adelante
+			$buckets[ $src ][ ! empty( $r['open'] ) ? 'fresh' : 'old' ][] = [ '_listing' => $r, 'id' => $r['id'], '_source' => $src ];
+		}
+		self::write_job_file( 'carry', $carry );
+
+		$rows = [];
+		foreach ( $buckets as $b ) {
+			$rows = array_merge( $rows, $b['full'], $b['fresh'], $b['old'] );
+		}
+		return self::queue_closed( $job, $rows );
 	}
 
 	/**
@@ -447,32 +603,50 @@ class OEC_AI_Catalog {
 		if ( ! empty( $r['short_description'] ) ) {
 			$f['description'] = trim( wp_strip_all_tags( (string) $r['short_description'] ) );
 		}
-		return $f;
+		return array_merge( $f, self::origin( (string) ( $r['_source'] ?? 'primary' ), (string) ( $r['community'] ?? '' ) ) );
 	}
 
-	/** Guarda las cerradas y encola las que no tienen ficha en disco. */
+	/**
+	 * Guarda las cerradas y encola las que no tienen ficha en disco. A las
+	 * que ya la tienen y vienen de un listado releído entero solo se les
+	 * corrige fuente y comunidad (la ficha de una cerrada no se vuelve a pedir).
+	 */
 	private static function queue_closed( array $job, array $rows ): array {
 		self::write_job_file( 'closed', $rows );
 		$dir          = self::get_dir() . '/formations/';
-		$job['queue'] = array_values( array_filter(
-			array_map( fn( $r ) => (string) $r['id'], $rows ),
-			fn( $id ) => ! file_exists( $dir . sanitize_file_name( $id ) . '.json' )
-		) );
+		$job['queue'] = [];
+		foreach ( $rows as $r ) {
+			$id = (string) $r['id'];
+			if ( ! file_exists( $dir . sanitize_file_name( $id ) . '.json' ) ) {
+				$job['queue'][] = $id;
+				continue;
+			}
+			if ( isset( $r['_listing'] ) ) {
+				continue; // fila del sync anterior: la ficha ya quedó bien
+			}
+			$f = self::get_formation( $id );
+			$o = self::origin( (string) $r['_source'], (string) ( $r['community'] ?? '' ) );
+			if ( $f && array_intersect_key( $f, $o ) != $o ) { // phpcs:ignore Universal.Operators.StrictComparisons -- sin importar el orden de las claves
+				self::save_formation( $id, array_merge( $f, $o ) );
+				$job['patched'][] = $id;
+			}
+		}
 		$job['total'] = count( $job['queue'] );
 		$job['phase'] = 'closed_details';
 		return $job;
 	}
 
 	/**
-	 * Avanza la lectura de un listado ('opened' | 'closed'): pide la página
-	 * 1 (para saber cuántas hay) y después hasta 6 páginas en paralelo por
-	 * vuelta, guardando cada una apenas llega. Devuelve false si faltan
-	 * páginas, [] si se agotaron los reintentos, o todas las filas en el
-	 * orden sugerido por la API.
+	 * Avanza la lectura de un listado ('opened' | 'closed') de la fuente
+	 * $key: pide la página 1 (para saber cuántas hay) y después hasta
+	 * LIST_PARALLEL páginas en paralelo por vuelta, guardando cada una
+	 * apenas llega. Devuelve false si faltan páginas, null si se agotaron
+	 * los reintentos, o todas las filas en el orden sugerido por la API.
 	 */
-	private static function step_listing( array &$job, string $token, string $enrollment ) {
-		$st = $job['lists'][ $enrollment ] ?? [ 'total' => 0, 'tries' => 0 ];
-		$pages = self::read_job_file( 'pages-' . $enrollment );
+	private static function step_listing( array &$job, string $token, string $enrollment, string $key ) {
+		$list  = $enrollment . '-' . $key;
+		$st    = $job['lists'][ $list ] ?? [ 'total' => 0, 'tries' => 0 ];
+		$pages = self::read_job_file( 'pages-' . $list );
 
 		$pending = [];
 		for ( $pg = 1; $pg <= max( 1, $st['total'] ); $pg++ ) {
@@ -496,11 +670,11 @@ class OEC_AI_Catalog {
 			}
 		}
 		$st['tries'] = $got ? 0 : $st['tries'] + 1; // reintentos seguidos sin avanzar
-		self::write_job_file( 'pages-' . $enrollment, $pages );
-		$job['lists'][ $enrollment ] = $st;
+		self::write_job_file( 'pages-' . $list, $pages );
+		$job['lists'][ $list ] = $st;
 
 		if ( $st['tries'] >= 4 ) {
-			return [];
+			return null;
 		}
 		if ( ! $st['total'] || count( $pages ) < $st['total'] ) {
 			return false;
@@ -539,19 +713,24 @@ class OEC_AI_Catalog {
 	private static function finish( array $job ): void {
 		$open_rows   = self::read_job_file( 'open' );
 		$closed_rows = self::read_job_file( 'closed' );
+		$carry       = self::read_job_file( 'carry' ); // filas (de listing.json) de secundarios que fallaron hoy
 
+		$open_ids = array_map( 'strval', array_merge(
+			array_column( $open_rows, 'id' ),
+			array_column( array_filter( $carry, fn( $r ) => ! empty( $r['open'] ) ), 'id' )
+		) );
 		$index         = [];
 		$organizations = [];
-		foreach ( $open_rows as $row ) {
-			$f = self::get_formation( (string) $row['id'] );
+		foreach ( array_unique( $open_ids ) as $id ) {
+			$f = self::get_formation( $id );
 			if ( $f ) {
 				$index[] = self::index_entry( $f );
 				self::accumulate_organization( $organizations, $f );
 			}
 		}
 		$closed_index = [];
-		foreach ( $job['fetched'] as $id ) {
-			$f = self::get_formation( $id );
+		foreach ( array_unique( array_merge( $job['fetched'], $job['patched'] ?? [] ) ) as $id ) {
+			$f = self::get_formation( (string) $id );
 			if ( $f ) {
 				$closed_index[] = self::index_entry( $f );
 			}
@@ -560,18 +739,44 @@ class OEC_AI_Catalog {
 		self::save_index( $index );
 		self::merge_history( array_merge( $index, $closed_index ) );
 		self::save_organizations( $organizations );
-		self::save_listing( $open_rows, $closed_rows );
+		self::save_listing( $open_rows, $closed_rows, $carry );
 
-		$meta = self::get_meta();
+		// Por fuente: abiertas, cerradas y comunidades (para el admin).
+		$sources = array_fill_keys( $job['sources'], [ 'open' => 0, 'closed' => 0, 'communities' => [] ] );
+		foreach ( [ [ $open_rows, 'open' ], [ $closed_rows, 'closed' ] ] as [ $list, $k ] ) {
+			foreach ( $list as $r ) {
+				$src = (string) ( $r['_source'] ?? 'primary' );
+				if ( isset( $sources[ $src ] ) ) {
+					$sources[ $src ][ $k ]++;
+					$host = oec_community_host( (string) ( $r['community'] ?? $r['_listing']['community'] ?? '' ) );
+					if ( '' !== $host ) {
+						$sources[ $src ]['communities'][ $host ] = ( $sources[ $src ]['communities'][ $host ] ?? 0 ) + 1;
+					}
+				}
+			}
+		}
+		foreach ( $sources as $k => $st ) {
+			arsort( $sources[ $k ]['communities'] );
+		}
+
+		$meta        = self::get_meta();
+		$closed_full = (array) ( $meta['closed_full'] ?? [ 'primary' => (int) ( $meta['closed_full_at'] ?? 0 ) ] );
+		foreach ( $job['closed_full_done'] ?? [] as $key ) {
+			$closed_full[ $key ] = time();
+		}
 		self::save_meta( [
 			'status'         => 'ok',
 			'started_at'     => $job['started_at'],
 			'finished_at'    => current_time( 'c' ),
 			'count'          => count( $index ),
+			'primary_count'  => count( array_filter( $index, 'oec_formation_is_primary' ) ),
 			'closed_count'   => count( $closed_rows ),
 			'open_fetched'   => (int) ( $job['open_fetched'] ?? 0 ),
 			'closed_fetched' => count( $job['fetched'] ),
-			'closed_full_at' => ! empty( $job['closed_full_done'] ) ? time() : (int) ( $meta['closed_full_at'] ?? 0 ),
+			'closed_full'    => array_intersect_key( $closed_full, $sources ),
+			'sources'        => $sources,
+			// Comunidad de este sitio: la que más aparece en el token principal.
+			'site_community' => (string) ( array_key_first( $sources['primary']['communities'] ?? [] ) ?? ( $meta['site_community'] ?? '' ) ),
 			'progress'       => '',
 			'errors'         => $job['errors'],
 		] );
@@ -593,9 +798,10 @@ class OEC_AI_Catalog {
 		$done = ( $job['total'] ?? 0 ) - count( $job['queue'] );
 		switch ( $job['phase'] ) {
 			case 'open_list':
-				return 'Leyendo el listado de abiertas…';
+				return $job['src'] ? sprintf( 'Leyendo el listado de abiertas (token secundario %d)…', $job['src'] ) : 'Leyendo el listado de abiertas…';
 			case 'closed_list':
-				return 'Leyendo el listado de cerradas…';
+				$i = (int) array_search( $job['full_closed'][ $job['csrc'] ] ?? 'primary', $job['sources'], true );
+				return $i ? sprintf( 'Leyendo el listado de cerradas (token secundario %d)…', $i ) : 'Leyendo el listado de cerradas…';
 			case 'open_details':
 				return sprintf( 'Fichas de abiertas: %d de %d', $done, $job['total'] );
 			case 'closed_details':
@@ -925,6 +1131,8 @@ class OEC_AI_Catalog {
 			'total_students' => $f['total_students'] ?? 0,
 			'lecture_hours'  => $f['lecture_hours'] ?? 0,
 			'keywords'       => $keywords,
+			'community'      => $f['community'] ?? '',
+			'primary'        => oec_formation_is_primary( $f ),
 		];
 	}
 
@@ -951,16 +1159,20 @@ class OEC_AI_Catalog {
 	 * listado no los trae); si la ficha de una cerrada todavía no se bajó,
 	 * la fila va igual, sin esos dos datos.
 	 */
-	private static function save_listing( array $open_rows, array $closed_rows ): void {
+	private static function save_listing( array $open_rows, array $closed_rows, array $carry = [] ): void {
 		$rows = [];
 		$seen = [];
-		foreach ( [ [ $open_rows, true ], [ $closed_rows, false ] ] as [ $list, $open ] ) {
+		foreach ( [ [ $open_rows, true ], [ $closed_rows, false ], [ $carry, null ] ] as [ $list, $open ] ) {
 			foreach ( $list as $raw ) {
 				$id = (string) $raw['id'];
 				if ( isset( $seen[ $id ] ) ) {
 					continue;
 				}
 				$seen[ $id ] = true;
+				if ( null === $open ) { // secundario que falló hoy: la fila tal cual estaba
+					$rows[] = $raw;
+					continue;
+				}
 				if ( isset( $raw['_listing'] ) ) { // fila conservada del sync anterior
 					$rows[] = array_merge( $raw['_listing'], [ 'open' => $open ] );
 					continue;
@@ -983,7 +1195,7 @@ class OEC_AI_Catalog {
 		$desc      = trim( preg_replace( '/\s+/', ' ', wp_strip_all_tags( html_entity_decode( (string) ( $r['short_description'] ?? '' ), ENT_QUOTES, 'UTF-8' ) ) ) );
 		$summary   = oec_ai_catalog_summary( $r['reviews_summary'] ?? null );
 
-		return [
+		return array_merge( [
 			'id'             => (string) $r['id'],
 			'slug'           => (string) ( $r['slug'] ?? '' ),
 			'title'          => (string) ( $r['title'] ?? '' ),
@@ -1015,7 +1227,7 @@ class OEC_AI_Catalog {
 				$tags,
 				[ mb_substr( $desc, 0, 320 ) ]
 			) ) ),
-		];
+		], self::origin( (string) ( $r['_source'] ?? 'primary' ), (string) ( $r['community'] ?? '' ) ) );
 	}
 
 	/**
@@ -1043,15 +1255,22 @@ class OEC_AI_Catalog {
 				'formations'        => [],
 			];
 		}
+		$primary = oec_formation_is_primary( $f );
 		$organizations[ $slug ]['formations'][] = [
 			'id'             => $f['id'],
 			'title'          => $f['title'],
 			'type'           => $f['type'],
 			'url'            => $f['url'],
+			'slug'           => $f['slug'] ?? '',
 			'image'          => $f['image'],
 			'enrollment_end' => $f['enrollment_end'],
 			'tematicas'      => $f['tematicas'],
+			'community'      => $f['community'] ?? '',
+			'primary'        => $primary,
 		];
+		if ( ! $primary ) {
+			return; // las temáticas (y la cantidad, ver save_organizations()) cuentan solo las del token principal
+		}
 		foreach ( $f['tematicas'] as $tematica ) {
 			$organizations[ $slug ]['tematicas'][ $tematica ] =
 				( $organizations[ $slug ]['tematicas'][ $tematica ] ?? 0 ) + 1;
@@ -1065,12 +1284,21 @@ class OEC_AI_Catalog {
 	 * las formaciones con inscripción abierta de ESE sync — no arrastra
 	 * organizaciones de sincronizaciones anteriores que ya no tengan
 	 * ninguna formación abierta hoy.
+	 *
+	 * Una organización existe en el sitio solo si tiene alguna formación
+	 * del token principal; su landing muestra también las de los tokens
+	 * secundarios, pero "count" (listado, vitrina, sitemap) cuenta solo
+	 * las del principal.
 	 */
 	private static function save_organizations( array $organizations ): void {
 		$dir   = self::get_dir();
 		$index = [];
 
 		foreach ( $organizations as $slug => $org ) {
+			$count = count( array_filter( $org['formations'], 'oec_formation_is_primary' ) );
+			if ( ! $count ) {
+				continue;
+			}
 			file_put_contents(
 				$dir . '/organizations/' . sanitize_file_name( $slug ) . '.json',
 				wp_json_encode( $org, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT )
@@ -1080,7 +1308,7 @@ class OEC_AI_Catalog {
 				'name'       => $org['name'],
 				'short_name' => $org['short_name'],
 				'logo'       => $org['logo'],
-				'count'      => count( $org['formations'] ),
+				'count'      => $count,
 				'tematicas'  => $org['tematicas'],
 			];
 		}
@@ -1096,13 +1324,13 @@ class OEC_AI_Catalog {
 
 	/* ── History index: accumulates all formations ever seen ── */
 
-	public static function get_history_index(): array {
+	public static function get_history_index( bool $all = false ): array {
 		$path = self::get_dir() . '/history_index.json';
 		if ( ! file_exists( $path ) ) {
 			return [];
 		}
 		$data = json_decode( file_get_contents( $path ), true );
-		return $data['formations'] ?? [];
+		return self::scope( $data['formations'] ?? [], $all );
 	}
 
 	private static function merge_history( array $open_index ): void {
@@ -1134,6 +1362,8 @@ class OEC_AI_Catalog {
 				'tags'           => $entry['tags'] ?? [],
 				'total_students' => $entry['total_students'] ?? 0,
 				'lecture_hours'  => $entry['lecture_hours'] ?? 0,
+				'community'      => $entry['community'] ?? '',
+				'primary'        => $entry['primary'] ?? true,
 			];
 		}
 

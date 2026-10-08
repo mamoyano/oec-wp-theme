@@ -100,7 +100,7 @@ class OEC_AI_Chat {
 		}
 
 		// Build Claude messages
-		$total            = count( OEC_AI_Catalog::get_index() );
+		$total            = count( OEC_AI_Catalog::get_index( true ) );
 		$detailed_modules = self::asks_about_content( $message );
 		$context          = self::build_context( $formations, $prices, $detailed_modules, $closed );
 		$messages         = self::build_messages( $history, $message );
@@ -112,15 +112,7 @@ class OEC_AI_Chat {
 		}
 
 		// Return reply + formation cards for the UI
-		$cards = array_map( static fn( $f ) => [
-			'id'    => $f['id'],
-			'title' => $f['title'],
-			'url'   => $f['url'],
-			'path'  => self::formation_path( $f['url'] ),
-			'image' => self::cdn_image( $f['image'] ?? '' ),
-			'type'  => $f['type'],
-			'org'   => $f['org'],
-		], $formations );
+		$cards = array_map( [ __CLASS__, 'card' ], $formations );
 
 		return new WP_REST_Response( [
 			'reply'      => $reply,
@@ -130,14 +122,17 @@ class OEC_AI_Chat {
 
 	/* ── Relevance pre-filter ───────────────────────────────── */
 
+	/* Token principal + secundarios: el chat también recomienda las de otras
+	 * comunidades (swimming.science, fisio.one…), con link a su sitio. */
 	private static function prefilter( string $query, string $extra = '' ): array {
-		$index = OEC_AI_Catalog::get_index();
+		$index = OEC_AI_Catalog::get_index( true );
 		if ( empty( $index ) ) {
 			return [];
 		}
 		$top = self::rank( $index, $query, $extra, self::MAX_RESULTS );
 		if ( ! $top ) {
-			// Sin coincidencias: las 10 con cierre de inscripción más cercano
+			// Sin coincidencias: las 10 de este sitio con cierre de inscripción más cercano
+			$index = OEC_AI_Catalog::get_index() ?: $index;
 			usort( $index, static fn( $a, $b ) => strcmp( $a['enrollment_end'], $b['enrollment_end'] ) );
 			return self::load_formations( array_slice( $index, 0, 10 ) );
 		}
@@ -149,7 +144,7 @@ class OEC_AI_Chat {
 	private static function prefilter_closed( string $query, array $open_formations, string $extra = '' ): array {
 		$open_ids = array_flip( array_column( $open_formations, 'id' ) );
 		$history  = array_values( array_filter(
-			OEC_AI_Catalog::get_history_index(),
+			OEC_AI_Catalog::get_history_index( true ),
 			static fn( $e ) => ! isset( $open_ids[ $e['id'] ] )
 		) );
 		return $history ? self::rank( $history, $query, $extra, 4 ) : [];
@@ -344,6 +339,9 @@ class OEC_AI_Chat {
 				if ( ! empty( $c['org'] ) ) {
 					$line .= " | Org: {$c['org']}";
 				}
+				if ( oec_formation_is_external( $c ) ) {
+					$line .= ' | Comunidad: ' . oec_community_host( $c['community'] );
+				}
 				if ( ! empty( $c['url'] ) ) {
 					$line .= " | URL: {$c['url']}";
 				}
@@ -388,7 +386,11 @@ class OEC_AI_Chat {
 		$end    = self::format_date_human( $f['end'] ?? '' );
 		$enroll = self::format_date_human( $f['enrollment_end'] ?? '' );
 		$lines[] = "Período: {$start} → {$end} | Inscripción hasta: {$enroll}";
-		$lines[] = "URL: {$f['url']}";
+		$lines[] = 'URL: ' . self::link( $f );
+		if ( oec_formation_is_external( $f ) ) {
+			$host    = oec_community_host( $f['community'] );
+			$lines[] = "Comunidad: {$host} (formación de otra comunidad de OEC: se cursa e inscribe en {$host})";
+		}
 
 		$flags = array_filter( [
 			$f['great_lecturers']     ? 'docentes_destacados'     : '',
@@ -573,7 +575,7 @@ class OEC_AI_Chat {
 		}
 
 		self::sse_status( 'Preparando la respuesta...' );
-		$total            = count( OEC_AI_Catalog::get_index() );
+		$total            = count( OEC_AI_Catalog::get_index( true ) );
 		$detailed_modules = self::asks_about_content( $message );
 		$context          = self::build_context( $formations, $prices, $detailed_modules, $closed );
 		$messages         = self::build_messages( $history, $message );
@@ -597,15 +599,7 @@ class OEC_AI_Chat {
 		}
 		$source = array_values( $source );
 
-		$cards = array_map( static fn( $f ) => [
-			'id'    => $f['id'],
-			'title' => $f['title'],
-			'url'   => $f['url'],
-			'path'  => self::formation_path( $f['url'] ),
-			'image' => self::cdn_image( $f['image'] ?? '' ),
-			'type'  => $f['type'],
-			'org'   => $f['org'],
-		], $source );
+		$cards = array_map( [ __CLASS__, 'card' ], $source );
 
 		self::sse_data( [ 'done' => true, 'formations' => $cards ] );
 
@@ -664,7 +658,7 @@ class OEC_AI_Chat {
 		if ( count( $words ) < 2 ) {
 			return false;
 		}
-		foreach ( OEC_AI_Catalog::get_index() as $entry ) {
+		foreach ( OEC_AI_Catalog::get_index( true ) as $entry ) {
 			$title = ' ' . self::title_norm( $entry['title'] ?? '' ) . ' ';
 			$hits  = 0;
 			foreach ( $words as $w ) {
@@ -844,6 +838,31 @@ class OEC_AI_Chat {
 		return $cdn !== $url ? $cdn . '?w=' . $w . '&q=89' : $url;
 	}
 
+	/* Link de la formación que ve la IA: el de su ficha o, si es de otra
+	 * comunidad, el de su sitio (oec_formation_url()). */
+	private static function link( array $f ): string {
+		return oec_formation_is_external( $f ) ? oec_formation_url( $f ) : (string) ( $f['url'] ?? '' );
+	}
+
+	/* Tarjeta de formación para el chat (ai-chat.js). url = el link que ve la
+	 * IA (para reconocerlo en la respuesta); path = adónde lleva la tarjeta. */
+	public static function card( array $f ): array {
+		$external = oec_formation_is_external( $f );
+		$host     = $external ? oec_community_host( $f['community'] ) : '';
+		return [
+			'id'        => $f['id'],
+			'title'     => $f['title'],
+			'url'       => self::link( $f ),
+			'path'      => $external ? oec_formation_url( $f ) : self::formation_path( $f['url'] ),
+			'image'     => self::cdn_image( $f['image'] ?? '' ),
+			'type'      => $f['type'],
+			'org'       => $f['org'],
+			'external'  => $external,
+			'community' => $host,
+			'logo'      => $host ? oec_community_logo( $host ) : '',
+		];
+	}
+
 	/* URL local absoluta para el link de formación: /formacion/<slug>,
 	 * usando home_url() para que en multisite lleve el prefijo del sitio
 	 * actual (/es/, /en/) en vez de una ruta relativa contra la raíz. */
@@ -1014,6 +1033,7 @@ COMPORTAMIENTO:
 - Si pregunta por contenidos específicos, respondé con los datos exactos del módulo
 - Si pregunta por precios, mostralos con descuentos y formas de pago disponibles
 - Si no hay formación que coincida exactamente, decilo con honestidad y ofrecé la alternativa más cercana
+- Algunas formaciones son de otras comunidades de OEC (campo "Comunidad:", p. ej. swimming.science): recomendalas igual que las demás cuando encajen, aclarando en pocas palabras que se cursan en ese sitio, y usá su URL tal cual
 
 REGLAS SEGÚN DATOS DEL CATÁLOGO — seguí estas reglas según los flags que figuran en cada formación:
 - Campo "Relevance": indica la importancia de la formación para OEC. Valor 2 = formación MUY DESTACADA (priorizala en recomendaciones, resaltá sus puntos fuertes). Valor 1 = promedio (recomendalas normalmente). Valor 0 = relleno (mencionala SOLO si es la única opción disponible o el usuario pregunta específicamente; nunca la pongas primero).

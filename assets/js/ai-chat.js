@@ -351,6 +351,21 @@
     scrollBody();
   }
 
+  /* Formación de otra comunidad (swimming.science…): logo redondo + ícono
+     de enlace externo, y el link se abre en otra pestaña. */
+  function communityBadge(f) {
+    if (!f.external) return '';
+    return '<span class="oec-community oec-community--chat" title="Formación de ' + escAttr(f.community) + '">'
+      + (f.logo ? '<img class="oec-community__logo" src="' + escAttr(f.logo) + '" alt="" width="16" height="16" loading="lazy">' : '')
+      + '<span class="oec-community__name">' + escText(f.community) + '</span>'
+      + '<i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></span>';
+  }
+  function markExternal(a, f) {
+    if (!f.external) return;
+    a.target = '_blank';
+    a.rel    = 'noopener';
+  }
+
   /* ── Course cards ────────────────────────────────────────── */
   function renderCards(formations) {
     if (!formations || formations.length === 0) return;
@@ -369,7 +384,8 @@
       card.href = f.path || f.url || '#';
       card.className = 'oec-course-card';
       card.dataset.id = f.id || '';
-      card.setAttribute('aria-label', f.title || '');
+      card.setAttribute('aria-label', (f.title || '') + (f.external ? ' (' + f.community + ', se abre en otra pestaña)' : ''));
+      markExternal(card, f);
 
       const imgHtml = f.image
         ? `<img src="${escAttr(f.image)}" class="oec-course-card__img" alt="" loading="lazy">`
@@ -381,6 +397,7 @@
           <span class="oec-course-card__type">${escText(f.type || '')}</span>
           <strong class="oec-course-card__title">${escText(f.title || '')}</strong>
           <span class="oec-course-card__org">${escText(f.org || '')}</span>
+          ${communityBadge(f)}
         </div>
         <svg class="oec-course-card__arrow" width="14" height="14" viewBox="0 0 24 24"
              fill="none" stroke="currentColor" stroke-width="2"
@@ -462,11 +479,13 @@
         card.href      = f.path || f.url;
         card.className = 'oec-inline-card';
         card.dataset.id = f.id || '';
+        markExternal(card, f);
         card.innerHTML = '<strong class="oec-inline-card__title">' + escText(f.title) + '</strong>'
                        + '<span class="oec-inline-card__meta">'
                        + escText(f.type || '')
                        + (f.org ? ' · ' + escText(f.org) : '')
-                       + '</span>';
+                       + '</span>'
+                       + communityBadge(f);
         link.replaceWith(card);
       });
     });

@@ -23,6 +23,7 @@ function oec_get_defaults(): array {
 		'meta_pixel_id'    => '',
 		'ms_clarity_id'    => '',
 		'oec_api_token'      => '',
+		'oec_api_tokens'     => [], // tokens secundarios: formaciones de otras comunidades (ver OEC_AI_Catalog::sources())
 		'oec_anthropic_key'  => '',
 		'credits_api_key'    => '',
 		// Topbar & footer content
@@ -146,6 +147,10 @@ function oec_sanitize_options( $raw ): array {
 
 	// OEC API
 	$clean['oec_api_token']   = sanitize_text_field( $raw['oec_api_token']   ?? '' );
+	$clean['oec_api_tokens']  = array_values( array_unique( array_filter( array_map(
+		fn( $t ) => sanitize_text_field( (string) $t ),
+		(array) ( $raw['oec_api_tokens'] ?? [] )
+	), fn( $t ) => '' !== $t && $t !== $clean['oec_api_token'] ) ) );
 	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
 
 	// Anthropic
@@ -202,7 +207,7 @@ function oec_admin_section_keys(): array {
 	return [
 		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
-		'formaciones'     => [ 'oec_api_token' ],
+		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens' ],
 		'chat'            => [ 'oec_anthropic_key' ],
 		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
@@ -388,8 +393,14 @@ function oec_render_settings_page(): void {
 
 			<!-- Preserve other sections' values as hidden inputs -->
 			<?php foreach ( $other_keys as $key ) : ?>
+				<?php if ( is_array( $opts[ $key ] ?? '' ) ) : ?>
+					<?php foreach ( $opts[ $key ] as $item ) : ?>
+			<input type="hidden" name="<?php echo esc_attr( OEC_OPTION . '[' . $key . '][]' ); ?>" value="<?php echo esc_attr( (string) $item ); ?>">
+					<?php endforeach; ?>
+				<?php else : ?>
 			<input type="hidden" name="<?php echo esc_attr( OEC_OPTION . '[' . $key . ']' ); ?>"
 			       value="<?php echo esc_attr( (string) ( $opts[ $key ] ?? '' ) ); ?>">
+				<?php endif; ?>
 			<?php endforeach; ?>
 		<?php endif; ?>
 
@@ -980,6 +991,58 @@ function oec_render_settings_page(): void {
 
 						</div>
 
+						<?php
+						// Tokens secundarios: lo que trajo cada uno en el último sync.
+						$src_stats = $ai_meta['sources'] ?? [];
+						$src_line  = function ( string $token ) use ( $src_stats ): string {
+							$st = $src_stats[ OEC_AI_Catalog::source_key( $token ) ] ?? null;
+							if ( ! $st ) {
+								return __( 'Todavía sin sincronizar.', 'oec-theme' );
+							}
+							return sprintf(
+								/* translators: 1: comunidades, 2: abiertas, 3: cerradas */
+								__( '%1$s · %2$s abiertas · %3$s cerradas', 'oec-theme' ),
+								implode( ', ', array_keys( $st['communities'] ?? [] ) ) ?: '—',
+								number_format_i18n( (int) $st['open'] ),
+								number_format_i18n( (int) $st['closed'] )
+							);
+						};
+						?>
+						<div class="oec-tracker-row">
+							<div class="oec-tracker-row__head">
+								<div class="oec-tracker-logo" style="background:#5b6b7b;"><span class="dashicons dashicons-networking" style="color:#fff;"></span></div>
+								<div>
+									<strong><?php esc_html_e( 'Tokens secundarios (otras comunidades)', 'oec-theme' ); ?></strong>
+									<p><?php esc_html_e( 'Suman las formaciones de otras comunidades (swimming.science, fisio.one…) al chat IA, a /formaciones y a las páginas de docentes y organizaciones, con el logo de su comunidad y link a su sitio. La home y las landings muestran solo las del token principal.', 'oec-theme' ); ?></p>
+								</div>
+							</div>
+
+							<div class="oec-tracker-row__field">
+								<div id="oec-api-tokens">
+									<?php foreach ( array_merge( $opts['oec_api_tokens'], [ '' ] ) as $i => $token ) : ?>
+									<div class="oec-api-token-row" style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.5rem;">
+										<input type="password"
+										       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_api_tokens][]"
+										       value="<?php echo esc_attr( $token ); ?>"
+										       class="regular-text"
+										       aria-label="<?php esc_attr_e( 'Token secundario', 'oec-theme' ); ?>"
+										       placeholder="<?php esc_attr_e( 'Token de otra comunidad', 'oec-theme' ); ?>"
+										       autocomplete="new-password"
+										       spellcheck="false">
+										<button type="button" class="button-link oec-api-token-remove" style="color:#b32d2e;"><?php esc_html_e( 'Quitar', 'oec-theme' ); ?></button>
+										<?php if ( '' !== $token ) : ?>
+										<span class="description" style="flex-basis:100%;"><?php echo esc_html( $src_line( $token ) ); ?></span>
+										<?php endif; ?>
+									</div>
+									<?php endforeach; ?>
+								</div>
+								<button type="button" class="button" id="oec-api-token-add">+ <?php esc_html_e( 'Agregar token', 'oec-theme' ); ?></button>
+								<p class="description">
+									<?php esc_html_e( 'Los cambios se aplican en la próxima sincronización. Al quitar un token, sus formaciones salen del catálogo en esa sincronización.', 'oec-theme' ); ?>
+								</p>
+							</div>
+						</div>
+
 					</div>
 				</div>
 
@@ -1009,6 +1072,9 @@ function oec_render_settings_page(): void {
 							<tr style="border-bottom:1px solid #f0f0f1;">
 								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Formaciones almacenadas', 'oec-theme' ); ?></td>
 								<td style="padding:.75rem 0;"><?php echo $ai_count ? '<strong>' . esc_html( number_format( $ai_count ) ) . '</strong> ' . esc_html__( 'abiertas', 'oec-theme' ) : '<span style="color:#888;">—</span>'; // phpcs:ignore ?>
+									<?php if ( isset( $ai_meta['primary_count'] ) && (int) $ai_meta['primary_count'] !== $ai_count ) : ?>
+									(<?php echo esc_html( sprintf( __( '%s del token principal', 'oec-theme' ), number_format( (int) $ai_meta['primary_count'] ) ) ); ?>)
+									<?php endif; ?>
 									<?php if ( isset( $ai_meta['closed_count'] ) ) : ?>
 									· <strong><?php echo esc_html( number_format( (int) $ai_meta['closed_count'] ) ); ?></strong> <?php esc_html_e( 'cerradas', 'oec-theme' ); ?>
 									<?php endif; ?>

@@ -24,13 +24,17 @@ const OEC_DOCENTE_TEMATICAS = [
  * Todos los docentes del catálogo (abiertas + cerradas), agregados y
  * indexados por slug. Cacheado hasta el próximo sync (la clave incluye
  * la fecha de fin del último sync).
+ *
+ * Tokens secundarios: un docente existe en el sitio solo si dicta alguna
+ * formación del token principal; en su página se suman también las de
+ * otras comunidades (con su logo y link a su sitio).
  */
 function oec_docentes_catalog(): array {
 	if ( ! class_exists( 'OEC_AI_Catalog' ) ) {
 		return [];
 	}
 	$meta = OEC_AI_Catalog::get_meta();
-	$key  = 'oec_docentes_v2_' . md5( (string) ( $meta['finished_at'] ?? '' ) . current_time( 'Y-m-d' ) );
+	$key  = 'oec_docentes_v3_' . md5( (string) ( $meta['finished_at'] ?? '' ) . current_time( 'Y-m-d' ) );
 	$hit  = get_transient( $key );
 	if ( is_array( $hit ) ) {
 		return $hit;
@@ -38,20 +42,21 @@ function oec_docentes_catalog(): array {
 
 	$hoy      = current_time( 'Y-m-d' );
 	$abiertas = [];
-	foreach ( OEC_AI_Catalog::get_index() as $f ) {
+	foreach ( OEC_AI_Catalog::get_index( true ) as $f ) {
 		if ( ( $f['enrollment_end'] ?? '' ) >= $hoy ) {
 			$abiertas[ $f['id'] ] = true;
 		}
 	}
 
 	$docentes = [];
-	foreach ( OEC_AI_Catalog::get_history_index() as $h ) {
+	foreach ( OEC_AI_Catalog::get_history_index( true ) as $h ) {
 		$f = OEC_AI_Catalog::get_formation( (string) $h['id'] );
 		if ( ! $f ) {
 			continue;
 		}
 		$abierta   = isset( $abiertas[ $f['id'] ] );
-		$f_slug    = basename( (string) wp_parse_url( $f['url'] ?? '', PHP_URL_PATH ) );
+		$f_slug    = oec_formation_slug( $f );
+		$primary   = oec_formation_is_primary( $f );
 		$formacion = [
 			'id'             => $f['id'],
 			'title'          => $f['title'] ?? '',
@@ -60,6 +65,8 @@ function oec_docentes_catalog(): array {
 			'image'          => $f['image'] ?? '',
 			'enrollment_end' => $f['enrollment_end'] ?? '',
 			'open'           => $abierta,
+			'community'      => $f['community'] ?? '',
+			'primary'        => $primary,
 		];
 
 		foreach ( $f['teachers'] ?? [] as $t ) {
@@ -79,7 +86,8 @@ function oec_docentes_catalog(): array {
 				'alumnos'     => 0,
 				'tags'        => [],
 				'items'       => [], // formaciones (abiertas + cerradas)
-				'next'        => null, // [enrollment_end, slug] de la abierta que cierra primero
+				'next'        => null, // [enrollment_end, slug] de la abierta (de este sitio) que cierra primero
+				'primary'     => 0,    // cuántas son del token principal
 			];
 			$bio              = oec_docente_clean_bio( (string) ( $t['bio'] ?? '' ) );
 			$d['photo']       = $d['photo'] ?: (string) ( $t['photo'] ?? '' );
@@ -90,13 +98,15 @@ function oec_docentes_catalog(): array {
 			$d['alumnos']    += (int) ( $f['total_students'] ?? 0 );
 			$d['tags']        = array_values( array_unique( array_merge( $d['tags'], $f['tags'] ?? [] ) ) );
 			$d['items'][]     = $formacion;
-			if ( $abierta && $f_slug && ( ! $d['next'] || $formacion['enrollment_end'] < $d['next'][0] ) ) {
+			$d['primary']    += (int) $primary;
+			if ( $abierta && $f_slug && ! oec_formation_is_external( $formacion ) && ( ! $d['next'] || $formacion['enrollment_end'] < $d['next'][0] ) ) {
 				$d['next'] = [ $formacion['enrollment_end'], $f_slug ];
 			}
 			$docentes[ $slug ] = $d;
 		}
 	}
 
+	$docentes = array_filter( $docentes, fn( $d ) => $d['primary'] > 0 );
 	set_transient( $key, $docentes, 12 * HOUR_IN_SECONDS );
 	return $docentes;
 }

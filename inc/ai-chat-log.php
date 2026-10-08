@@ -264,7 +264,7 @@ class OEC_AI_Chat_Log {
 	/** id de formación → título, desde el catálogo (abiertas + cerradas). */
 	private static function titles_by_id(): array {
 		$titles = [];
-		foreach ( OEC_AI_Catalog::get_listing() as $r ) {
+		foreach ( OEC_AI_Catalog::get_listing( true ) as $r ) {
 			$titles[ $r['id'] ] = $r['title'];
 		}
 		return $titles;

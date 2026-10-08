@@ -191,7 +191,7 @@ function oec_llms_site(): string {
 	$desc  = wp_strip_all_tags( get_bloginfo( 'description' ) );
 	$page  = fn( string $slug ) => ( $p = get_page_by_path( $slug ) ) && 'publish' === $p->post_status ? get_permalink( $p ) : '';
 	$has   = class_exists( 'OEC_AI_Catalog' );
-	$rows  = $has ? OEC_AI_Catalog::get_listing() : [];
+	$rows  = $has ? array_values( array_filter( OEC_AI_Catalog::get_listing(), fn( $r ) => ! oec_formation_is_external( $r ) ) ) : [];
 	$open  = array_values( array_filter( $rows, fn( $r ) => $r['open'] ) );
 	$orgs  = $has ? OEC_AI_Catalog::get_organizations( 1 ) : [];
 	$docs  = function_exists( 'oec_docentes_catalog' ) ? oec_docentes_catalog() : [];

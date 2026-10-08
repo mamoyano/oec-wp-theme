@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.109
+Version: 1.0.110
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -624,6 +624,45 @@ section { padding-block: 4rem; }
 .oec-card:hover         { border-color: var(--color-accent) !important; }
 .oec-badge-item         { border-left-color: var(--color-accent) !important; }
 .oec-btn-fake           { border-radius: var(--radius) !important; font-family: var(--font-base) !important; }
+.oec-btn-fake .bi-box-arrow-up-right { margin-left: .3em; font-size: .85em; }
+
+/* ── Formación de otra comunidad (inc/communities.php) ──────
+   Logo chico y redondo de la comunidad + dominio + ícono de link externo. */
+.oec-community {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  max-width: 100%;
+  padding: .2rem .55rem .2rem .2rem;
+  border-radius: 999px;
+  background: var(--color-white);
+  color: var(--color-dark);
+  font-size: .6875rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(var(--color-shadow-rgb), .18);
+}
+.oec-community img.oec-community__logo {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--color-white);
+}
+.oec-community__name { overflow: hidden; text-overflow: ellipsis; }
+.oec-community .bi { font-size: .625rem; opacity: .7; }
+/* Sobre la foto de la card (oec-card, org-formation-card) */
+.oec-image-wrapper,
+.org-formation-card__thumb { position: relative; }
+.oec-community--card { position: absolute; right: .5rem; bottom: .5rem; z-index: 2; max-width: calc(100% - 1rem); }
+/* Dentro de un texto (listas de docente): solo logo + ícono */
+.oec-community--inline { margin-left: .4rem; padding: 0; background: none; box-shadow: none; vertical-align: -.3em; gap: .25rem; }
+.oec-community--inline img.oec-community__logo { width: 18px; height: 18px; }
+.oec-community--inline .oec-community__name { display: none; }
+.org-formation-card__body > .oec-community { align-self: flex-start; }
 .oec-scroll-arrow:hover { background: var(--color-accent) !important; }
 .resultados-info        { font-family: var(--font-base) !important; }
 .btn-filtros-movil      { border-radius: var(--radius) !important; font-family: var(--font-base) !important; }
@@ -1601,6 +1640,17 @@ body.oec-chat-open { overflow: hidden; }
   font-size: .75rem;
   color: rgba(var(--color-white-rgb),.4);
 }
+.oec-community--chat {
+  align-self: flex-start;
+  margin-top: .3rem;
+  padding: .15rem .45rem .15rem .15rem;
+  background: rgba(var(--color-white-rgb), .1);
+  color: rgba(var(--color-white-rgb), .75);
+  box-shadow: none;
+  font-size: .625rem;
+}
+.oec-community--chat img.oec-community__logo { width: 16px; height: 16px; }
+.oec-msg--assistant .oec-inline-card .oec-community--chat { margin-top: .4rem; }
 .oec-course-card__arrow {
   flex-shrink: 0;
   color: rgba(var(--color-white-rgb),.25);

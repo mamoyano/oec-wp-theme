@@ -12,7 +12,8 @@ defined( 'ABSPATH' ) || exit;
    Los parámetros de la URL son los mismos que usaba el plugin
    (oec_subject, oec_type, oec_sync, oec_modality, oec_month,
    oec_enrollment, oec_order), así siguen andando los links que ya hay
-   en el sitio, en los mails y en Google. Nuevo: ?q= (búsqueda).
+   en el sitio, en los mails y en Google. Nuevo: ?q= (búsqueda) y
+   ?oec_community= (comunidad, si hay tokens secundarios).
    La página va en la ruta, igual que en /articulos: /formaciones/page/N.
    El ?oec_pg=N viejo del plugin redirige (301) a esa URL.
    ============================================================ */
@@ -25,7 +26,11 @@ const OEC_FORMACIONES_POR_PAGINA = 12;
  * esta). Temática: mismos slugs que OEC_AI_Catalog::TEMATICA_SLUGS.
  */
 function oec_formaciones_grupos(): array {
-	return [
+	static $grupos = null;
+	if ( null !== $grupos ) {
+		return $grupos;
+	}
+	$grupos = [
 		'tematica'    => [
 			'param'   => 'oec_subject',
 			'label'   => __( 'Temática', 'oec-theme' ),
@@ -87,6 +92,35 @@ function oec_formaciones_grupos(): array {
 			],
 		],
 	];
+	// Comunidad: solo si el listado trae formaciones de más de una (tokens secundarios).
+	$comunidades = oec_formaciones_comunidades();
+	if ( count( $comunidades ) > 1 ) {
+		$grupos = array_slice( $grupos, 0, 1, true ) + [
+			'comunidad' => [
+				'param'   => 'oec_community',
+				'label'   => __( 'Comunidad', 'oec-theme' ),
+				'options' => array_combine( $comunidades, $comunidades ),
+			],
+		] + $grupos;
+	}
+	return $grupos;
+}
+
+/** Comunidad de una fila del listado ("swimming.science"); sin "community", la de este sitio. */
+function oec_formaciones_comunidad( array $r ): string {
+	return oec_community_host( (string) ( $r['community'] ?? '' ) ) ?: oec_site_community_host();
+}
+
+/** Comunidades del listado: la de este sitio primero, después las demás por cantidad. */
+function oec_formaciones_comunidades(): array {
+	$n = [];
+	foreach ( class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_listing( true ) : [] as $r ) {
+		$c       = oec_formaciones_comunidad( $r );
+		$n[ $c ] = ( $n[ $c ] ?? 0 ) + 1;
+	}
+	arsort( $n );
+	$site = oec_site_community_host();
+	return array_values( array_unique( array_merge( isset( $n[ $site ] ) ? [ $site ] : [], array_keys( $n ) ) ) );
 }
 
 /** Opciones de orden (oec_order). '' = orden sugerido por la API (o relevancia, si hay búsqueda). */
@@ -192,7 +226,7 @@ add_filter( 'get_canonical_url', function ( $url, $post ) {
 		return $url;
 	}
 	$estado = oec_formaciones_estado();
-	if ( $estado['pg'] > 1 && oec_formaciones_url( [ 'pg' => $estado['pg'] ] ) === oec_formaciones_url( [ 'pg' => $estado['pg'], 'tematica' => [], 'tipo' => '', 'inscripcion' => '', 'mes' => '', 'sync' => '', 'modalidad' => '', 'orden' => '', 'q' => '' ] ) ) {
+	if ( $estado['pg'] > 1 && oec_formaciones_url( [ 'pg' => $estado['pg'] ] ) === oec_formaciones_url( [ 'pg' => $estado['pg'], 'tematica' => [], 'comunidad' => '', 'tipo' => '', 'inscripcion' => '', 'mes' => '', 'sync' => '', 'modalidad' => '', 'orden' => '', 'q' => '' ] ) ) {
 		return oec_formaciones_url( [ 'pg' => $estado['pg'] ] );
 	}
 	return $url;
@@ -233,6 +267,8 @@ function oec_formaciones_cumple( array $r, string $grupo, $valor ): bool {
 	switch ( $grupo ) {
 		case 'tematica':
 			return (bool) array_intersect( (array) $valor, $r['tematicas'] ?? [] );
+		case 'comunidad':
+			return oec_formaciones_comunidad( $r ) === $valor;
 		case 'tipo':
 			return 0 === strcasecmp( $r['type'] ?? '', $valor );
 		case 'inscripcion':
@@ -259,7 +295,8 @@ function oec_formaciones_cumple( array $r, string $grupo, $valor ): bool {
  *            opción con el resto de los filtros (y la búsqueda) activos.
  */
 function oec_formaciones_query( array $estado ): array {
-	$rows   = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_listing() : [];
+	// Token principal + secundarios: las de otras comunidades van con su logo (oec_formacion_card()).
+	$rows   = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_listing( true ) : [];
 	$grupos = oec_formaciones_grupos();
 	$words  = array_filter( explode( ' ', oec_search_normalize( $estado['q'] ) ) );
 
