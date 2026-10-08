@@ -14,10 +14,11 @@ defined( 'ABSPATH' ) || exit;
       Lo arma [oec-imperdible], solo en las temáticas con muchas formaciones.
    Todo sale del catálogo sincronizado (OEC_AI_Catalog), sin API en vivo.
 
-   La foto del docente "presentando" la formación es un recorte sin fondo
-   en assets/img/docentes/{slug-del-docente}.webp (el slug de
-   oec_docente_slug(): "francis-holway"). Si no hay recorte, va la foto
-   del catálogo, en un círculo.
+   Solo usa imágenes que ya vienen en el catálogo: la portada de la
+   formación (una panorámica 4:1) y la foto de cada docente, que puede ser
+   de cualquier encuadre y con fondo — por eso van recortadas en círculos o
+   tarjetas, todas del mismo tamaño: si son dos o tres docentes, ninguno
+   aparece por encima de los otros.
    ============================================================ */
 
 /**
@@ -63,7 +64,7 @@ function oec_destacada_datos( array $r, array $f ): array {
 	// 7.000 alumnos no tapen del todo a las de 100; la calificación ajusta.
 	$peso = round( max( $alumnos, 10 ) ** 0.6 * ( $prom ?: 4.5 ) / 5, 2 );
 
-	// Docentes: el primero con recorte (o, si no, con foto) es quien "presenta".
+	// Docentes, en el orden de la ficha.
 	$docentes = [];
 	foreach ( $f['teachers'] ?? [] as $t ) {
 		$slug = oec_docente_slug( (string) ( $t['name'] ?? '' ) );
@@ -75,10 +76,9 @@ function oec_destacada_datos( array $r, array $f ): array {
 			'name'    => oec_destacada_nombre( (string) $t['name'] ),
 			'bio'     => oec_destacada_recortar( oec_destacada_bio( (string) ( $t['bio'] ?? '' ) ), 280 ),
 			'photo'   => (string) ( $t['photo'] ?? '' ),
-			'recorte' => oec_docente_recorte( $slug ),
+			'area'    => trim( (string) ( $t['background'] ?? '' ) ),
 		];
 	}
-	usort( $docentes, fn( $a, $b ) => [ '' === $a['recorte'], '' === $a['photo'] ] <=> [ '' === $b['recorte'], '' === $b['photo'] ] );
 
 	// Opiniones: 5 estrellas, con algo para decir pero sin ser un testamento.
 	// La foto viene como ruta del campus (mismo criterio que inc/opiniones.php):
@@ -118,14 +118,11 @@ function oec_destacada_datos( array $r, array $f ): array {
 		'docentes'       => $docentes,
 		'opiniones'      => $opiniones,
 		'objetivos'      => oec_destacada_objetivos( (string) ( $f['objectives'] ?? '' ) ),
+		// Para las fichas sin objetivos: de qué se trata y para quién es.
+		'resumen'        => oec_destacada_recortar( oec_destacada_espacios( (string) ( $r['description'] ?? '' ) ), 340 ),
+		'para_quien'     => oec_destacada_recortar( oec_destacada_espacios( (string) ( $f['target_audience'] ?? '' ) ), 220 ),
 		'peso'           => $peso,
 	];
-}
-
-/** Recorte sin fondo del docente (assets/img/docentes/{slug}.webp), o ''. */
-function oec_docente_recorte( string $slug ): string {
-	$file = '/assets/img/docentes/' . $slug . '.webp';
-	return file_exists( OEC_THEME_DIR . $file ) ? OEC_THEME_URI . $file . '?v=' . OEC_THEME_VERSION : '';
 }
 
 /** "Prof. Diego A. Bonilla Ocampo , MSc" → "Diego A. Bonilla Ocampo"; MAYÚSCULAS → Nombre Propio. */
@@ -139,7 +136,17 @@ function oec_destacada_nombre( string $name ): string {
 function oec_destacada_bio( string $bio ): string {
 	$bio = oec_docente_clean_text( $bio );
 	$bio = preg_replace( '/\s*(?:seguir|seguime|seguilo|seguila|follow)\s+(?:en|on)\s+(?:instagram|twitter|x|linkedin|facebook|youtube|tiktok)\.?/iu', '', $bio );
-	return trim( preg_replace( '/(\p{Ll}[.!?])(?=\p{Lu}\p{Ll})/u', '$1 ', (string) $bio ) );
+	// Los renglones de la ficha llegan pegados ("Buenos AiresMagíster"): un
+	// separador donde termina una palabra en minúscula y arranca otra con
+	// mayúscula (dos minúsculas antes, para no partir "McGregor"; o una
+	// sigla: "ISAKProfesional").
+	$bio = preg_replace( '/(?:(?<=\p{Ll}{2})|(?<=\p{Lu}{3}))(?=\p{Lu}\p{Ll})/u', ' · ', (string) $bio );
+	return trim( oec_destacada_espacios( (string) $bio ) );
+}
+
+/** "deportista.Después" → "deportista. Después" (oraciones pegadas en los textos de la ficha). */
+function oec_destacada_espacios( string $text ): string {
+	return (string) preg_replace( '/(\p{Ll}[.!?:])(?=\p{Lu}\p{Ll})/u', '$1 ', $text );
 }
 
 /** Corta en el último espacio antes de $max y agrega "…". */
@@ -198,23 +205,54 @@ function oec_destacada_fecha_txt( array $d ): string {
 	return sprintf( __( 'Inscripción abierta hasta el %s', 'oec-theme' ), $fecha );
 }
 
-/** Foto del docente que presenta: el recorte, o la del catálogo. */
-function oec_destacada_foto( array $d, int $w, bool $lazy_src ): string {
-	$doc = $d['docentes'][0] ?? null;
-	if ( ! $doc || ( '' === $doc['recorte'] && '' === $doc['photo'] ) ) {
+/**
+ * Portada de la formación (la misma imagen que las cards, por imgrsize, que
+ * elige AVIF/WebP). $lazy: con data-src en vez de src — la pone el JS al
+ * mostrarla (las destacadas del hero que no salen, el aviso de salida).
+ */
+function oec_destacada_portada( array $d, int $w, string $loading = 'lazy' ): string {
+	if ( ! $d['image'] ) {
 		return '';
 	}
-	$src  = $doc['recorte'] ?: oec_docente_photo_url( $doc['photo'], $w );
-	$attr = $lazy_src ? 'data-src' : 'src';
+	$src = 'https://imgrsize.oe-img.center/campus/capacitacion/imagen/' . basename( (string) wp_parse_url( $d['image'], PHP_URL_PATH ) ) . '?w=' . $w . '&q=80';
 	return sprintf(
-		'<img %1$s="%2$s" alt="%3$s" width="%4$d" height="%5$d" decoding="async"%6$s>',
-		$attr,
+		'<img %1$s="%2$s" alt="" width="1200" height="300" decoding="async"%3$s>',
+		'data' === $loading ? 'data-src' : 'src',
 		esc_url( $src ),
-		esc_attr( $doc['name'] ),
-		$doc['recorte'] ? 800 : 480,
-		$doc['recorte'] ? 1000 : 600,
-		$lazy_src ? '' : ' loading="lazy"'
+		'lazy' === $loading ? ' loading="lazy"' : ''
 	);
+}
+
+/**
+ * Fotos de los docentes (hasta $max, todas iguales) + "+N" si hay más.
+ * Sin foto, un círculo con las iniciales.
+ */
+function oec_destacada_caras( array $d, string $class, int $w, int $max = 3, string $loading = 'lazy' ): string {
+	$docs = $d['docentes'];
+	if ( ! $docs ) {
+		return '';
+	}
+	$out = '';
+	foreach ( array_slice( $docs, 0, $max ) as $doc ) {
+		if ( $doc['photo'] ) {
+			$out .= sprintf(
+				'<span class="%1$s__cara"><img %2$s="%3$s" alt="%4$s" title="%4$s" width="%5$d" height="%5$d" decoding="async"%6$s></span>',
+				esc_attr( $class ),
+				'data' === $loading ? 'data-src' : 'src',
+				esc_url( oec_docente_photo_url( $doc['photo'], $w ) ),
+				esc_attr( $doc['name'] ),
+				$w,
+				'lazy' === $loading ? ' loading="lazy"' : ''
+			);
+		} else {
+			$ini  = implode( '', array_map( fn( $p ) => mb_substr( $p, 0, 1 ), array_slice( preg_split( '/\s+/u', $doc['name'] ) ?: [], 0, 2 ) ) );
+			$out .= '<span class="' . esc_attr( $class ) . '__cara ' . esc_attr( $class ) . '__cara--ini" title="' . esc_attr( $doc['name'] ) . '">' . esc_html( mb_strtoupper( $ini ) ) . '</span>';
+		}
+	}
+	if ( count( $docs ) > $max ) {
+		$out .= '<span class="' . esc_attr( $class ) . '__cara ' . esc_attr( $class ) . '__cara--mas">+' . ( count( $docs ) - $max ) . '</span>';
+	}
+	return '<div class="' . esc_attr( $class ) . '" data-n="' . min( count( $docs ), $max ) . '">' . $out . '</div>';
 }
 
 /** "★ 4,9 · 2.169 opiniones" — "7.155 alumnos" — "22ª edición". */
@@ -235,8 +273,8 @@ function oec_destacada_stats( array $d, string $class ): string {
 /**
  * [oec-estrella tematica="nutricion-deportiva" max="6"]
  *
- * Tarjeta del hero de la landing: el docente presentando una formación
- * destacada de la temática. Salen hasta "max" (las de más peso); main.js
+ * Tarjeta del hero de la landing: portada de una formación destacada de la
+ * temática, con sus docentes "presentándola". Salen hasta "max" (las de más peso); main.js
  * elige una al azar según data-peso y deja las flechas para pasar a las
  * otras. Todas ocupan la misma celda de la grilla, así cambiar de una a
  * otra no mueve la página. Sin destacadas, no sale nada (y el hero queda
@@ -257,18 +295,18 @@ function oec_render_estrella_shortcode( $atts ): string {
 	<div class="oec-estrella" data-oec-estrella>
 		<div class="oec-estrella__stack">
 		<?php foreach ( $items as $i => $d ) :
-			$doc     = $d['docentes'][0] ?? null;
-			$recorte = $doc && '' !== $doc['recorte'];
+			$carga   = 0 === $i ? 'eager' : 'data';
 			$quien   = oec_destacada_docentes_txt( $d );
 			$quote   = $d['opiniones'][0] ?? null;
 			$fecha   = oec_destacada_fecha_txt( $d );
 			?>
-			<article class="oec-estrella__item<?php echo $recorte ? ' oec-estrella__item--recorte' : ''; ?><?php echo 0 === $i ? ' is-active' : ''; ?>" data-peso="<?php echo esc_attr( $d['peso'] ); ?>" data-cierre="<?php echo esc_attr( $d['cierre'] ); ?>"<?php echo 0 === $i ? '' : ' aria-hidden="true"'; ?>>
-				<?php if ( $doc ) : ?>
-				<div class="oec-estrella__foto"><?php echo oec_destacada_foto( $d, 240, 0 !== $i ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></div>
-				<?php endif; ?>
-				<div class="oec-estrella__body">
+			<article class="oec-estrella__item<?php echo 0 === $i ? ' is-active' : ''; ?>" data-peso="<?php echo esc_attr( $d['peso'] ); ?>" data-cierre="<?php echo esc_attr( $d['cierre'] ); ?>"<?php echo 0 === $i ? '' : ' aria-hidden="true"'; ?>>
+				<div class="oec-estrella__portada">
+					<?php echo oec_destacada_portada( $d, 800, $carga ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					<span class="oec-estrella__kicker"><i class="bi bi-stars" aria-hidden="true"></i> <?php esc_html_e( 'Imperdible', 'oec-theme' ); ?></span>
+				</div>
+				<div class="oec-estrella__body">
+					<?php echo oec_destacada_caras( $d, 'oec-estrella__caras', 144, 3, $carga ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 					<?php if ( $quien ) : ?>
 					<p class="oec-estrella__presenta"><?php echo esc_html( sprintf( count( $d['docentes'] ) > 1 ? __( '%s te presentan', 'oec-theme' ) : __( '%s te presenta', 'oec-theme' ), $quien ) ); ?></p>
 					<?php endif; ?>
@@ -310,11 +348,11 @@ function oec_render_estrella_shortcode( $atts ): string {
 		function show(i) {
 			cur = (i + items.length) % items.length;
 			items.forEach(function (it, j) {
-				var on = j === cur, img = it.querySelector('img[data-src]');
+				var on = j === cur;
 				it.classList.toggle('is-active', on);
 				on ? it.removeAttribute('aria-hidden') : it.setAttribute('aria-hidden', 'true');
 				it.querySelectorAll('a').forEach(function (a) { a.tabIndex = on ? 0 : -1; });
-				if (on && img) { img.src = img.dataset.src; img.removeAttribute('data-src'); }
+				if (on) it.querySelectorAll('img[data-src]').forEach(function (img) { img.src = img.dataset.src; img.removeAttribute('data-src'); });
 			});
 			if (n) n.textContent = cur + 1;
 		}
@@ -336,8 +374,8 @@ function oec_render_estrella_shortcode( $atts ): string {
  * [oec-imperdible tematica="nutricion-deportiva" formacion="" antes-de-irte="30"]
  *
  * Sección fija para la destacada número 1 de la temática (o la del slug de
- * "formacion", para elegirla a mano): el docente, por qué hacerla, qué
- * dicen los alumnos. Si la temática tiene al menos "antes-de-irte"
+ * "formacion", para elegirla a mano): portada, docentes (todos iguales),
+ * por qué hacerla, qué dicen los alumnos. Si la temática tiene al menos "antes-de-irte"
  * formaciones abiertas, agrega el aviso de salida (0 = nunca).
  */
 add_shortcode( 'oec-imperdible', 'oec_render_imperdible_shortcode' );
@@ -353,9 +391,9 @@ function oec_render_imperdible_shortcode( $atts ): string {
 		return oec_destacada_vacia();
 	}
 
-	$doc     = $d['docentes'][0] ?? null;
-	$recorte = $doc && '' !== $doc['recorte'];
 	$nombre  = oec_destacada_tematica_nombre( $tematica );
+	$n_docs  = count( $d['docentes'] );
+	$bio_max = [ 1 => 300, 2 => 150 ][ $n_docs ] ?? 0; // con tres o más, solo nombre y especialidad
 	$fecha   = oec_destacada_fecha_txt( $d );
 
 	// ¿Es la más elegida de la temática? (entre todas las abiertas, no solo las destacadas)
@@ -367,28 +405,46 @@ function oec_render_imperdible_shortcode( $atts ): string {
 
 	ob_start();
 	?>
-	<div class="oec-imperdible<?php echo $recorte ? ' oec-imperdible--recorte' : ''; ?>" data-oec-imperdible data-cierre="<?php echo esc_attr( $d['cierre'] ); ?>">
-		<?php if ( $doc ) : ?>
-		<div class="oec-imperdible__media">
-			<div class="oec-imperdible__foto"><?php echo oec_destacada_foto( $d, 480, false ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></div>
-			<?php if ( $d['alumnos'] > 0 ) : ?>
-			<div class="oec-imperdible__chip oec-imperdible__chip--a"><strong><?php echo esc_html( number_format_i18n( $d['alumnos'] ) ); ?></strong> <?php esc_html_e( 'alumnos ya lo hicieron', 'oec-theme' ); ?></div>
-			<?php endif; ?>
-			<?php if ( $d['opiniones_n'] > 0 ) : ?>
-			<div class="oec-imperdible__chip oec-imperdible__chip--b"><i class="bi bi-star-fill" aria-hidden="true"></i> <strong><?php echo esc_html( number_format( $d['promedio'], 1, ',', '.' ) ); ?></strong> · <?php echo esc_html( sprintf( _n( '%s opinión', '%s opiniones', $d['opiniones_n'], 'oec-theme' ), number_format_i18n( $d['opiniones_n'] ) ) ); ?></div>
-			<?php endif; ?>
+	<div class="oec-imperdible" data-oec-imperdible data-cierre="<?php echo esc_attr( $d['cierre'] ); ?>">
+		<div class="oec-imperdible__portada">
+			<?php echo oec_destacada_portada( $d, 1280 ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
+		</div>
+		<div class="oec-imperdible__head">
+			<span class="oec-imperdible__eyebrow"><i class="bi bi-trophy-fill" aria-hidden="true"></i> <?php echo esc_html( $eyebrow ); ?></span>
+			<h2 class="oec-imperdible__title"><?php echo esc_html( $d['title'] ); ?></h2>
+		</div>
+		<?php if ( $d['docentes'] ) : ?>
+		<div class="oec-imperdible__docentes" data-n="<?php echo (int) min( $n_docs, 3 ); ?>">
+			<?php foreach ( array_slice( $d['docentes'], 0, 3 ) as $doc ) : ?>
+			<figure class="oec-imperdible__docente">
+				<?php if ( $doc['photo'] ) : ?>
+				<div class="oec-imperdible__docente-foto"><img src="<?php echo esc_url( oec_docente_photo_url( $doc['photo'], 1 === $n_docs ? 520 : 360 ) ); ?>" alt="<?php echo esc_attr( $doc['name'] ); ?>" width="480" height="600" loading="lazy" decoding="async"></div>
+				<?php endif; ?>
+				<figcaption>
+					<strong><?php echo esc_html( $doc['name'] ); ?></strong>
+					<?php if ( $doc['area'] ) : ?><span class="oec-imperdible__docente-area"><?php echo esc_html( $doc['area'] ); ?></span><?php endif; ?>
+					<?php if ( $bio_max && $doc['bio'] ) : ?><span class="oec-imperdible__docente-bio"><?php echo esc_html( oec_destacada_recortar( $doc['bio'], $bio_max ) ); ?></span><?php endif; ?>
+				</figcaption>
+			</figure>
+			<?php endforeach; ?>
 		</div>
 		<?php endif; ?>
 		<div class="oec-imperdible__body">
-			<span class="oec-imperdible__eyebrow"><i class="bi bi-trophy-fill" aria-hidden="true"></i> <?php echo esc_html( $eyebrow ); ?></span>
-			<h2 class="oec-imperdible__title"><?php echo esc_html( $d['title'] ); ?></h2>
-			<?php if ( $doc ) : ?>
-			<p class="oec-imperdible__docente"><strong><?php echo esc_html( oec_destacada_docentes_txt( $d ) ); ?></strong><?php echo $doc['bio'] ? ' — ' . esc_html( $doc['bio'] ) : ''; ?></p>
-			<?php endif; ?>
+			<?php echo oec_destacada_stats( $d, 'oec-imperdible__stats' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<?php if ( $d['objetivos'] ) : ?>
+			<p class="oec-imperdible__sub"><?php esc_html_e( 'Qué te llevás', 'oec-theme' ); ?></p>
 			<ul class="oec-imperdible__puntos">
 				<?php foreach ( $d['objetivos'] as $o ) : ?><li><i class="bi bi-check-circle-fill" aria-hidden="true"></i> <?php echo esc_html( $o ); ?></li><?php endforeach; ?>
 			</ul>
+			<?php else : ?>
+				<?php if ( $d['resumen'] ) : ?>
+			<p class="oec-imperdible__sub"><?php esc_html_e( 'De qué se trata', 'oec-theme' ); ?></p>
+			<p class="oec-imperdible__texto"><?php echo esc_html( $d['resumen'] ); ?></p>
+				<?php endif; ?>
+				<?php if ( $d['para_quien'] ) : ?>
+			<p class="oec-imperdible__sub"><?php esc_html_e( 'Para quién es', 'oec-theme' ); ?></p>
+			<p class="oec-imperdible__texto"><?php echo esc_html( $d['para_quien'] ); ?></p>
+				<?php endif; ?>
 			<?php endif; ?>
 			<div class="oec-imperdible__actions">
 				<a class="oec-imperdible__cta" href="<?php echo esc_url( $d['url'] ); ?>"<?php echo $d['attrs']; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e( 'Conocé la formación', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
@@ -429,8 +485,9 @@ function oec_render_antes_de_irte( array $d ): string {
 	?>
 	<aside class="oec-antes-irte" data-oec-antes-irte data-slug="<?php echo esc_attr( $d['slug'] ); ?>" role="dialog" aria-labelledby="oec-antes-irte-t" hidden>
 		<button type="button" class="oec-antes-irte__close" data-oec-antes-irte-close aria-label="<?php esc_attr_e( 'Cerrar', 'oec-theme' ); ?>"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-		<div class="oec-antes-irte__foto"><?php echo oec_destacada_foto( $d, 160, true ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></div>
+		<div class="oec-antes-irte__portada"><?php echo oec_destacada_portada( $d, 480, 'data' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></div>
 		<div class="oec-antes-irte__body">
+			<?php echo oec_destacada_caras( $d, 'oec-antes-irte__caras', 96, 3, 'data' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<p class="oec-antes-irte__kicker"><?php esc_html_e( '¡Esperá! No te vayas sin mirar…', 'oec-theme' ); ?></p>
 			<p class="oec-antes-irte__t" id="oec-antes-irte-t"><?php echo esc_html( $d['title'] ); ?></p>
 			<?php echo oec_destacada_stats( $d, 'oec-antes-irte__stats' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>

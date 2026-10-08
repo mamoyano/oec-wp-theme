@@ -768,8 +768,7 @@
       try { sessionStorage.setItem(KEY, '1'); } catch (e) {}
       document.removeEventListener('mouseout', onOut);
       window.removeEventListener('scroll', onScroll);
-      const img = antes.querySelector('img[data-src]');
-      if (img) img.src = img.dataset.src;
+      antes.querySelectorAll('img[data-src]').forEach((img) => { img.src = img.dataset.src; });
       antes.hidden = false;
       void antes.offsetHeight; // aplica el estado inicial antes de animar la entrada
       antes.classList.add('is-open');
