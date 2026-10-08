@@ -53,7 +53,7 @@ $tipo_label   = $tipo_term ? ( $tipo_labels[ $tipo_term->slug ] ?? $tipo_term->n
 				<div class="post-card-tematicas">
 					<?php foreach ( array_slice( $tematicas, 0, 2 ) as $t ) : ?>
 					<a href="<?php echo esc_url( oec_articulos_url( [ 'tematica' => $t->slug ] ) ); ?>"
-					   class="art-tag-link"><?php echo esc_html( $t->name ); ?></a>
+					   class="art-tag-link" aria-label="<?php echo esc_attr( sprintf( __( 'Artículos de %s', 'oec-theme' ), $t->name ) ); ?>"><?php echo esc_html( $t->name ); ?></a>
 					<?php endforeach; ?>
 				</div>
 			</div>

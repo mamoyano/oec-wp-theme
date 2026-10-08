@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.117
+Version: 1.0.118
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -2418,9 +2418,10 @@ body.oec-chat-open { overflow: hidden; }
 }
 @media (max-width: 700px) {
   .oec-stats-bar--hero { row-gap: 1.25rem; }
-  .oec-stats-bar--hero .oec-stats-bar__item { padding-inline: 0 .75rem; }
+  /* Centradas, y la última (si quedan impares) sola en su fila, al medio. */
+  .oec-stats-bar--hero .oec-stats-bar__item { align-items: center; text-align: center; padding-inline: .5rem; }
   .oec-stats-bar--hero .oec-stats-bar__label { white-space: normal; }
-  .oec-stats-bar--hero .oec-stats-bar__item:last-child:nth-child(odd) { grid-column: auto; }
+  .oec-stats-bar--hero .oec-stats-bar__item:last-child:nth-child(odd) { grid-column: 1 / -1; }
 }
 
 /* Hero de landing temática (una columna centrada, sin grid): las stats van
@@ -4919,10 +4920,9 @@ body.oec-chat-open { overflow: hidden; }
    la tarjeta y los números de abajo. */
 @media (max-width: 900px) { .oec-estrella { margin: 24px 0 16px; } }
 @media (max-width: 560px) {
-  /* Una sola en el flujo: apiladas, todas medían lo que la más alta. La
-     elección inicial es antes del primer pintado, así que cambiar de alto
-     solo pasa al tocar las flechas. */
-  .oec-estrella__item:not(.is-active) { display: none; }
+  /* Como en desktop, todas en la misma celda con el alto de la más alta:
+     antes, en celular, solo la activa ocupaba lugar y al pasar de una a
+     otra cambiaba el alto y las flechas se movían. */
   .oec-estrella__portada { aspect-ratio: 3 / 1; }
   .oec-estrella__body { padding: 0 20px 20px; }
   .oec-estrella__caras__cara { width: 72px; height: 72px; }

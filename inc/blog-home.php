@@ -149,7 +149,7 @@ function oec_render_blog_shortcode( $atts ): string {
 					<?php if ( $d_temas ) : ?>
 					<div class="oec-blog__tags">
 						<?php foreach ( array_slice( $d_temas, 0, 3 ) as $t ) : ?>
-						<a class="art-tag-link" href="<?php echo esc_url( oec_articulos_url( [ 'tematica' => $t->slug ] ) ); ?>"><?php echo esc_html( $t->name ); ?></a>
+						<a class="art-tag-link" href="<?php echo esc_url( oec_articulos_url( [ 'tematica' => $t->slug ] ) ); ?>" aria-label="<?php echo esc_attr( sprintf( __( 'Artículos de %s', 'oec-theme' ), $t->name ) ); ?>"><?php echo esc_html( $t->name ); ?></a>
 						<?php endforeach; ?>
 					</div>
 					<?php endif; ?>

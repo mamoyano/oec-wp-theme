@@ -596,7 +596,8 @@ function oec_render_hero_video_shortcode( $atts ): string {
 	$first = $items[0];
 
 	return sprintf(
-		'<video class="oec-tematica-hero__video" muted playsinline%1$s preload="none" poster="%2$s" data-oec-src="%3$s"%4$s></video>',
+		// Decorativo y sin sonido: aria-hidden, que no lo anuncien los lectores de pantalla.
+		'<video class="oec-tematica-hero__video" muted playsinline aria-hidden="true"%1$s preload="none" poster="%2$s" data-oec-src="%3$s"%4$s></video>',
 		$rota ? '' : ' loop',
 		esc_url( $first['image'] ?? '' ),
 		esc_url( $first['video'] ),

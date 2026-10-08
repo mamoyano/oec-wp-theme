@@ -486,7 +486,7 @@ function oec_render_imperdible_shortcode( $atts ): string {
 function oec_render_antes_de_irte( array $d ): string {
 	ob_start();
 	?>
-	<aside class="oec-antes-irte" data-oec-antes-irte data-slug="<?php echo esc_attr( $d['slug'] ); ?>" role="dialog" aria-labelledby="oec-antes-irte-t" hidden>
+	<div class="oec-antes-irte" data-oec-antes-irte data-slug="<?php echo esc_attr( $d['slug'] ); ?>" role="dialog" aria-labelledby="oec-antes-irte-t" hidden>
 		<button type="button" class="oec-antes-irte__close" data-oec-antes-irte-close aria-label="<?php esc_attr_e( 'Cerrar', 'oec-theme' ); ?>"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
 		<div class="oec-antes-irte__portada"><?php echo oec_destacada_portada( $d, 480, 'data' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></div>
 		<div class="oec-antes-irte__body">
@@ -496,7 +496,7 @@ function oec_render_antes_de_irte( array $d ): string {
 			<?php echo oec_destacada_stats( $d, 'oec-antes-irte__stats' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<a class="oec-antes-irte__cta" href="<?php echo esc_url( $d['url'] ); ?>"<?php echo $d['attrs']; // phpcs:ignore WordPress.Security.EscapeOutput ?>><?php esc_html_e( 'Echale un vistazo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
 		</div>
-	</aside>
+	</div>
 	<?php
 	return ob_get_clean();
 }
