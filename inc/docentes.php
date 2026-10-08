@@ -153,6 +153,15 @@ function oec_docente_clean_bio( string $bio ): string {
 	return trim( (string) $bio );
 }
 
+/**
+ * srcset de la foto (240/360/480/640 px de ancho): con "sizes", el navegador
+ * baja la justa para el ancho en pantalla en vez de siempre la de 480
+ * (PageSpeed: "imagen más grande de lo necesario").
+ */
+function oec_docente_photo_srcset( string $photo ): string {
+	return implode( ', ', array_map( fn( $w ) => oec_docente_photo_url( $photo, $w ) . ' ' . $w . 'w', [ 240, 360, 480, 640 ] ) );
+}
+
 /** Foto por el redimensionador de OEC (sale en AVIF/WebP según el navegador; q=75 pesa ~25 % menos que 85). */
 function oec_docente_photo_url( string $photo, int $w = 480 ): string {
 	return $photo
@@ -188,7 +197,7 @@ function oec_docente_card( array $d, int $i = 0, array $data = [], bool $show_op
 	ob_start();
 	?>
 	<a class="oec-docente" style="--i: <?php echo (int) $i; ?>;" href="<?php echo esc_url( oec_docente_url( $d['slug'] ) ); ?>"<?php echo $attrs; // phpcs:ignore WordPress.Security.EscapeOutput -- escapado arriba ?>>
-		<img class="oec-docente__photo" src="<?php echo esc_url( oec_docente_photo_url( $d['photo'] ) ); ?>" alt="<?php echo esc_attr( $d['name'] ); ?>" loading="lazy" decoding="async" width="480" height="600">
+		<img class="oec-docente__photo" src="<?php echo esc_url( oec_docente_photo_url( $d['photo'] ) ); ?>" srcset="<?php echo esc_attr( oec_docente_photo_srcset( $d['photo'] ) ); ?>" sizes="(max-width: 600px) 66vw, (max-width: 900px) 38vw, 240px" alt="<?php echo esc_attr( $d['name'] ); ?>" loading="lazy" decoding="async" width="480" height="600">
 		<span class="oec-docente__chip">
 			<?php echo esc_html( sprintf( _n( '%s formación', '%s formaciones', $d['formaciones'], 'oec-theme' ), number_format_i18n( $d['formaciones'] ) ) ); ?>
 		</span>

@@ -349,13 +349,29 @@ function oec_render_tira_shortcode( $atts ): string {
 			<?php foreach ( $rows as $r ) : ?>
 				<?php echo oec_formacion_card( $r, [ 'almanaque' => 'si' === $atts['almanaque'], 'countdown' => 'cierre' === $atts['orden'] ] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<?php endforeach; ?>
-			<?php if ( $more_url ) : ?><a class="oec-scroll-more" href="<?php echo esc_url( $more_url ); ?>" aria-label="<?php esc_attr_e( 'Ver todas', 'oec-theme' ); ?>"><i class="bi bi-arrow-right"></i></a><?php endif; ?>
+			<?php if ( $more_url ) : ?><a class="oec-scroll-more" href="<?php echo esc_url( $more_url ); ?>" aria-label="<?php echo esc_attr( oec_tira_more_label( $atts ) ); ?>"><i class="bi bi-arrow-right" aria-hidden="true"></i></a><?php endif; ?>
 		</div>
 		<button type="button" class="oec-scroll-arrow oec-scroll-arrow-right" aria-label="<?php esc_attr_e( 'Siguiente', 'oec-theme' ); ?>"><i class="bi bi-chevron-right"></i></button>
 	</div>
 </section>
 	<?php
 	return ob_get_clean();
+}
+
+/**
+ * Texto del link "ver todas" del final de la tira: distinto en cada una
+ * (varias en la misma página con el mismo texto y distinto destino es un
+ * aviso de accesibilidad de PageSpeed).
+ */
+function oec_tira_more_label( array $atts ): string {
+	if ( $atts['title'] ) {
+		return sprintf( __( 'Ver todas: %s', 'oec-theme' ), $atts['title'] );
+	}
+	return [
+		'cierre'      => __( 'Ver todos los cierres de inscripción', 'oec-theme' ),
+		'inicio'      => __( 'Ver todas las que empiezan pronto', 'oec-theme' ),
+		'publicacion' => __( 'Ver todas las novedades', 'oec-theme' ),
+	][ $atts['orden'] ] ?? __( 'Ver todas las formaciones', 'oec-theme' );
 }
 
 /* ── CSS/JS de las cards: son los del plugin (oec-formaciones.css/.js).

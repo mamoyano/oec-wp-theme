@@ -315,6 +315,30 @@ function oec_minify_css( string $css ): string {
 	return preg_replace_callback( '/\x00(\d+)\x00/', fn( $m ) => $strings[ (int) $m[1] ], $css );
 }
 
+/* ============================================================
+   12f. CSS DE LAS CARDS (plugin) EN LÍNEA
+       oec-formaciones.css (17 KB, 5 KB comprimido) era el segundo pedido
+       que bloquea el render en el home y las landings: va dentro del
+       <head>, minificado, y se ahorra un viaje al servidor antes del
+       primer pintado. Sus url() son absolutas, así que no se rompen.
+   ============================================================ */
+add_filter( 'style_loader_tag', function ( string $tag, string $handle ): string {
+	if ( 'oec-formaciones' !== $handle ) {
+		return $tag;
+	}
+	$file = WP_PLUGIN_DIR . '/oec-wordpress-plugin/css/oec-formaciones.css';
+	if ( ! is_readable( $file ) ) {
+		return $tag;
+	}
+	$key = 'oec_inline_cards_css_' . md5( $file . '|' . filemtime( $file ) );
+	$css = get_transient( $key );
+	if ( ! is_string( $css ) ) {
+		$css = oec_minify_css( (string) file_get_contents( $file ) );
+		set_transient( $key, $css, WEEK_IN_SECONDS );
+	}
+	return '' === $css ? $tag : "<style id='oec-formaciones-css'>" . str_ireplace( '</style', '<\/style', $css ) . "</style>\n";
+}, 10, 2 );
+
 function oec_min_stylesheet_uri(): string {
 	$src = get_stylesheet_directory() . '/style.css';
 	$dir = WP_CONTENT_DIR . '/uploads/oec-theme';

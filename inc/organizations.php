@@ -305,7 +305,7 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 					$al    = (int) ( $alumnos[ $o['slug'] ] ?? 0 );
 					$desc  = trim( (string) ( $det['short_description'] ?? '' ) );
 					?>
-				<article class="oec-orgs__panel" role="tabpanel" id="oec-org-panel-<?php echo (int) $i; ?>" aria-labelledby="oec-org-tab-<?php echo (int) $i; ?>"<?php echo $i ? ' hidden' : ''; ?>>
+				<div class="oec-orgs__panel" role="tabpanel" id="oec-org-panel-<?php echo (int) $i; ?>" aria-labelledby="oec-org-tab-<?php echo (int) $i; ?>"<?php echo $i ? ' hidden' : ''; ?>>
 					<div class="oec-orgs__top">
 						<a class="oec-orgs__logo" href="<?php echo esc_url( oec_organizacion_url( $o['slug'] ) ); ?>">
 							<img src="<?php echo esc_url( oec_cdn_resize( $o['logo'], 400, 90 ) ); ?>" alt="<?php echo esc_attr( $o['name'] ); ?>" loading="lazy" decoding="async">
@@ -350,7 +350,7 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 					<a class="btn oec-orgs__cta" href="<?php echo esc_url( oec_organizacion_url( $o['slug'] ) ); ?>">
 						<?php echo esc_html( sprintf( _n( 'Ver su formación', 'Ver sus %s formaciones', $cantidad( $o ), 'oec-theme' ), number_format_i18n( $cantidad( $o ) ) ) ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i>
 					</a>
-				</article>
+				</div>
 				<?php endforeach; ?>
 			</div>
 		</div>

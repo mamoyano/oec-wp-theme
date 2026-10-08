@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.113
+Version: 1.0.114
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -939,7 +939,9 @@ section { padding-block: 4rem; }
 
 .footer-brand__desc { font-size: .9375rem; color: rgba(var(--color-white-rgb),.5); line-height: 1.8; margin-top: 1rem; max-width: 300px; }
 
-.footer-col h4    { font-size: .8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: rgba(var(--color-white-rgb),.35); margin-bottom: 1.125rem; }
+/* h2 (antes h4): después de los h2 de la página, un h4 salteaba niveles. */
+.footer-col h2,
+.footer-col h4    { font-size: .8125rem; font-weight: 700; line-height: 1.4; text-transform: uppercase; letter-spacing: .06em; color: rgba(var(--color-white-rgb),.6); margin: 0 0 1.125rem; }
 .footer-col ul    { display: flex; flex-direction: column; gap: .5rem; list-style: none; padding: 0; margin: 0; }
 .footer-col ul li a { font-size: .9375rem; color: rgba(var(--color-white-rgb),.55); transition: color var(--transition); }
 .footer-col ul li a:hover { color: var(--color-accent); }
@@ -5061,3 +5063,12 @@ body.oec-chat-open { overflow: hidden; }
 .oec-suscribite li { display: flex; gap: 10px; }
 .oec-suscribite li i { color: var(--dest-acc); }
 @media (max-width: 900px) { .oec-suscribite { grid-template-columns: minmax(0, 1fr); gap: 28px; } }
+
+/* ============================================================
+   CARDS DE FORMACIÓN — contraste (los colores vienen del CSS del plugin,
+   oec-formaciones.css, con !important): los grises claros y el naranja
+   sobre el pie #fafafa no llegaban a 4,5:1 (PageSpeed, accesibilidad).
+   ============================================================ */
+.oec-card .oec-footer .fecha-etiqueta,
+.oec-card .oec-cd-label { color: #646970 !important; }
+.oec-card .oec-start-date.fecha-cierre .fecha-etiqueta { color: #b45309 !important; }

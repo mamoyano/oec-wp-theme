@@ -214,7 +214,9 @@
     }));
     track.addEventListener('scroll', update, { passive: true });
     window.addEventListener('resize', update);
-    update();
+    // En el próximo cuadro: medir scrollWidth recién después de reordenar las
+    // cards forzaba un reflow síncrono (PageSpeed: "reprocesamiento forzado").
+    requestAnimationFrame(update);
 
     if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       section.classList.add('js-reveal');

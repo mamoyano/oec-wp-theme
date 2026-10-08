@@ -99,7 +99,7 @@ $_socials = [
 
 				<!-- Columna Explorar -->
 				<nav class="footer-col" aria-label="<?php esc_attr_e( 'Navegación del pie', 'oec-theme' ); ?>">
-					<h4><?php esc_html_e( 'Explorar', 'oec-theme' ); ?></h4>
+					<h2><?php esc_html_e( 'Explorar', 'oec-theme' ); ?></h2>
 					<ul>
 						<?php foreach ( $_nav as [ $label, $url ] ) : ?>
 						<li><a href="<?php echo esc_url( $url ); ?>"><?php echo esc_html( $label ); ?></a></li>
@@ -110,7 +110,7 @@ $_socials = [
 				<!-- Columna Temáticas -->
 				<?php if ( ! empty( $_landings ) ) : ?>
 				<div class="footer-col">
-					<h4><?php esc_html_e( 'Temáticas', 'oec-theme' ); ?></h4>
+					<h2><?php esc_html_e( 'Temáticas', 'oec-theme' ); ?></h2>
 					<ul>
 						<?php foreach ( $_landings as $link ) :
 							$ext = $link['external'] ? ' target="_blank" rel="noopener noreferrer"' : ''; ?>
@@ -123,7 +123,7 @@ $_socials = [
 				<!-- Columna Información -->
 				<?php if ( ! empty( $_legal ) ) : ?>
 				<div class="footer-col">
-					<h4><?php esc_html_e( 'Información', 'oec-theme' ); ?></h4>
+					<h2><?php esc_html_e( 'Información', 'oec-theme' ); ?></h2>
 					<ul>
 						<?php foreach ( $_legal as $link ) :
 							$ext = $link['external'] ? ' target="_blank" rel="noopener noreferrer"' : ''; ?>

@@ -421,7 +421,7 @@ function oec_render_imperdible_shortcode( $atts ): string {
 			<?php foreach ( array_slice( $d['docentes'], 0, 3 ) as $doc ) : ?>
 			<figure class="oec-imperdible__docente">
 				<?php if ( $doc['photo'] ) : ?>
-				<div class="oec-imperdible__docente-foto"><img src="<?php echo esc_url( oec_docente_photo_url( $doc['photo'], 1 === $n_docs ? 520 : 360 ) ); ?>" alt="<?php echo esc_attr( $doc['name'] ); ?>" width="480" height="600" loading="lazy" decoding="async"></div>
+				<div class="oec-imperdible__docente-foto"><img src="<?php echo esc_url( oec_docente_photo_url( $doc['photo'], 420 ) ); ?>" srcset="<?php echo esc_attr( oec_docente_photo_srcset( $doc['photo'] ) ); ?>" sizes="<?php echo esc_attr( [ 1 => '(max-width: 900px) 120px, 220px', 2 => '(max-width: 900px) 45vw, 260px' ][ $n_docs ] ?? '(max-width: 900px) 30vw, 180px' ); ?>" alt="<?php echo esc_attr( $doc['name'] ); ?>" width="480" height="600" loading="lazy" decoding="async"></div>
 				<?php endif; ?>
 				<figcaption>
 					<strong><?php echo esc_html( $doc['name'] ); ?></strong>
@@ -458,7 +458,7 @@ function oec_render_imperdible_shortcode( $atts ): string {
 		<div class="oec-imperdible__opiniones">
 			<?php foreach ( $d['opiniones'] as $o ) : ?>
 			<figure class="oec-imperdible__opinion">
-				<div class="oec-imperdible__stars" aria-label="<?php esc_attr_e( '5 estrellas', 'oec-theme' ); ?>"><?php echo str_repeat( '<i class="bi bi-star-fill" aria-hidden="true"></i>', 5 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></div>
+				<div class="oec-imperdible__stars" role="img" aria-label="<?php esc_attr_e( '5 estrellas', 'oec-theme' ); ?>"><?php echo str_repeat( '<i class="bi bi-star-fill" aria-hidden="true"></i>', 5 ); // phpcs:ignore WordPress.Security.EscapeOutput ?></div>
 				<blockquote>“<?php echo esc_html( $o['comment'] ); ?>”</blockquote>
 				<figcaption>
 					<?php if ( $o['image'] ) : ?><img src="<?php echo esc_url( $o['image'] ); ?>" alt="" width="40" height="40" loading="lazy" decoding="async"><?php endif; ?>
