@@ -44,7 +44,11 @@ add_action( 'template_redirect', function (): void {
 		return;
 	}
 
-	$lang   = oec_root_preferred_lang();
+	$lang = oec_root_preferred_lang();
+	// Las comunidades chicas no tienen /en/: ahí todos van a /es/.
+	if ( 'es' !== $lang && ! get_sites( [ 'path' => "/{$lang}/", 'number' => 1, 'fields' => 'ids' ] ) ) {
+		$lang = 'es';
+	}
 	$target = home_url( "/{$lang}/" );
 
 	nocache_headers(); // Evita que el redirect quede cacheado para todos los visitantes.
