@@ -573,13 +573,15 @@ function oec_especiales_registradas(): array {
 }
 
 /**
- * [oec-hero-video tematica=""]
+ * [oec-hero-video tematica="" video="" poster=""]
  *
  * Video de fondo del hero, desde oec_get_especiales_list():
  * - con tematica: el video de esa landing, en loop.
  * - sin tematica (home): rota entre los videos de todas las landings. Sin
  *   "loop": al terminar uno, main.js pasa al siguiente ([data-oec-videos]).
  *   El primero cambia cada día, para que no arranque siempre igual.
+ * - con video (URL del .mp4, y poster opcional): ese video en loop. Para las
+ *   comunidades sin landings de temática (voley.org, etc.).
  *
  * El video (2–14 MB) no se pide con la página: sale solo el poster, que es
  * el LCP, y main.js le pone el src recién después del "load" — y nunca con
@@ -587,8 +589,8 @@ function oec_especiales_registradas(): array {
  */
 add_shortcode( 'oec-hero-video', 'oec_render_hero_video_shortcode' );
 function oec_render_hero_video_shortcode( $atts ): string {
-	$atts  = shortcode_atts( [ 'tematica' => '' ], $atts, 'oec-hero-video' );
-	$items = oec_hero_video_items( $atts['tematica'] );
+	$atts  = shortcode_atts( [ 'tematica' => '', 'video' => '', 'poster' => '' ], $atts, 'oec-hero-video' );
+	$items = oec_hero_video_items( $atts );
 	if ( ! $items ) {
 		return '';
 	}
@@ -606,7 +608,11 @@ function oec_render_hero_video_shortcode( $atts ): string {
 }
 
 /** Videos del hero en el orden en que se muestran (ver el shortcode). */
-function oec_hero_video_items( string $tematica ): array {
+function oec_hero_video_items( array $atts ): array {
+	if ( '' !== $atts['video'] ) {
+		return [ [ 'video' => $atts['video'], 'image' => $atts['poster'] ] ];
+	}
+	$tematica = (string) $atts['tematica'];
 	$items = array_values( array_filter( oec_get_especiales_list(), fn( $it ) => ! empty( $it['video'] ) ) );
 	if ( '' !== $tematica ) {
 		return array_values( array_filter( $items, fn( $it ) => $it['tematica'] === $tematica ) );
@@ -626,8 +632,8 @@ add_action( 'wp_head', function (): void {
 		|| ! preg_match( '/' . get_shortcode_regex( [ 'oec-hero-video' ] ) . '/', $post->post_content, $m ) ) {
 		return;
 	}
-	$atts  = shortcode_atts( [ 'tematica' => '' ], shortcode_parse_atts( $m[3] ) ?: [] );
-	$items = oec_hero_video_items( (string) $atts['tematica'] );
+	$atts  = shortcode_atts( [ 'tematica' => '', 'video' => '', 'poster' => '' ], shortcode_parse_atts( $m[3] ) ?: [] );
+	$items = oec_hero_video_items( $atts );
 	if ( ! empty( $items[0]['image'] ) ) {
 		printf( '<link rel="preload" as="image" href="%s" fetchpriority="high">' . "\n", esc_url( $items[0]['image'] ) );
 	}

@@ -191,13 +191,17 @@ add_filter( 'oec_seo', function ( $c ) {
 } );
 
 /* ============================================================
-   VITRINA DE ORGANIZACIONES — [oec-org-spotlight limit="8" tematica="" title=""]
+   VITRINA DE ORGANIZACIONES — [oec-org-spotlight limit="8" tematica="" title="" slug=""]
 
    Lista de organizaciones destacadas (logo chico + nombre + cantidad) y
    un panel con la activa: logo, descripción, números (formaciones
    abiertas, alumnos formados, temáticas) y sus próximas formaciones.
    Rota sola (main.js). Pensada para que luzca el contenido y no dependa
    de la calidad de los logos. Todo sale del catálogo sincronizado.
+
+   slug: muestra solo esa organización, sin pestañas ni mínimo de
+   formaciones — la "organización estrella" de una comunidad chica (la
+   FeVA en voley.org), donde ninguna llega a las 2 abiertas de la vitrina.
    ============================================================ */
 
 /** Alumnos formados por organización (abiertas + cerradas), cacheado hasta el próximo sync. */
@@ -229,6 +233,7 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 		'limit'    => 8,
 		'tematica' => '',
 		'title'    => __( 'Instituciones que enseñan con nosotros', 'oec-theme' ),
+		'slug'     => '',
 	], $atts, 'oec-org-spotlight' );
 
 	if ( ! class_exists( 'OEC_AI_Catalog' ) ) {
@@ -241,7 +246,21 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 
 	$cantidad = fn( $o ) => '' !== $tem ? (int) ( $o['tematicas'][ $tem ] ?? 0 ) : (int) ( $o['count'] ?? 0 );
 	$minimo   = '' !== $tem ? 1 : 2; // por temática hay menos: alcanza con 1
-	$pool     = array_filter( $todas, fn( $o ) => ! empty( $o['logo'] ) && $cantidad( $o ) >= $minimo );
+	$fija     = sanitize_title( $atts['slug'] );
+	$pool     = $fija
+		? array_filter( $todas, fn( $o ) => $o['slug'] === $fija )
+		: array_filter( $todas, fn( $o ) => ! empty( $o['logo'] ) && $cantidad( $o ) >= $minimo );
+	if ( $fija && ! $pool ) {
+		// Fuera de la lista (sin abiertas del token principal): desde su ficha.
+		$det  = OEC_AI_Catalog::get_organization( $fija );
+		$pool = $det ? [ [
+			'slug'      => $fija,
+			'name'      => $det['name'] ?? $fija,
+			'logo'      => $det['logo'] ?? '',
+			'count'     => count( array_filter( $det['formations'] ?? [], fn( $f ) => ( $f['enrollment_end'] ?? '' ) >= current_time( 'Y-m-d' ) ) ),
+			'tematicas' => [],
+		] ] : [];
+	}
 	usort( $pool, fn( $a, $b ) => ( 200 * $cantidad( $b ) + ( $alumnos[ $b['slug'] ] ?? 0 ) ) <=> ( 200 * $cantidad( $a ) + ( $alumnos[ $a['slug'] ] ?? 0 ) ) );
 	$pool = array_slice( array_values( $pool ), 0, $limit * 2 );
 	if ( ! $pool ) {
@@ -258,11 +277,12 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 
 	ob_start();
 	?>
-	<section class="oec-orgs" data-oec-orgs aria-labelledby="oec-orgs-title">
+	<section class="oec-orgs<?php echo $fija ? ' oec-orgs--single' : ''; ?>" data-oec-orgs aria-labelledby="oec-orgs-title">
 		<div class="oec-agenda__head">
 			<div>
-				<span class="oec-agenda__eyebrow"><i class="bi bi-building" aria-hidden="true"></i> <?php esc_html_e( 'Organizaciones asociadas', 'oec-theme' ); ?></span>
+				<span class="oec-agenda__eyebrow"><i class="bi bi-building" aria-hidden="true"></i> <?php echo esc_html( $fija ? __( 'Organización destacada', 'oec-theme' ) : __( 'Organizaciones asociadas', 'oec-theme' ) ); ?></span>
 				<h2 class="oec-agenda__title" id="oec-orgs-title"><?php echo esc_html( $atts['title'] ); ?></h2>
+				<?php if ( ! $fija ) : ?>
 				<p class="oec-agenda__sub">
 					<?php
 					printf(
@@ -272,6 +292,7 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 					);
 					?>
 				</p>
+				<?php endif; ?>
 			</div>
 			<a class="oec-cierres__more" href="<?php echo esc_url( oec_organizaciones_url( $tem ) ); ?>">
 				<?php echo esc_html( sprintf( __( 'Ver las %s organizaciones', 'oec-theme' ), number_format_i18n( count( $todas ) ) ) ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i>
@@ -321,6 +342,9 @@ function oec_render_org_spotlight_shortcode( $atts ): string {
 								<li><strong><?php echo esc_html( number_format_i18n( $al ) ); ?></strong> <?php esc_html_e( 'alumnos formados', 'oec-theme' ); ?></li>
 								<?php endif; ?>
 							</ul>
+							<?php if ( $fija && ! empty( $det['domain'] ) ) : ?>
+							<a class="oec-orgs__site" href="<?php echo esc_url( $det['domain'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( preg_replace( '#^(https?://)?(www\.)?|/$#', '', $det['domain'] ) ); ?> <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+							<?php endif; ?>
 							<?php if ( $tems ) : ?>
 							<div class="oec-orgs__tems">
 								<?php foreach ( $tems as $label ) : ?><span><?php echo esc_html( $label ); ?></span><?php endforeach; ?>

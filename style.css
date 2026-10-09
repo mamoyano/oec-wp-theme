@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.124
+Version: 1.0.125
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -3639,6 +3639,10 @@ body.oec-chat-open { overflow: hidden; }
 .oec-orgs__stats strong { display: block; font-size: 1.5rem; font-weight: 800; line-height: 1.1; color: var(--color-dark); font-variant-numeric: tabular-nums; }
 .oec-orgs__tems { display: flex; flex-wrap: wrap; gap: .4rem; }
 .oec-orgs__tems span { padding: .25rem .65rem; border-radius: 999px; background: var(--color-light); border: 1px solid var(--color-border); font-size: .75rem; font-weight: 600; color: var(--color-text); }
+/* Una sola organización ([oec-org-spotlight slug=""]): sin la columna de pestañas. */
+.oec-orgs--single .oec-orgs__layout { grid-template-columns: 1fr; }
+.oec-orgs--single .oec-orgs__tabs { display: none; }
+.oec-orgs__site { display: inline-flex; align-items: center; gap: .35rem; margin: 0 0 .8rem; font-size: .8125rem; font-weight: 600; color: var(--color-primary); }
 .oec-orgs__formations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
 .oec-orgs__formation {
   display: flex;
