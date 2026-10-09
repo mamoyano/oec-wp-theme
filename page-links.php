@@ -8,7 +8,8 @@
  * independiente, sin header/footer ni el CSS general del tema. Todo el CSS
  * va inline (~5 KB) y los íconos son el recorte del tema (~10 KB, la misma
  * fuente que ya usa el resto del sitio). Sin jQuery ni JS propio: el
- * buscador es un formulario GET a /formaciones?q=. GTM, Pixel y Clarity
+ * buscador es un formulario GET a /formaciones?q=. WhatsApp va solo como
+ * ícono al pie, junto a las redes (cada conversación desde Meta tiene costo). GTM, Pixel y Clarity
  * salen diferidos como en todo el sitio, y el fbclid sigue hasta el checkout.
  *
  * "Cierran pronto" sale del catálogo sincronizado (listing.json): por eso
@@ -48,7 +49,6 @@ $cierra  = function ( string $fecha ) use ( $hoy ): string {
 
 $botones = array_filter( [
 	[ oec_formaciones_url(), 'mortarboard', __( 'Formaciones abiertas', 'oec-theme' ), $abiertas ? sprintf( __( '%s cursos, talleres y posgrados', 'oec-theme' ), number_format_i18n( $abiertas ) ) : __( 'Cursos, talleres y posgrados', 'oec-theme' ), 'main' ],
-	[ $whatsapp, 'whatsapp', __( 'Escribinos por WhatsApp', 'oec-theme' ), __( 'Te ayudamos a elegir', 'oec-theme' ), 'wa' ],
 	[ oec_articulos_url( [] ), 'journal-text', __( 'Artículos y blogs', 'oec-theme' ), __( 'La ciencia del ejercicio, explicada', 'oec-theme' ), '' ],
 	[ $creditos, 'gift', __( 'Créditos por descuentos', 'oec-theme' ), __( 'Sumá créditos y pagá menos', 'oec-theme' ), '' ],
 	[ $creditos ? $creditos . '#newsletter' : '', 'stars', __( 'Newsletter semanal', 'oec-theme' ), __( 'Novedades y créditos cada semana', 'oec-theme' ), '' ],
@@ -63,6 +63,9 @@ $redes = array_filter( [
 	'facebook'  => $opts['social_facebook'] ?? '',
 	'linkedin'  => $opts['social_linkedin'] ?? '',
 	'twitter-x' => $opts['social_x'] ?? '',
+	// Al final y sin botón propio: cada conversación iniciada desde Meta
+	// tiene costo, así que no se destaca (pedido de Mario, 2026-10).
+	'whatsapp'  => $whatsapp,
 ] );
 
 $titulo = get_bloginfo( 'name' );
@@ -92,7 +95,7 @@ $icons_url = function_exists( 'oec_unprefix_asset_src' ) ? oec_unprefix_asset_sr
 <style>
 <?php echo is_readable( $icons ) ? str_replace( '{URL}', esc_url_raw( $icons_url ), trim( (string) file_get_contents( $icons ) ) ) : ''; // phpcs:ignore ?>
 
-:root{--dark:#071b2d;--primary:#194872;--accent:#e8952a;--bg:#f2f5f9;--card:#fff;--text:#1c2330;--muted:#5d6878;--line:#e2e8f0;--wa:#1faa59}
+:root{--dark:#071b2d;--primary:#194872;--accent:#e8952a;--bg:#f2f5f9;--card:#fff;--text:#1c2330;--muted:#5d6878;--line:#e2e8f0}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
@@ -122,7 +125,6 @@ a{color:inherit;text-decoration:none}
 .btn--main{background:var(--dark);border-color:var(--dark);color:#fff}
 .btn--main>i:first-child{background:var(--accent);color:var(--dark)}
 .btn--main small,.btn--main>i:last-child{color:rgba(255,255,255,.7)}
-.btn--wa>i:first-child{background:var(--wa);color:#fff}
 h2{font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
 .pronto{display:grid;gap:10px;margin:0 0 26px}
 .f{display:flex;gap:12px;align-items:center;padding:10px;background:var(--card);border:1px solid var(--line);border-radius:14px}
@@ -195,7 +197,7 @@ if ( function_exists( 'oec_output_trackers_head' ) ) {
 	<?php if ( $redes ) : ?>
 	<nav class="redes" aria-label="<?php esc_attr_e( 'Redes sociales', 'oec-theme' ); ?>">
 		<?php foreach ( $redes as $icon => $url ) : ?>
-		<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" aria-label="<?php echo esc_attr( ucfirst( str_replace( 'twitter-x', 'X', $icon ) ) ); ?>"><i class="bi bi-<?php echo esc_attr( $icon ); ?>" aria-hidden="true"></i></a>
+		<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" aria-label="<?php echo esc_attr( ucfirst( str_replace( [ 'twitter-x', 'whatsapp' ], [ 'X', 'WhatsApp' ], $icon ) ) ); ?>"><i class="bi bi-<?php echo esc_attr( $icon ); ?>" aria-hidden="true"></i></a>
 		<?php endforeach; ?>
 	</nav>
 	<?php endif; ?>
