@@ -71,6 +71,7 @@ function oec_sitemap_excluded_pages(): array {
 		'newsletter-confirmado',
 		'otorgar-creditos',
 		'confirmacion-de-canje-de-creditos',
+		'links', // atajo de la bio de Instagram (page-links.php, noindex)
 	] );
 }
 

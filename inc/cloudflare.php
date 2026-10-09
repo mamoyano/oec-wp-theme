@@ -32,7 +32,7 @@ const OEC_CF_DAY   = DAY_IN_SECONDS;
 const OEC_CF_MONTH = 30 * DAY_IN_SECONDS;
 
 /** Páginas (por slug) que muestran datos del catálogo o listas: 1 día. */
-const OEC_CF_LISTADOS = [ 'formaciones', 'formacion', 'docentes', 'docente', 'organizaciones', 'organizacion', 'articulos', 'especiales' ];
+const OEC_CF_LISTADOS = [ 'formaciones', 'formacion', 'docentes', 'docente', 'organizaciones', 'organizacion', 'articulos', 'especiales', 'links' ];
 
 /** Parámetros que no cambian el contenido (no bajan el tiempo a 1 h). */
 const OEC_CF_PARAMS_NEUTROS = [ 'slug', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'fbclid', 'gclid', 'trackers' ];
@@ -191,7 +191,7 @@ add_action( 'post_updated', function ( int $id, WP_Post $after, WP_Post $before 
 // Catálogo sincronizado: home, listados y landings.
 add_action( 'oec_ai_catalog_synced', function (): void {
 	$urls = [ home_url( '/' ) ];
-	foreach ( [ 'formaciones', 'docentes', 'organizaciones', 'especiales' ] as $slug ) {
+	foreach ( [ 'formaciones', 'docentes', 'organizaciones', 'especiales', 'links' ] as $slug ) {
 		$page = get_page_by_path( $slug );
 		if ( $page ) {
 			$urls[] = get_permalink( $page );

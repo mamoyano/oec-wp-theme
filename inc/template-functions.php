@@ -365,6 +365,29 @@ add_action( 'after_switch_theme', 'oec_create_quienes_somos_page' );
 add_action( 'admin_init', 'oec_create_quienes_somos_page' );
 
 /**
+ * Página "Links" (page-links.php): el enlace de la bio de Instagram
+ * (/es/links). Se crea sola en el sitio de contenido, vacía.
+ */
+function oec_create_links_page(): void {
+	if ( get_option( 'oec_links_page_v1' ) || ! oec_is_config_site() ) {
+		return;
+	}
+	if ( ! get_page_by_path( 'links' ) ) {
+		wp_insert_post( [
+			'post_title'   => 'Links',
+			'post_name'    => 'links',
+			'post_status'  => 'publish',
+			'post_type'    => 'page',
+			'post_content' => '',
+			'post_author'  => get_current_user_id() ?: 1,
+		] );
+	}
+	update_option( 'oec_links_page_v1', 1 );
+}
+add_action( 'after_switch_theme', 'oec_create_links_page' );
+add_action( 'admin_init', 'oec_create_links_page' );
+
+/**
  * [ancho, alto] de un logo de la biblioteca de medios mostrado a $max_h px
  * de alto como máximo, para reservarle el lugar antes de que cargue (si no,
  * al llegar empuja lo que tiene abajo: Lighthouse lo marcaba como CLS en la
