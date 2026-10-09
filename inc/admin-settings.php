@@ -26,6 +26,7 @@ function oec_get_defaults(): array {
 		'oec_api_tokens'     => [], // tokens secundarios: formaciones de otras comunidades (ver OEC_AI_Catalog::sources())
 		'oec_anthropic_key'  => '',
 		'credits_api_key'    => '',
+		'catalog_sync_time'  => '03:00', // hora local del sync diario del catálogo (ver OEC_AI_Catalog::schedule())
 		// Topbar & footer content
 		'campus_virtual_url' => '',
 		'footer_desc'        => 'La comunidad educativa en ciencias del ejercicio físico más grande de hispanoamérica.',
@@ -152,6 +153,8 @@ function oec_sanitize_options( $raw ): array {
 		(array) ( $raw['oec_api_tokens'] ?? [] )
 	), fn( $t ) => '' !== $t && $t !== $clean['oec_api_token'] ) ) );
 	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
+	$time                       = (string) ( $raw['catalog_sync_time'] ?? '' );
+	$clean['catalog_sync_time'] = preg_match( '/^([01]\d|2[0-3]):[0-5]\d$/', $time ) ? $time : $defaults['catalog_sync_time'];
 
 	// Anthropic
 	$clean['oec_anthropic_key'] = sanitize_text_field( $raw['oec_anthropic_key'] ?? '' );
@@ -207,7 +210,7 @@ function oec_admin_section_keys(): array {
 	return [
 		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
-		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens' ],
+		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
 		'chat'            => [ 'oec_anthropic_key' ],
 		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
@@ -1050,7 +1053,7 @@ function oec_render_settings_page(): void {
 				<div class="oec-card">
 					<div class="oec-card__header">
 						<h2><?php esc_html_e( 'Catálogo de formaciones', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Copia local de las formaciones de la API OAS, que se actualiza todos los días a las 3:00 AM. De acá salen el listado de /formaciones y las respuestas del asistente IA.', 'oec-theme' ); ?></p>
+						<p><?php esc_html_e( 'Copia local de las formaciones de la API OAS, que se actualiza todos los días a la hora elegida abajo. De acá salen el listado de /formaciones y las respuestas del asistente IA.', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 
@@ -1083,6 +1086,16 @@ function oec_render_settings_page(): void {
 							<tr style="border-bottom:1px solid #f0f0f1;">
 								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Última sincronización', 'oec-theme' ); ?></td>
 								<td style="padding:.75rem 0;"><?php echo $ai_date ? esc_html( wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), strtotime( $ai_date ) ) ) : '<span style="color:#888;">—</span>'; // phpcs:ignore ?></td>
+							</tr>
+							<tr style="border-bottom:1px solid #f0f0f1;">
+								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><label for="oec-catalog-sync-time"><?php esc_html_e( 'Horario de sincronización', 'oec-theme' ); ?></label></td>
+								<td style="padding:.75rem 0;">
+									<input type="time" id="oec-catalog-sync-time" step="300"
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[catalog_sync_time]"
+									       value="<?php echo esc_attr( $opts['catalog_sync_time'] ); ?>">
+									<span style="color:#646970;"><?php echo esc_html( sprintf( __( 'todos los días, hora de %s', 'oec-theme' ), wp_timezone_string() ) ); ?></span>
+									<p class="description" style="margin-top:.35rem;"><?php esc_html_e( 'Todos los sitios consultan la misma API: dejá al menos 30 minutos entre el horario de cada comunidad.', 'oec-theme' ); ?></p>
+								</td>
 							</tr>
 							<tr>
 								<td style="padding:.75rem 1rem .75rem 0;font-weight:600;"><?php esc_html_e( 'Próxima sincronización', 'oec-theme' ); ?></td>

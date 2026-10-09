@@ -89,9 +89,33 @@ class OEC_AI_Catalog {
 			}
 			return;
 		}
-		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
-			wp_schedule_event( strtotime( 'tomorrow 03:00:00' ), 'daily', self::CRON_HOOK );
+		self::schedule();
+		add_action( 'update_option_' . OEC_OPTION, [ __CLASS__, 'schedule' ] );
+	}
+
+	/**
+	 * Programa el sync diario a la hora de "Horario de sincronización"
+	 * (Tema OEC → Formaciones), en la zona horaria del sitio. Si el evento
+	 * ya está programado a otra hora (porque se cambió el ajuste), lo mueve.
+	 * Cada comunidad corre en su propia app contra la misma oas-api: por eso
+	 * el horario es configurable, para que no coincidan.
+	 */
+	public static function schedule(): void {
+		if ( ! oec_is_config_site() || 'local' === wp_get_environment_type() ) {
+			return;
 		}
+		$time = (string) ( oec_get_options()['catalog_sync_time'] ?? '03:00' );
+		$tz   = wp_timezone();
+		$next = wp_next_scheduled( self::CRON_HOOK );
+		if ( $next && wp_date( 'H:i', $next, $tz ) === $time ) {
+			return;
+		}
+		$at = new DateTimeImmutable( 'today ' . $time, $tz );
+		if ( $at->getTimestamp() <= time() ) {
+			$at = $at->modify( '+1 day' );
+		}
+		wp_clear_scheduled_hook( self::CRON_HOOK );
+		wp_schedule_event( $at->getTimestamp(), 'daily', self::CRON_HOOK );
 	}
 
 	/* ── Directory helpers ──────────────────────────────────── */
