@@ -19,6 +19,7 @@ defined( 'ABSPATH' ) || exit;
    - /blogs, /blogs/page/N  → artículos filtrados por blogs
    - posts depurados        → 410 Gone (inc/redirects-gone.php)
    En la raíz (sitio principal):
+   - /{página}              → /es/{página} (/links, /formaciones, /especiales/…)
    - /{slug-de-post}        → /es/{slug} (WPML servía español sin prefijo)
    - /u/{nombre}-u-{id}     → autor en /es, o búsqueda por su nombre
    (los /wp-content/uploads/… viejos los resuelve el .htaccess del servidor)
@@ -264,6 +265,13 @@ function oec_redirect_root( string $rel ): ?string {
 		$target = ( $user && count_user_posts( $user->ID, 'post', true ) )
 			? get_author_posts_url( $user->ID )
 			: oec_articulos_url( [ 'q' => str_replace( '-', ' ', $name ) ] );
+	} elseif ( '' !== $rel && ( $page = get_page_by_path( $rel ) ) && 'publish' === $page->post_status ) {
+		// Página de /es pedida sin el prefijo de idioma: g-se.com/links,
+		// /formaciones, /especiales/futbol… (con sus parámetros, si los trae).
+		$target = get_permalink( $page );
+		if ( ! empty( $_SERVER['QUERY_STRING'] ) ) {
+			$target .= '?' . wp_unslash( $_SERVER['QUERY_STRING'] );
+		}
 	} elseif ( ! str_contains( $rel, '/' ) && '' !== $rel ) {
 		// Post en español servido sin prefijo de idioma (o con la URL cortada).
 		$post   = get_page_by_path( $rel, OBJECT, 'post' );
