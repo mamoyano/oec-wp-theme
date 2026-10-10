@@ -25,6 +25,7 @@ function oec_get_defaults(): array {
 		'oec_api_token'      => '',
 		'oec_api_tokens'     => [], // tokens secundarios: formaciones de otras comunidades (ver OEC_AI_Catalog::sources())
 		'oec_anthropic_key'  => '',
+		'oec_ai_model'       => 'haiku-4-5',
 		'credits_api_key'    => '',
 		'catalog_sync_time'  => '03:00', // hora local del sync diario del catálogo (ver OEC_AI_Catalog::schedule())
 		// Topbar & footer content
@@ -158,6 +159,8 @@ function oec_sanitize_options( $raw ): array {
 
 	// Anthropic
 	$clean['oec_anthropic_key'] = sanitize_text_field( $raw['oec_anthropic_key'] ?? '' );
+	$model                      = sanitize_key( $raw['oec_ai_model'] ?? '' );
+	$clean['oec_ai_model']      = class_exists( 'OEC_AI_Chat' ) && isset( OEC_AI_Chat::MODELS[ $model ] ) ? $model : $defaults['oec_ai_model'];
 
 	// Topbar & footer
 	$clean['campus_virtual_url'] = esc_url_raw( $raw['campus_virtual_url'] ?? '' );
@@ -211,7 +214,7 @@ function oec_admin_section_keys(): array {
 		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
-		'chat'            => [ 'oec_anthropic_key' ],
+		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model' ],
 		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
 		'conversaciones'  => [],
@@ -936,6 +939,17 @@ function oec_render_settings_page(): void {
 									<?php if ( $opts['oec_anthropic_key'] ) : ?>
 									<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Configurada — el asistente está activo.', 'oec-theme' ); ?></span>
 									<?php endif; ?>
+								</p>
+							</div>
+							<div class="oec-tracker-row__field">
+								<label for="oec-ai-model"><?php esc_html_e( 'Modelo', 'oec-theme' ); ?></label>
+								<select id="oec-ai-model" name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_ai_model]">
+									<?php foreach ( OEC_AI_Chat::MODELS as $model_key => $model ) : ?>
+									<option value="<?php echo esc_attr( $model_key ); ?>" <?php selected( $opts['oec_ai_model'] ?? 'haiku-4-5', $model_key ); ?>><?php echo esc_html( $model['label'] ); ?></option>
+									<?php endforeach; ?>
+								</select>
+								<p class="description">
+									<?php esc_html_e( 'Haiku 5.5 es la generación nueva. En nuestras pruebas costó cerca de 9 veces menos por consulta y terminó de responder en la mitad del tiempo, con respuestas algo más breves. El registro de Chat IA guarda qué modelo respondió cada consulta, para compararlos. Se puede volver a Haiku 4.5 desde acá en cualquier momento.', 'oec-theme' ); ?>
 								</p>
 							</div>
 						</div>

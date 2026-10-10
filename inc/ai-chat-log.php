@@ -17,7 +17,7 @@ defined( 'ABSPATH' ) || exit;
  */
 class OEC_AI_Chat_Log {
 
-	const DB_VERSION       = 1;
+	const DB_VERSION       = 2; // 2: columna model
 	const DB_OPTION        = 'oec_chat_log_db';
 	const CRON_HOOK        = 'oec_chat_log_purge';
 	const RETENTION_MONTHS = 12;
@@ -73,6 +73,7 @@ class OEC_AI_Chat_Log {
 			ms_first int(10) unsigned NOT NULL DEFAULT 0,
 			ms_total int(10) unsigned NOT NULL DEFAULT 0,
 			error varchar(255) NOT NULL DEFAULT '',
+			model varchar(40) NOT NULL DEFAULT '',
 			PRIMARY KEY  (id),
 			KEY created_at (created_at),
 			KEY cid (cid)
@@ -100,6 +101,7 @@ class OEC_AI_Chat_Log {
 			'ms_first'   => max( 0, (int) ( $row['ms_first'] ?? 0 ) ),
 			'ms_total'   => max( 0, (int) ( $row['ms_total'] ?? 0 ) ),
 			'error'      => mb_substr( (string) ( $row['error'] ?? '' ), 0, 255 ),
+			'model'      => substr( preg_replace( '/[^a-z0-9.-]/', '', (string) ( $row['model'] ?? '' ) ), 0, 40 ),
 		] );
 	}
 
@@ -187,6 +189,16 @@ class OEC_AI_Chat_Log {
 			...array_merge( $args, [ self::PER_PAGE, ( $page - 1 ) * self::PER_PAGE ] )
 		) );
 		$titles = self::titles_by_id();
+		// Comparación por modelo (las filas anteriores a la columna son todas de Haiku 4.5)
+		$by_model = $wpdb->get_results( $wpdb->prepare(
+			"SELECT IF(model = '', 'haiku-4-5', model) AS m, COUNT(*) AS consultas,
+			        SUM(formations <> '[]') AS con_tarjetas, SUM(clicks <> '[]') AS con_clic,
+			        ROUND(AVG(NULLIF(ms_first,0))) AS ms_first, ROUND(AVG(NULLIF(ms_total,0))) AS ms_total,
+			        SUM(error <> '') AS errores
+			 FROM $t WHERE $where GROUP BY m ORDER BY consultas DESC", // phpcs:ignore
+			...$args
+		) );
+		$model_label = static fn( $m ) => OEC_AI_Chat::MODELS[ $m ?: 'haiku-4-5' ]['label'] ?? $m;
 		$pct    = static fn( $n ) => $total ? round( 100 * (int) $n / $total ) . '%' : '—';
 		$sec    = static fn( $ms ) => $ms ? number_format_i18n( $ms / 1000, 1 ) . ' s' : '—';
 		$csv    = wp_nonce_url( add_query_arg( array_merge( [ 'action' => 'oec_chat_log_csv' ], $f ), admin_url( 'admin-post.php' ) ), 'oec_chat_log_csv' );
@@ -215,6 +227,25 @@ class OEC_AI_Chat_Log {
 				</tr></tbody>
 			</table>
 
+			<?php if ( count( $by_model ) > 1 ) : ?>
+			<table class="widefat striped" style="max-width:900px;margin-bottom:1.5em">
+				<thead><tr><th>Modelo</th><th>Consultas</th><th>Con tarjetas</th><th>Con clic</th><th>Primer texto</th><th>Respuesta completa</th><th>Errores</th></tr></thead>
+				<tbody>
+				<?php foreach ( $by_model as $bm ) : $n = max( 1, (int) $bm->consultas ); ?>
+					<tr>
+						<td><strong><?php echo esc_html( $model_label( $bm->m ) ); ?></strong></td>
+						<td><?php echo esc_html( number_format_i18n( (int) $bm->consultas ) ); ?></td>
+						<td><?php echo esc_html( round( 100 * (int) $bm->con_tarjetas / $n ) . '%' ); ?></td>
+						<td><?php echo esc_html( round( 100 * (int) $bm->con_clic / $n ) . '%' ); ?></td>
+						<td><?php echo esc_html( $sec( (int) $bm->ms_first ) ); ?></td>
+						<td><?php echo esc_html( $sec( (int) $bm->ms_total ) ); ?></td>
+						<td><?php echo esc_html( number_format_i18n( (int) $bm->errores ) ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<?php endif; ?>
+
 			<table class="widefat striped">
 				<thead><tr>
 					<th style="width:9em">Fecha</th><th>Pregunta y respuesta</th><th style="width:22%">Tarjetas (✓ = clic)</th>
@@ -239,7 +270,7 @@ class OEC_AI_Chat_Log {
 						<?php endforeach; ?></td>
 						<td><small><?php echo esc_html( $r->page ); ?></small></td>
 						<td><?php echo esc_html( $r->country ); ?></td>
-						<td><small><?php echo esc_html( $sec( (int) $r->ms_first ) ); ?> / <?php echo esc_html( $sec( (int) $r->ms_total ) ); ?><?php echo $r->expanded ? '<br>con ampliación' : ''; ?></small></td>
+						<td><small><?php echo esc_html( $sec( (int) $r->ms_first ) ); ?> / <?php echo esc_html( $sec( (int) $r->ms_total ) ); ?><?php echo $r->expanded ? '<br>con ampliación' : ''; ?><br><?php echo esc_html( $model_label( $r->model ?? '' ) ); ?></small></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
@@ -283,7 +314,7 @@ class OEC_AI_Chat_Log {
 		header( 'Content-Disposition: attachment; filename="chat-ia-' . $f['from'] . '_' . $f['to'] . '.csv"' );
 		$out = fopen( 'php://output', 'w' );
 		fwrite( $out, "\xEF\xBB\xBF" ); // BOM: Excel abre bien las tildes
-		fputcsv( $out, [ 'fecha', 'conversacion', 'turno', 'pagina', 'pais', 'pregunta', 'respuesta', 'tarjetas', 'clics', 'ampliacion', 'primer_texto_s', 'total_s', 'error' ] );
+		fputcsv( $out, [ 'fecha', 'conversacion', 'turno', 'pagina', 'pais', 'pregunta', 'respuesta', 'tarjetas', 'clics', 'ampliacion', 'primer_texto_s', 'total_s', 'error', 'modelo' ] );
 
 		$offset = 0;
 		do {
@@ -297,6 +328,7 @@ class OEC_AI_Chat_Log {
 					get_date_from_gmt( $r->created_at, 'Y-m-d H:i:s' ), $r->cid, $r->turn, $r->page, $r->country,
 					$r->message, str_replace( '|||', "\n\n", $r->reply ), $name( $r->formations ), $name( $r->clicks ),
 					$r->expanded ? 'sí' : 'no', round( $r->ms_first / 1000, 2 ), round( $r->ms_total / 1000, 2 ), $r->error,
+					( $r->model ?? '' ) ?: 'haiku-4-5',
 				] );
 			}
 			$offset += 1000;

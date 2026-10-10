@@ -28,6 +28,50 @@ class OEC_AI_Chat {
 	// Para el registro: momento del primer texto enviado y si se amplió la consulta con IA.
 	private static float $t_first   = 0;
 	private static bool $did_expand = false;
+	private static string $stop_reason = ''; // 'refusal' si el modelo rechazó la consulta
+
+	/**
+	 * Modelos que se pueden elegir en Ajustes → Chat IA (opción oec_ai_model).
+	 * Haiku 5.5 razona antes de responder por defecto y eso demora el primer
+	 * texto varios segundos: para el chat va con el razonamiento apagado (medido
+	 * en local: primer texto como 4.5, respuesta completa en la mitad de tiempo
+	 * y ~9 veces más barato). El registro guarda qué modelo respondió cada consulta.
+	 */
+	const MODELS = [
+		'haiku-4-5' => [
+			'label'  => 'Claude Haiku 4.5',
+			'id'     => 'claude-haiku-4-5-20251001',
+			'params' => [],
+		],
+		'haiku-5-5' => [
+			'label'  => 'Claude Haiku 5.5',
+			'id'     => 'claude-haiku-5-5',
+			'params' => [ 'thinking' => [ 'type' => 'disabled' ], 'output_config' => [ 'effort' => 'low' ] ],
+		],
+	];
+	const DEFAULT_MODEL = 'haiku-4-5';
+
+	public static function model_key(): string {
+		$key = (string) ( oec_get_options()['oec_ai_model'] ?? '' );
+		return isset( self::MODELS[ $key ] ) ? $key : self::DEFAULT_MODEL;
+	}
+
+	/** Cuerpo del pedido a la API: modelo elegido + sus parámetros + lo propio de la llamada. */
+	private static function request_body( array $body ): array {
+		$m = self::MODELS[ self::model_key() ];
+		return array_merge( [ 'model' => $m['id'] ], $m['params'], $body );
+	}
+
+	/** Texto de una respuesta no-streaming: los bloques de tipo "text" (el primero puede ser de razonamiento). */
+	private static function response_text( $data ): string {
+		$text = '';
+		foreach ( (array) ( $data['content'] ?? [] ) as $block ) {
+			if ( 'text' === ( $block['type'] ?? '' ) ) {
+				$text .= $block['text'] ?? '';
+			}
+		}
+		return $text;
+	}
 
 	/* ── Bootstrap ─────────────────────────────────────────── */
 
@@ -616,6 +660,14 @@ class OEC_AI_Chat {
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
+		// Sin texto (falla de la API, o el modelo rechazó la consulta): el usuario
+		// recibe un mensaje en vez de quedarse mirando una pantalla vacía.
+		$error = '';
+		if ( '' === trim( $reply ) ) {
+			$error = 'refusal' === self::$stop_reason ? 'Consulta rechazada por el modelo' : 'Sin respuesta de la IA';
+			self::sse_data( [ 't' => 'No pude responder esa consulta. ¿Podés escribirla de otra forma?' ] );
+		}
+
 		// Tarjetas: las formaciones que la IA declaró en <<IDS:…>> (en ese
 		// orden) y, como respaldo por si omitió la línea, las que nombra por título.
 		$by_id  = array_column( $formations, null, 'id' );
@@ -653,7 +705,8 @@ class OEC_AI_Chat {
 				'expanded'   => self::$did_expand,
 				'ms_first'   => self::$t_first ? round( ( self::$t_first - $t0 ) * 1000 ) : 0,
 				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
-				'error'      => '' === trim( $reply ) ? 'Sin respuesta de la IA' : '',
+				'error'      => $error,
+				'model'      => self::model_key(),
 			] );
 		}
 		exit;
@@ -735,12 +788,11 @@ class OEC_AI_Chat {
 		}
 
 		self::$did_expand = true;
-		$body = wp_json_encode( [
-			'model'      => 'claude-haiku-4-5-20251001',
+		$body = wp_json_encode( self::request_body( [
 			'max_tokens' => 80,
 			'system'     => 'Eres un asistente de búsqueda especializado en educación deportiva y ciencias de la salud. Dado un mensaje de búsqueda en español, devolvé ÚNICAMENTE una lista de palabras clave y sinónimos relevantes separados por espacios, sin explicaciones ni puntuación. Incluí variantes ortográficas (voley/voleibol/volleyball), términos técnicos relacionados y palabras del dominio del deporte, salud y ejercicio físico.',
 			'messages'   => [ [ 'role' => 'user', 'content' => $query ] ],
-		] );
+		] ) );
 
 		$response = wp_remote_post( 'https://api.anthropic.com/v1/messages', [
 			'timeout' => 3,
@@ -761,7 +813,7 @@ class OEC_AI_Chat {
 		}
 
 		$data     = json_decode( wp_remote_retrieve_body( $response ), true );
-		$expanded = trim( $data['content'][0]['text'] ?? '' );
+		$expanded = trim( self::response_text( $data ) );
 		set_transient( $cache_key, $expanded, 30 * DAY_IN_SECONDS );
 		return $expanded ? $query . ' ' . $expanded : $query;
 	}
@@ -782,13 +834,12 @@ class OEC_AI_Chat {
 			];
 		}
 
-		$body = wp_json_encode( [
-			'model'      => 'claude-haiku-4-5-20251001',
+		$body = wp_json_encode( self::request_body( [
 			'max_tokens' => 1024,
 			'stream'     => true,
 			'system'     => $system,
 			'messages'   => $messages,
-		] );
+		] ) );
 
 		$sse_buf   = '';
 		$full_text = '';
@@ -825,6 +876,9 @@ class OEC_AI_Chat {
 					}
 
 					$evt = json_decode( $payload, true );
+					if ( 'message_delta' === ( $evt['type'] ?? '' ) && ! empty( $evt['delta']['stop_reason'] ) ) {
+						self::$stop_reason = (string) $evt['delta']['stop_reason'];
+					}
 					if (
 						isset( $evt['type'], $evt['delta']['type'], $evt['delta']['text'] ) &&
 						'content_block_delta' === $evt['type'] &&
@@ -1013,12 +1067,11 @@ class OEC_AI_Chat {
 			];
 		}
 
-		$body = wp_json_encode( [
-			'model'      => 'claude-haiku-4-5-20251001',
+		$body = wp_json_encode( self::request_body( [
 			'max_tokens' => 2048,
 			'system'     => $system,
 			'messages'   => $messages,
-		] );
+		] ) );
 
 		$response = wp_remote_post( 'https://api.anthropic.com/v1/messages', [
 			'timeout' => 30,
@@ -1037,11 +1090,12 @@ class OEC_AI_Chat {
 
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
 
-		if ( empty( $data['content'][0]['text'] ) ) {
+		$text = self::response_text( $data );
+		if ( '' === trim( $text ) ) {
 			return new \WP_Error( 'anthropic_empty', 'Respuesta vacía de la IA.' );
 		}
 
-		return self::split_ids( $data['content'][0]['text'] )[0];
+		return self::split_ids( $text )[0];
 	}
 
 	/* ── System prompt ──────────────────────────────────────── */
