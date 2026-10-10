@@ -6,7 +6,6 @@
   const endpoint       = cfg.endpoint || '';
   const streamEndpoint = cfg.streamEndpoint || '';
   const clickEndpoint  = cfg.clickEndpoint || '';
-  const nonce          = cfg.nonce || '';
   const botName        = 'Asistente OEC';
 
   let country  = '';
@@ -576,7 +575,9 @@
     try {
       const req = {
         method:  'POST',
-        headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
+        // Sin X-WP-Nonce: la página puede venir de la caché de Cloudflare con un
+        // nonce vencido y la REST API respondería 403 (las rutas son públicas).
+        headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           message, history, country, currency, mentioned_ids: mentionedFormationIds,
           cid, turn: saved.filter(m => m.u !== undefined).length, page: location.pathname,

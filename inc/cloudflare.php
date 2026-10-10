@@ -385,3 +385,25 @@ add_action( 'parse_request', function (): void {
 		oec_cf_purge_endpoint();
 	}
 }, 0 );
+
+/* ── Rutas REST públicas del tema: sin nonce ─────────────────────
+   Las páginas guardadas en Cloudflare llevan incrustado el nonce de
+   WordPress, que vence a las 12–24 h y además depende del usuario: una
+   copia vieja (o un visitante con sesión iniciada viendo la copia
+   anónima) manda un nonce inválido y la REST API responde 403
+   "rest_cookie_invalid_nonce" — el chat IA mostraba "error de conexión"
+   y el widget de créditos fallaba. Todas las rutas oec/v1 son públicas
+   (permission_callback __return_true) y no usan al usuario logueado:
+   se atienden como visitante anónimo, sin mirar el nonce. Va antes del
+   chequeo de cookies del núcleo (prioridad 100). */
+add_filter( 'rest_authentication_errors', function ( $result ) {
+	if ( ! empty( $result ) ) {
+		return $result;
+	}
+	$route = (string) ( $GLOBALS['wp']->query_vars['rest_route'] ?? '' );
+	if ( str_starts_with( $route, '/oec/v1/' ) ) {
+		wp_set_current_user( 0 );
+		return true;
+	}
+	return $result;
+}, 90 );

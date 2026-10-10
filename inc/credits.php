@@ -301,7 +301,6 @@ add_shortcode( 'oec-credits-widget', 'oec_render_credits_widget_shortcode' );
 function oec_render_credits_widget_shortcode( $atts = [] ): string {
 	$atts     = shortcode_atts( [ 'tematica' => '', 'ayuda' => '/creditos-por-descuentos/', 'newsletter' => 'si' ], (array) $atts, 'oec-credits-widget' );
 	$endpoint = esc_url( rest_url( 'oec/v1/credits' ) );
-	$nonce    = wp_create_nonce( 'wp_rest' );
 	ob_start();
 	?>
 	<div class="oec-credits-widget">
@@ -346,7 +345,6 @@ function oec_render_credits_widget_shortcode( $atts = [] ): string {
 		function initCreditsWidget(root) {
 			const ENDPOINT = <?php echo wp_json_encode( $endpoint ); ?>;
 			const BALANCE_ENDPOINT = <?php echo wp_json_encode( esc_url_raw( rest_url( 'oec/v1/credits/balance' ) ) ); ?>;
-			const NONCE    = <?php echo wp_json_encode( $nonce ); ?>;
 			const LS_EMAIL = 'userEmail';
 			const SS_CREDITS = 'userCredits';
 			const LS_CREDITS_FALLBACK = 'oec_credits_balance';
@@ -383,7 +381,7 @@ function oec_render_credits_widget_shortcode( $atts = [] ): string {
 					showState('loading');
 					fetch(BALANCE_ENDPOINT, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': NONCE },
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({ email: savedEmail }),
 					}).then(r => r.json()).then(data => {
 						if (data.balance === null || data.balance === undefined) throw new Error('sin saldo');
@@ -412,7 +410,7 @@ function oec_render_credits_widget_shortcode( $atts = [] ): string {
 				try {
 					const res = await fetch(ENDPOINT, {
 						method: 'POST',
-						headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': NONCE },
+						headers: { 'Content-Type': 'application/json' },
 						body: JSON.stringify({ email }),
 					});
 					const data = await res.json();

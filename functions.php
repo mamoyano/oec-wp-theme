@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.125' );
+define( 'OEC_THEME_VERSION', '1.0.126' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -85,7 +85,6 @@ function oec_enqueue_assets(): void {
 		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
 		'streamEndpoint' => esc_url( rest_url( 'oec/v1/chat-stream' ) ),
 		'clickEndpoint'  => esc_url( rest_url( 'oec/v1/chat-click' ) ),
-		'nonce'          => wp_create_nonce( 'wp_rest' ),
 	] );
 
 	// Barra de compartir — solo en artículos/blogs individuales.
