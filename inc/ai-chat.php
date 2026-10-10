@@ -129,14 +129,38 @@ class OEC_AI_Chat {
 		if ( empty( $index ) ) {
 			return [];
 		}
-		$top = self::rank( $index, $query, $extra, self::MAX_RESULTS );
-		if ( ! $top ) {
-			// Sin coincidencias: las 10 de este sitio con cierre de inscripción más cercano
-			$index = OEC_AI_Catalog::get_index() ?: $index;
-			usort( $index, static fn( $a, $b ) => strcmp( $a['enrollment_end'], $b['enrollment_end'] ) );
-			return self::load_formations( array_slice( $index, 0, 10 ) );
+		// Sin coincidencias (un saludo, un tema que no está en el catálogo): no
+		// se manda ninguna ficha. Antes iban de relleno las 10 con cierre más
+		// cercano (~18.000 tokens por un "Hola"); ahora build_context() pone en
+		// su lugar un resumen de las áreas del catálogo (catalog_overview()).
+		return self::load_formations( self::rank( $index, $query, $extra, self::MAX_RESULTS ) );
+	}
+
+	/** Áreas del catálogo abierto con su cantidad de formaciones, en una línea. */
+	private static function catalog_overview(): string {
+		$labels = [
+			'nutricion-deportiva' => 'Nutrición Deportiva',
+			'fuerza'              => 'Entrenamiento de la Fuerza',
+			'fisiologia'          => 'Fisiología del Ejercicio',
+			'salud-ejercicio'     => 'Salud y Ejercicio',
+			'deportes'            => 'Deportes',
+			'futbol'              => 'Fútbol',
+			'endurance'           => 'Endurance',
+		];
+		$counts = array_fill_keys( array_keys( $labels ), 0 );
+		foreach ( OEC_AI_Catalog::get_index() ?: OEC_AI_Catalog::get_index( true ) as $e ) {
+			foreach ( array_intersect( $e['tags'] ?? [], array_keys( $labels ) ) as $slug ) {
+				$counts[ $slug ]++;
+			}
 		}
-		return self::load_formations( $top );
+		$areas = [];
+		foreach ( array_filter( $counts ) as $slug => $n ) {
+			$areas[] = "{$labels[ $slug ]} ({$n})";
+		}
+		return "NINGUNA FORMACIÓN SELECCIONADA para esta consulta (es un saludo o no hubo coincidencias en el catálogo).\n"
+			. ( $areas ? 'Áreas con formaciones abiertas: ' . implode( ', ', $areas ) . ".\n" : '' )
+			. 'No nombres formaciones puntuales: preguntá qué busca la persona (tema, nivel, objetivo) o sugerí estas áreas. '
+			. 'Si pidió un tema que no está entre ellas, decilo con honestidad y ofrecé la más cercana.';
 	}
 
 	/* ── Closed-formation lookup against historical index ───── */
@@ -157,6 +181,12 @@ class OEC_AI_Chat {
 		'tenes', 'tengo', 'quiero', 'queria', 'busco', 'buscando', 'necesito', 'llama', 'llamado', 'mas',
 		'muy', 'esta', 'este', 'ese', 'esa', 'eso', 'hola', 'gracias', 'curso', 'cursos', 'formacion',
 		'formaciones', 'otro', 'otra', 'les', 'mis', 'tus', 'sus', 'pero', 'porque', 'saber', 'conocer',
+		// Saludos y pedidos genéricos ("Buenas tardes, quisiera información"): no son un tema
+		'buen', 'buenas', 'buenos', 'dia', 'dias', 'tarde', 'tardes', 'noche', 'noches', 'holaa', 'saludos',
+		'quisiera', 'gustaria', 'podrian', 'podria', 'pueden', 'puede', 'favor', 'porfavor', 'porfa',
+		'info', 'informacion', 'information', 'consulta', 'consultar', 'ayuda', 'interesa', 'interesado',
+		'interesada', 'datos', 'detalles', 'todo', 'todos', 'aca', 'ahi', 'estoy', 'soy', 'ustedes',
+		'brindar', 'brinden', 'enviar', 'envien', 'mandar', 'manden', 'pasar', 'pasen', 'dar', 'den',
 	];
 
 	/**
@@ -326,6 +356,9 @@ class OEC_AI_Chat {
 
 		foreach ( $formations as $f ) {
 			$parts[] = self::format_formation( $f, $prices[ $f['id'] ] ?? null, $detailed_modules );
+		}
+		if ( ! $formations ) {
+			$parts[] = self::catalog_overview();
 		}
 
 		if ( ! empty( $closed ) ) {
@@ -675,6 +708,16 @@ class OEC_AI_Chat {
 		$norm = trim( preg_replace( '/\s+/u', ' ', mb_strtolower( $query ) ) );
 		if ( preg_match( '/^(hola|buen[oa]s?( d[ií]as| tardes| noches)?|hey|gracias|muchas gracias|ok|dale|genial|perfecto|chau|adi[oó]s)[\s!.,¡¿?]*$/u', $norm )
 			|| ! preg_match( '/\p{L}{4,}/u', $norm ) ) {
+			return $query;
+		}
+
+		// Solo saludos y cortesías ("Buenas tardes, quisiera información"): sin
+		// ninguna palabra de búsqueda no hay tema que ampliar.
+		$topic = array_diff(
+			array_filter( explode( ' ', self::title_norm( $query ) ), static fn( $w ) => strlen( $w ) >= 3 ),
+			self::SEARCH_STOPWORDS
+		);
+		if ( ! $topic ) {
 			return $query;
 		}
 
