@@ -636,6 +636,17 @@ class OEC_AI_Chat {
 		];
 	}
 
+	/** ¿Va la lista de derivaciones a una persona en esta consulta? (ver wants_human()) */
+	private static bool $derive = true;
+
+	/** ¿El mensaje plantea un problema o pide contacto humano? (habilita ofrecer WhatsApp) */
+	private static function wants_human( string $message ): bool {
+		return (bool) preg_match(
+			'/error|no puedo|no pude|no me deja|no me dej|no funciona|no anda|no carga|falla|fall[oó]|rechaz|inv[aá]lid|no es v[aá]lid|no (se )?aplica|problema|reclamo|queja|devoluci|reembols|darme de baja|whats|persona|humano|alguien|asesor|vendedor|hablar|llamar|tel[eé]fono|contact|ya pagu|no recib|no me lleg|empresa|instituci|convenio|factura/iu',
+			$message
+		);
+	}
+
 	private static function ctx_key( array $ctx ): string {
 		if ( 'formacion' === $ctx['mode'] ) {
 			return 'formacion:' . $ctx['id'];
@@ -800,7 +811,12 @@ class OEC_AI_Chat {
 
 		$by_id_all = array_column( $formations, 'title', 'id' );
 		$seen      = array_values( array_filter( array_map( static fn( $id ) => $by_id_all[ $id ] ?? '', $visited ) ) );
-		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, self::mode_prompt( $ctx, $open, $seen, $focus['parents'] ?? [] ) );
+		$mode = self::mode_prompt( $ctx, $open, $seen, $focus['parents'] ?? [] );
+		// El contacto por WhatsApp no se ofrece "por las dudas". Con la regla sola la
+		// IA lo agregaba igual ("si te da error, escribinos…"), así que la lista de
+		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
+		self::$derive = self::wants_human( (string) $message );
+		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, $mode );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
 		// Sin texto (falla de la API, o el modelo rechazó la consulta): el usuario
@@ -1702,6 +1718,19 @@ TXT;
 			? 'escribí exactamente este enlace: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el link real)'
 			: 'indicá que escriba a ventas@onlineeducation.center';
 
+		$derivar = self::$derive
+			? <<<TXT
+CUÁNDO DERIVAR A UNA PERSONA — para derivar, {$humano}.
+El contacto con una persona NO se ofrece por las dudas ("si tenés algún problema, escribinos…", "cualquier cosa, por WhatsApp…"): solo se da en los casos de esta lista, cuando la persona ya lo planteó. En el resto de las respuestas no lo nombres.
+- Si pide hablar con una persona.
+- Si DICE que algo le da error o que no puede: el código de descuento no se aplica, el checkout o el pago fallan, no logra inscribirse.
+- Si pregunta algo de ventas que no está en la ficha ni en este conocimiento: decí que no tenés ese dato (no lo inventes) y derivá.
+- Pedidos especiales (beneficios, un medio de pago que no figura en "Formas de pago", cambio de formación, devoluciones), consultas de empresas o instituciones, y propuestas comerciales o de colaboración.
+TXT
+			: <<<TXT
+CONTACTO CON UNA PERSONA — en esta respuesta no corresponde: la persona no planteó un problema ni pidió hablar con alguien. No nombres WhatsApp ni el contacto con el equipo, ni expliques qué hacer "si algo falla" o "si da error". Única excepción: si pregunta un dato de ventas que no está en la ficha ni en este conocimiento, decí que no lo tenés (no lo inventes) y {$humano}.
+TXT;
+
 		return <<<TXT
 CONOCIMIENTO DE VENTAS — respuestas oficiales a lo que la ficha no dice. Usalas tal cual; no agregues condiciones, plazos ni beneficios que no figuren acá.
 {$kb}
@@ -1709,13 +1738,10 @@ CONOCIMIENTO DE VENTAS — respuestas oficiales a lo que la ficha no dice. Usala
 
 CÓMO PAGAR — regla fija: todo pago empieza en el checkout. Si pide los datos para transferir o depositar, el CBU/alias, un link de pago o "cómo pago", NO lo derives a una persona ni digas que alguien le va a pasar los datos: decile que inicie la inscripción (en una ficha, con el enlace [Inscribirme](INSCRIPCION) si el contexto lo indica; si no, con el botón de inscripción de la ficha de la formación), que elija ahí su medio de pago y que el sistema le muestra y le envía los datos para completarlo. Empezá la respuesta por ese paso ("Los datos te los da el sistema al inscribirte: …"), sin frases como "no puedo" o "no te puedo pasar".
 
-CUÁNDO DERIVAR A UNA PERSONA — para derivar, {$humano}:
-- Si pide hablar con una persona.
-- Si pregunta algo de ventas que no está en la ficha ni en este conocimiento: decí que no tenés ese dato (no lo inventes) y derivá.
-- Pedidos especiales (beneficios, un medio de pago que no figura en "Formas de pago", cambio de formación, devoluciones), consultas de empresas o instituciones, y propuestas comerciales o de colaboración.
+{$derivar}
 
 SI LA PERSONA YA ES ALUMNA (dice que pagó, que no puede entrar, o pregunta por su examen, su diploma o su clase): no le vendas nada; decile a dónde ir:
-- Pagó y no recibió el acceso, o no puede entrar al campus; o consultó a la Mesa de Ayuda y no le respondieron → derivá a una persona (como arriba).
+- Pagó y no recibió el acceso, o no puede entrar al campus; o consultó a la Mesa de Ayuda y no le respondieron → para derivarla a una persona, {$humano}.
 - No encuentra la clase o el link; necesita más tiempo para rendir o terminar; no le aparecen los exámenes; quiere darse de baja; su diploma tiene un error → Mesa de Ayuda del campus virtual.
 - Perdió o quiere cambiar el email de su cuenta → ventas@onlineeducation.center.
 TXT;
@@ -1761,7 +1787,7 @@ CERTIFICADOS
 
 DESCUENTOS
 - Además del descuento por pago anticipado o por pago completo, hay descuentos por créditos: con créditos acumulados se compran descuentos. Benefician a ex alumnos y a quienes hacen más formaciones. Cada formación tiene su propio cambio de créditos por porcentaje de descuento. Más información: {CREDITOS_URL}
-- Código de descuento: se carga en el checkout, en "Resumen de compra", campo "Código de descuento", botón "Aplicar". En el celular el "Resumen de compra" está plegado: primero hay que tocar la flecha que está junto al "Total", abajo de la pantalla. (El chat muestra solo una imagen con el lugar exacto: no la describas ni pongas imágenes vos.) Vos no podés ver ni validar códigos: no pidas que te lo pasen. Si el código no se aplica o da error, derivá a una persona.
+- Código de descuento: se carga en el checkout, en "Resumen de compra", campo "Código de descuento", botón "Aplicar". En el celular el "Resumen de compra" está plegado: primero hay que tocar la flecha que está junto al "Total", abajo de la pantalla. (El chat muestra solo una imagen con el lugar exacto: no la describas ni pongas imágenes vos.) Vos no podés ver ni validar códigos: no pidas que te lo pasen.
 - Descuentos para grupos o socios de asociaciones: depende de la formación; escribir a ventas@onlineeducation.center.
 - No hay becas ni beneficios por discapacidad por el momento.
 - Vencimiento de una promoción: si el descuento tiene fecha de vencimiento, figura junto al precio de la formación.
