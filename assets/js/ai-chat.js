@@ -445,8 +445,9 @@
     const img = document.createElement('img');
     img.src = src;
     img.alt = help.alt || '';
-    img.loading = 'lazy';
-    img.style.cssText = 'display:block;width:100%;height:auto';
+    // Sin carga diferida y con el alto reservado: la imagen es lo que se vino a ver
+    // y tiene que quedar a la vista apenas termina la respuesta.
+    img.style.cssText = 'display:block;width:100%;height:auto;aspect-ratio:' + (mobile ? '400 / 520' : '760 / 430');
     img.addEventListener('load', scrollBody);
     a.appendChild(img);
     row.appendChild(a);
@@ -765,6 +766,9 @@
       renderCards(formations);
     }
 
+    // La misma imagen no se repite si ya salió en la respuesta anterior
+    const lastBot = saved.length ? saved[saved.length - 1] : null;
+    if (doneData.help && lastBot && lastBot.h) doneData.help = null;
     if (doneData.help) renderHelp(doneData.help);
 
     // Update conversation history

@@ -623,8 +623,12 @@ class OEC_AI_Chat {
 	 * que desplegar el resumen, por eso hay dos versiones).
 	 */
 	private static function help_image( string $message, string $reply ): ?array {
-		$re = '/c[oó]digos?\s+(de\s+|promocional)|cup[oó]n/iu';
-		if ( ! preg_match( $re, $message ) || ! preg_match( '/c[oó]digo de descuento/iu', $reply ) ) {
+		// Se decide por la respuesta: si explica dónde va el código (nombra el campo
+		// y el "Resumen de compra" o el botón "Aplicar"), va la imagen. Mirar la
+		// pregunta la dejaba afuera con "¿dónde lo pongo?" o "tengo un cupon".
+		$asked = (bool) preg_match( '/c[oó]digo|cup[oó]n|promocional/iu', $message );
+		$shown = preg_match( '/c[oó]digo de descuento/iu', $reply ) && preg_match( '/resumen de compra|aplicar/iu', $reply );
+		if ( ! $shown && ! ( $asked && preg_match( '/checkout|c[oó]digo/iu', $reply ) ) ) {
 			return null;
 		}
 		$base = OEC_THEME_URI . '/assets/img/chat/codigo-descuento-';
@@ -634,6 +638,11 @@ class OEC_AI_Chat {
 			'mobile'  => $base . 'mobile.svg' . $ver,
 			'alt'     => 'Dónde se escribe el código de descuento en el checkout',
 		];
+	}
+
+	/** ¿El mensaje habla de una ficha que vio antes? ("las que vi", "la anterior", "compará") */
+	private static function refers_to_seen( string $message ): bool {
+		return (bool) preg_match( '/(?<![\p{L}])(vi|ví|viste|vimos|mir[eé]|miraba|anterior(es)?|las? otras?|el otro|fichas?|esas|esa otra|compar\p{L}+)(?![\p{L}])/iu', $message );
 	}
 
 	/** ¿Va la lista de derivaciones a una persona en esta consulta? (ver wants_human()) */
@@ -733,8 +742,7 @@ class OEC_AI_Chat {
 		// Fuera de una ficha, las ya vistas solo entran si el mensaje habla de ellas
 		// ("las que vi", "la anterior", "compará"): si no, la IA las recomendaba de
 		// más. Y cuando habla de ellas van solas, sin relleno del buscador.
-		$recall = $visited && ! $focus
-			&& preg_match( '/(?<![\\p{L}])(vi|ví|viste|vimos|mir[eé]|miraba|anterior(es)?|las? otras?|fichas?|esas|compar\\p{L}+)(?![\\p{L}])/iu', (string) $message );
+		$recall = $visited && ! $focus && self::refers_to_seen( (string) $message );
 		if ( ! $focus && ! $recall ) {
 			$visited = [];
 		}
@@ -816,6 +824,16 @@ class OEC_AI_Chat {
 		// IA lo agregaba igual ("si te da error, escribinos…"), así que la lista de
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
+		// "¿Es más barata que la anterior?": a veces respondía que no sabía qué ficha
+		// había visto, porque en los mensajes solo ve los de esta página. Si habla de
+		// otra ficha, el dato va pegado a su propia pregunta (en las reglas no alcanzaba).
+		if ( $seen && self::refers_to_seen( (string) $message ) ) {
+			$note = "[Dato del sitio, no lo escribió la persona: antes de esta página miró la ficha de «{$seen[0]}» (esa es \"la anterior\")"
+				. ( isset( $seen[1] ) ? ', y antes ' . implode( ' y ', array_map( static fn( $t ) => "«{$t}»", array_slice( $seen, 1 ) ) ) : '' )
+				. '. Sus precios y datos están en el contexto: compará con esos números y respondé directo.]';
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n" . $note;
+		}
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, $mode );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
@@ -1564,10 +1582,22 @@ class OEC_AI_Chat {
 	}
 
 	/** ¿Alguna palabra de búsqueda del mensaje está en el título o en los docentes de la formación? */
+	/**
+	 * Palabras con las que se habla de OTRA ficha o de precios, no del nombre de
+	 * una formación: "¿es más barata que la anterior?" traía de alternativa el
+	 * taller "Ligamento Cruzado Anterior".
+	 */
+	private const REFERENCE_WORDS = [
+		'anterior', 'anteriores', 'otra', 'otras', 'otro', 'otros', 'primera', 'primero', 'segunda', 'segundo', 'ultima', 'ultimo',
+		'barata', 'barato', 'baratas', 'caro', 'cara', 'caras', 'precio', 'precios', 'mejor', 'peor', 'completa', 'completo',
+		'compara', 'comparar', 'comparada', 'comparado', 'diferencia', 'diferencias', 'conviene', 'vale', 'sale', 'cuesta',
+	];
+
 	private static function names_entry( string $message, array $entry ): bool {
 		$hay = ' ' . self::title_norm( ( $entry['title'] ?? '' ) . ' ' . implode( ' ', $entry['teachers'] ?? [] ) ) . ' ';
 		foreach ( explode( ' ', self::title_norm( $message ) ) as $w ) {
-			if ( strlen( $w ) >= 4 && ! in_array( $w, self::SEARCH_STOPWORDS, true ) && str_contains( $hay, ' ' . $w . ' ' ) ) {
+			if ( strlen( $w ) >= 4 && ! in_array( $w, self::SEARCH_STOPWORDS, true ) && ! in_array( $w, self::REFERENCE_WORDS, true )
+				&& str_contains( $hay, ' ' . $w . ' ' ) ) {
 				return true;
 			}
 		}
