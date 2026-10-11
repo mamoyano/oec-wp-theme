@@ -651,7 +651,7 @@ class OEC_AI_Chat {
 	/** ¿El mensaje plantea un problema o pide contacto humano? (habilita ofrecer WhatsApp) */
 	private static function wants_human( string $message ): bool {
 		return (bool) preg_match(
-			'/error|no puedo|no pude|no me deja|no me dej|no funciona|no anda|no carga|falla|fall[oó]|rechaz|inv[aá]lid|no es v[aá]lid|no (se )?aplica|problema|reclamo|queja|devoluci|reembols|darme de baja|whats|persona|humano|alguien|asesor|vendedor|hablar|llamar|tel[eé]fono|contact|ya pagu|no recib|no me lleg|empresa|instituci|convenio|factura/iu',
+			'/error|no puedo|no pude|no (me |lo |la |me lo |me la |se )*(toma|acepta|reconoce|sirve|funcion|anda|carga|deja|aplica|valida|pasa)|no me deja|no me dej|no funciona|no anda|no carga|falla|fall[oó]|rechaz|inv[aá]lid|no es v[aá]lid|no (se )?aplica|problema|reclamo|queja|devoluci|reembols|darme de baja|whats|persona|humano|alguien|asesor|vendedor|hablar|llamar|tel[eé]fono|contact|ya pagu|no recib|no me lleg|empresa|instituci|convenio|factura/iu',
 			$message
 		);
 	}
@@ -1758,7 +1758,7 @@ El contacto con una persona NO se ofrece por las dudas ("si tenés algún proble
 - Pedidos especiales (beneficios, un medio de pago que no figura en "Formas de pago", cambio de formación, devoluciones), consultas de empresas o instituciones, y propuestas comerciales o de colaboración.
 TXT
 			: <<<TXT
-CONTACTO CON UNA PERSONA — en esta respuesta no corresponde: la persona no planteó un problema ni pidió hablar con alguien. No nombres WhatsApp ni el contacto con el equipo, ni expliques qué hacer "si algo falla" o "si da error". Única excepción: si pregunta un dato de ventas que no está en la ficha ni en este conocimiento, decí que no lo tenés (no lo inventes) y {$humano}.
+CONTACTO CON UNA PERSONA — en esta respuesta no corresponde: la persona no planteó un problema ni pidió hablar con alguien. No nombres WhatsApp ni el contacto con el equipo, ni expliques qué hacer "si algo falla", "si da error" o "si no se aplica", ni te ofrezcas a revisarlo vos ("decime cuál es", "avisame y lo vemos"). Única excepción: si pregunta un dato de ventas que no está en la ficha ni en este conocimiento, decí que no lo tenés (no lo inventes) y {$humano}.
 TXT;
 
 		return <<<TXT
@@ -1817,7 +1817,7 @@ CERTIFICADOS
 
 DESCUENTOS
 - Además del descuento por pago anticipado o por pago completo, hay descuentos por créditos: con créditos acumulados se compran descuentos. Benefician a ex alumnos y a quienes hacen más formaciones. Cada formación tiene su propio cambio de créditos por porcentaje de descuento. Más información: {CREDITOS_URL}
-- Código de descuento: se carga en el checkout, en "Resumen de compra", campo "Código de descuento", botón "Aplicar". En el celular el "Resumen de compra" está plegado: primero hay que tocar la flecha que está junto al "Total", abajo de la pantalla. (El chat muestra solo una imagen con el lugar exacto: no la describas ni pongas imágenes vos.) Vos no podés ver ni validar códigos: no pidas que te lo pasen.
+- Código de descuento: se carga en el checkout, en "Resumen de compra", campo "Código de descuento", botón "Aplicar". En el celular el "Resumen de compra" está plegado: primero hay que tocar la flecha que está junto al "Total", abajo de la pantalla. (El chat muestra solo una imagen con el lugar exacto: no la describas ni pongas imágenes vos.) Vos no podés ver, validar ni revisar códigos: nunca pidas que te lo pasen ni ofrezcas revisarlo u "orientar" si falla. Explicá dónde se carga y cerrá ahí (con la invitación a inscribirse, si corresponde).
 - Descuentos para grupos o socios de asociaciones: depende de la formación; escribir a ventas@onlineeducation.center.
 - No hay becas ni beneficios por discapacidad por el momento.
 - Vencimiento de una promoción: si el descuento tiene fecha de vencimiento, figura junto al precio de la formación.
