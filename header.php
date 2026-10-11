@@ -54,7 +54,7 @@
 					<input type="text"
 					       id="oec-ai-header-input"
 					       class="header-search__input"
-					       placeholder="<?php esc_attr_e( '¿Qué quieres aprender?', 'oec-theme' ); ?>"
+					       placeholder="<?php echo esc_attr( OEC_AI_Chat::placeholder() ); ?>"
 					       autocomplete="off"
 					       spellcheck="false"
 					       aria-label="<?php esc_attr_e( 'Pregunta al asistente OEC', 'oec-theme' ); ?>">
@@ -105,7 +105,7 @@
 			<div class="header-search__box">
 				<i class="bi bi-stars header-search__icon" aria-hidden="true"></i>
 				<input type="text" id="oec-ai-mobile-input" class="header-search__input"
-				       placeholder="<?php esc_attr_e( '¿Qué quieres aprender?', 'oec-theme' ); ?>"
+				       placeholder="<?php echo esc_attr( OEC_AI_Chat::placeholder() ); ?>"
 				       autocomplete="off" autofocus>
 				<button type="button" id="oec-ai-mobile-send"
 				        class="header-search__send-btn"

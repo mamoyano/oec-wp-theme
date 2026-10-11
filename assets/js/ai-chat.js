@@ -6,6 +6,57 @@
   const endpoint       = cfg.endpoint || '';
   const streamEndpoint = cfg.streamEndpoint || '';
   const clickEndpoint  = cfg.clickEndpoint || '';
+  // Página desde donde se chatea: { mode: 'formacion', id } · { mode: 'tematica', tematica } · { mode: 'catalogo' }.
+  // El servidor cambia el rol del asistente según esto (vendedor de la formación / de la temática / catálogo).
+  const pageContext    = cfg.context || { mode: 'catalogo' };
+  // Enlaces que la IA escribe con una clave en vez de la URL: [Inscribirme](INSCRIPCION), [Escribinos por WhatsApp](WHATSAPP)
+  const chatLinks      = cfg.links || {};
+
+  // Página de cada mensaje del historial: el servidor le pasa a la IA solo los de la página actual
+  // (los de otra ficha hablan de otra formación) y sabe qué fichas se miraron antes.
+  const ctxKey = pageContext.mode === 'formacion' ? 'formacion:' + pageContext.id
+               : pageContext.mode === 'tematica'  ? 'tematica:' + pageContext.tematica
+               : 'catalogo';
+
+  // Rótulo "Hablando sobre: …" del historial: al cambiar de página en medio de una
+  // conversación no se sabía a qué formación correspondía cada pregunta.
+  // Si el HTML viene de caché y todavía no trae el título, sale del <h1> o del <title> de la página.
+  function pageTitle() {
+    if (pageContext.mode === 'catalogo') return '';
+    if (cfg.contextTitle) return cfg.contextTitle;
+    const h1 = document.querySelector('h1');
+    return ((h1 && h1.textContent) || document.title.split(' | ')[0] || '').trim() || 'esta página';
+  }
+  const pageTopic = { k: ctxKey, get t() { return pageTitle(); }, u: location.pathname };
+  let lastTopicKey = 'catalogo';
+  function markTopic(topic) {
+    const key = (topic && topic.k) || 'catalogo';
+    if (key === lastTopicKey) return;
+    lastTopicKey = key;
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list) return;
+    const row = document.createElement('div');
+    row.className = 'oec-msg-topic';
+    // Base en línea: con el HTML cacheado puede llegar este JS antes que el CSS nuevo
+    row.style.cssText = 'font-size:.75rem;font-weight:600;color:rgba(255,255,255,.7)';
+    row.appendChild(document.createTextNode('Hablando sobre: '));
+    if (topic && topic.t) {
+      const a = document.createElement('a');
+      a.href = topic.u || '#';
+      a.textContent = topic.t;
+      a.style.cssText = 'color:#fff;text-decoration:underline';
+      row.appendChild(a);
+    } else {
+      row.appendChild(document.createTextNode('todo el catálogo'));
+    }
+    list.appendChild(row);
+  }
+
+  // Cambia cada clave por su URL real; si esta página no la tiene, deja solo el texto.
+  function resolveLinks(text) {
+    return String(text).replace(/\[([^\]\n]+)\]\((WHATSAPP|INSCRIPCION)\)/g,
+      (_, label, key) => chatLinks[key] ? '[' + label + '](' + chatLinks[key] + ')' : label);
+  }
   const botName        = 'Asistente OEC';
 
   let country  = '';
@@ -38,7 +89,8 @@
       cid     = s.cid || newCid();
       saved   = Array.isArray(s.log) ? s.log : [];
       history = Array.isArray(s.history) ? s.history : [];
-      mentionedFormationIds = Array.isArray(s.mentioned) ? s.mentioned : [];
+      // Las tarjetas mostradas son contexto de la página donde salieron: en otra, confunden
+      mentionedFormationIds = Array.isArray(s.mentioned) && (s.mentionedCtx || 'catalogo') === ctxKey ? s.mentioned : [];
     } else {
       cid = newCid();
       try { localStorage.removeItem(STORE_KEY); } catch (_) {}
@@ -49,7 +101,7 @@
     saved = saved.slice(-STORE_MAX);
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify({
-        cid, updated: Date.now(), log: saved, history, mentioned: mentionedFormationIds,
+        cid, updated: Date.now(), log: saved, history, mentioned: mentionedFormationIds, mentionedCtx: ctxKey,
       }));
     } catch (_) {}
     updateEntryPoints();
@@ -62,6 +114,7 @@
     saved = [];
     history = [];
     mentionedFormationIds = [];
+    lastTopicKey = 'catalogo';
     try { localStorage.removeItem(STORE_KEY); } catch (_) {}
     const list = document.getElementById('oec-overlay-messages');
     if (list) list.innerHTML = '';
@@ -78,7 +131,8 @@
       const btn   = document.getElementById(p + '-send');
       if (!input) return;
       if (!input.dataset.placeholder) input.dataset.placeholder = input.placeholder;
-      input.placeholder = has ? 'Continuá tu conversación…' : input.dataset.placeholder;
+      // En una ficha o landing el campo ya dice sobre qué responde: ese texto se queda
+      input.placeholder = (has && pageContext.mode === 'catalogo') ? 'Continuá tu conversación…' : input.dataset.placeholder;
       if (btn) btn.disabled = !input.value.trim() && !has;
     });
     const nb = document.getElementById('oec-overlay-new');
@@ -218,6 +272,7 @@
       // Sin mensaje nuevo = solo reabrir la conversación guardada
       if (firstMessage) {
         appendMsg('user', firstMessage);
+        markTopic(pageTopic);
         setBusy(true);
         fetchReply(firstMessage);
       }
@@ -232,6 +287,7 @@
     if (!list || list.children.length || !saved.length) return;
     saved.forEach(m => {
       if (m.u !== undefined) { appendMsg('user', m.u); return; }
+      markTopic(m.p);
       const bubbles = String(m.a || '').split('|||').map(p => p.trim()).filter(Boolean).map(part => {
         const b = createAssistantBubble();
         if (b) b.innerHTML = renderMarkdown(part);
@@ -241,6 +297,7 @@
         upgradeFormationLinks(bubbles, m.f);
         renderCards(m.f);
       }
+      if (m.h) renderHelp(m.h);
     });
     updateEntryPoints();
     scrollBody();
@@ -267,6 +324,9 @@
 
   /* ── Markdown renderer ───────────────────────────────────── */
   function renderMarkdown(raw, streaming = false) {
+    // 0. Claves de enlace → URL; mientras se escribe, no mostrar un enlace a medio llegar
+    raw = resolveLinks(raw);
+    if (streaming) raw = raw.replace(/\[[^\]\n]*(\]\([^)\n]*)?$/, '');
     // 1. Escape HTML
     let html = raw
       .replace(/&/g, '&amp;')
@@ -363,6 +423,35 @@
     if (!f.external) return;
     a.target = '_blank';
     a.rel    = 'noopener';
+  }
+
+  /* ── Imagen de ayuda (p. ej. dónde va el código de descuento) ──
+     La manda el servidor en el evento final; versión de celular o de
+     escritorio según la pantalla. Al tocarla se abre en grande. */
+  function renderHelp(help) {
+    const list = document.getElementById('oec-overlay-messages');
+    if (!list || !help || !help.desktop) return;
+    const mobile = window.matchMedia('(max-width: 767px)').matches && help.mobile;
+    const src = mobile ? help.mobile : help.desktop;
+    if (!/^https?:\/\//.test(src)) return;
+    const row = document.createElement('div');
+    row.className = 'oec-msg-row oec-msg-row--assistant';
+    const a = document.createElement('a');
+    a.className = 'oec-msg-help';
+    a.href = src;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.style.cssText = 'display:block;width:100%;max-width:' + (mobile ? '340px' : '520px') + ';border-radius:14px;overflow:hidden;line-height:0';
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = help.alt || '';
+    img.loading = 'lazy';
+    img.style.cssText = 'display:block;width:100%;height:auto';
+    img.addEventListener('load', scrollBody);
+    a.appendChild(img);
+    row.appendChild(a);
+    list.appendChild(row);
+    scrollBody();
   }
 
   /* ── Course cards ────────────────────────────────────────── */
@@ -581,6 +670,7 @@
         body:    JSON.stringify({
           message, history, country, currency, mentioned_ids: mentionedFormationIds,
           cid, turn: saved.filter(m => m.u !== undefined).length, page: location.pathname,
+          context: pageContext,
         }),
       };
       let res = await fetch(streamEndpoint, req);
@@ -675,14 +765,18 @@
       renderCards(formations);
     }
 
+    if (doneData.help) renderHelp(doneData.help);
+
     // Update conversation history
+    // Con los enlaces ya resueltos: en otra página las claves apuntarían a otra cosa
+    fullText = resolveLinks(fullText);
     const cleanReply = fullText.replace(/\|\|\|/g, '\n\n').trim();
-    history.push({ role: 'user',      content: message    });
-    history.push({ role: 'assistant', content: cleanReply });
-    if (history.length > 10) history = history.slice(-10);
+    history.push({ role: 'user',      content: message,    ctx: ctxKey });
+    history.push({ role: 'assistant', content: cleanReply, ctx: ctxKey });
+    if (history.length > 20) history = history.slice(-20); // varias páginas: el servidor usa solo las de la actual
 
     // Guardar para seguirla en otra página
-    saved.push({ u: message }, { a: fullText.trim(), f: formations || [] });
+    saved.push({ u: message }, { a: fullText.trim(), f: formations || [], h: doneData.help || null, p: { k: pageTopic.k, t: pageTopic.t, u: pageTopic.u } });
     saveConversation();
   }
 
@@ -699,6 +793,7 @@
     document.getElementById('oec-overlay-send').disabled = true;
 
     appendMsg('user', msg);
+    markTopic(pageTopic);
     setBusy(true);
     fetchReply(msg);
   }

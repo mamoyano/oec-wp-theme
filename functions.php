@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.128' );
+define( 'OEC_THEME_VERSION', '1.0.129' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -81,11 +81,11 @@ function oec_enqueue_assets(): void {
 		oec_asset_version( 'assets/js/ai-chat.js' ),
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
-	wp_localize_script( 'oec-ai-chat', 'oecAiChat', [
+	wp_localize_script( 'oec-ai-chat', 'oecAiChat', array_merge( [
 		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
 		'streamEndpoint' => esc_url( rest_url( 'oec/v1/chat-stream' ) ),
 		'clickEndpoint'  => esc_url( rest_url( 'oec/v1/chat-click' ) ),
-	] );
+	], OEC_AI_Chat::script_config() ) ); // + context (ficha / temática / catálogo) y links
 
 	// Barra de compartir — solo en artículos/blogs individuales.
 	if ( is_singular( 'post' ) ) {

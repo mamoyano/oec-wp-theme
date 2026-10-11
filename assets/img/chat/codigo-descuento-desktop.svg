@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 430" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+  <title>Dónde se carga el código de descuento en el checkout</title>
+  <rect width="760" height="430" rx="14" fill="#f8fafc"/>
+  <!-- pasos -->
+  <rect width="760" height="70" rx="14" fill="#fff"/>
+  <rect y="56" width="760" height="14" fill="#fff"/>
+  <line x1="0" y1="70" x2="760" y2="70" stroke="#e2e8f0"/>
+  <line x1="150" y1="30" x2="610" y2="30" stroke="#e2e8f0" stroke-width="2"/>
+  <circle cx="150" cy="30" r="14" fill="#2563eb"/><text x="150" y="35" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">1</text>
+  <circle cx="380" cy="30" r="14" fill="#e2e8f0"/><text x="380" y="35" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b">2</text>
+  <circle cx="610" cy="30" r="14" fill="#e2e8f0"/><text x="610" y="35" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b">3</text>
+  <text x="150" y="60" text-anchor="middle" font-size="10" fill="#2563eb">Seleccionar módulos</text>
+  <text x="380" y="60" text-anchor="middle" font-size="10" fill="#94a3b8">Método de pago</text>
+  <text x="610" y="60" text-anchor="middle" font-size="10" fill="#94a3b8">Confirmación y pago</text>
+  <!-- columna izquierda (genérica, atenuada) -->
+  <g opacity=".55">
+    <rect x="24" y="92" width="400" height="314" rx="12" fill="#fff" stroke="#e2e8f0"/>
+    <rect x="40" y="108" width="368" height="110" rx="10" fill="#cbd5e1"/>
+    <text x="54" y="204" font-size="14" font-weight="700" fill="#fff">Tu formación</text>
+    <text x="40" y="246" font-size="12" font-weight="700" fill="#0f172a">Selecciona los módulos que deseas adquirir</text>
+    <rect x="40" y="260" width="368" height="56" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <circle cx="60" cy="288" r="7" fill="#fff" stroke="#2563eb" stroke-width="4"/>
+    <text x="78" y="292" font-size="12" fill="#1e3a8a">Primer Módulo</text>
+    <rect x="40" y="328" width="368" height="56" rx="10" fill="#fff" stroke="#e2e8f0" stroke-width="1.5"/>
+    <circle cx="60" cy="356" r="8" fill="#fff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="78" y="360" font-size="12" fill="#0f172a">Formación completa</text>
+  </g>
+  <!-- Resumen de compra -->
+  <rect x="448" y="92" width="288" height="262" rx="12" fill="#fff" stroke="#e2e8f0"/>
+  <text x="468" y="124" font-size="15" font-weight="700" fill="#0f172a">Resumen de compra</text>
+  <text x="468" y="150" font-size="11" fill="#475569">Tu formación</text>
+  <line x1="468" y1="166" x2="716" y2="166" stroke="#eef2f7"/>
+  <text x="468" y="190" font-size="11" fill="#475569">Subtotal</text>
+  <text x="716" y="190" font-size="11" text-anchor="end" fill="#0f172a">$ 000.000</text>
+  <text x="468" y="220" font-size="11.5" font-weight="600" fill="#0f172a">Código de descuento</text>
+  <rect x="468" y="230" width="172" height="34" rx="8" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="480" y="251" font-size="11" fill="#94a3b8">Código de descuento</text>
+  <rect x="648" y="230" width="68" height="34" rx="8" fill="#0f172a"/>
+  <text x="682" y="251" font-size="11.5" font-weight="700" text-anchor="middle" fill="#fff">Aplicar</text>
+  <line x1="468" y1="286" x2="716" y2="286" stroke="#eef2f7"/>
+  <text x="468" y="322" font-size="13" font-weight="700" fill="#0f172a">Total</text>
+  <text x="716" y="324" font-size="17" font-weight="800" text-anchor="end" fill="#0f172a">$ 000.000</text>
+  <!-- flecha -->
+  <rect x="452" y="368" width="280" height="40" rx="10" fill="#f97316"/>
+  <text x="592" y="393" font-size="12.5" font-weight="700" text-anchor="middle" fill="#fff">Escribí tu código acá y tocá «Aplicar»</text>
+  <path d="M554 368 V282" stroke="#f97316" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <path d="M543 284 L554 268 L565 284 Z" fill="#f97316"/>
+</svg>

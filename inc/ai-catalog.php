@@ -588,7 +588,11 @@ class OEC_AI_Catalog {
 			}
 			$path    = self::get_dir() . '/formations/' . sanitize_file_name( $id ) . '.json';
 			$fetched = (int) ( $f['_fetched'] ?? filemtime( $path ) );
-			if ( time() - $fetched > self::OPEN_REFRESH_EVERY ) {
+			if ( ! array_key_exists( 'methodology', $f ) ) {
+				// Ficha anterior a los campos del chat vendedor: se refresca primero
+				// (siempre dentro del tope diario OPEN_REFRESH_MAX).
+				$stale[ $id ] = 0;
+			} elseif ( time() - $fetched > self::OPEN_REFRESH_EVERY ) {
 				$stale[ $id ] = $fetched;
 			}
 			self::save_formation( $id, array_merge( self::patch_from_row( $f, $r ), [ '_fetched' => $fetched ] ) );
@@ -987,6 +991,8 @@ class OEC_AI_Catalog {
 
 	private static function process( array $d, array $raw_reviews ): array {
 		$strip = static fn( $html ) => trim( wp_strip_all_tags( $html ?? '' ) );
+		// Igual, pero sin pegar las frases que el HTML separaba con <br>, </p> o </li>
+		$prose = static fn( $html ) => trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( preg_replace( '/<(br|\/p|\/li|\/div|\/h\d)\b[^>]*>/i', ' ', (string) $html ) ) ) );
 
 		// Modules + subjects
 		$modules = [];
@@ -1018,7 +1024,13 @@ class OEC_AI_Catalog {
 		// Certificates
 		$certs = [];
 		foreach ( $d['certificates']['data'] ?? [] as $c ) {
-			$certs[] = [ 'name' => $c['name'], 'type' => $c['type'] ];
+			$certs[] = [
+				'name'        => $c['name'],
+				'type'        => $c['type'],
+				// Para el chat vendedor: qué acredita cada certificado y sus créditos
+				'description' => $prose( $c['description'] ?? '' ),
+				'cecs'        => (float) ( $c['cecs'] ?? 0 ),
+			];
 		}
 
 		// Supporting organizations
@@ -1105,6 +1117,12 @@ class OEC_AI_Catalog {
 			] : null,
 			'publish_start'   => substr( (string) ( $d['publish_start'] ?? '' ), 0, 10 ),
 			'published_at'    => (string) ( $d['publish_start'] ?? '' ), // con hora: desempata el orden por publicación
+			// Chat vendedor (ficha de formación): cómo se cursa, exámenes, requisitos y link de inscripción
+			'methodology'       => $prose( $d['methodology'] ?? '' ),
+			'exams_description' => $prose( $d['exams_description'] ?? '' ),
+			'requirements'      => $prose( $d['requirements'] ?? '' ),
+			'register_url'      => (string) ( $d['register_url'] ?? '' ),
+			'edition_uid'       => (string) ( $d['edition_uid'] ?? '' ),
 			'tags'            => $tags,
 			'great_lecturers'     => (bool) $d['great_lecturers'],
 			'great_topic'         => (bool) $d['great_topic'],

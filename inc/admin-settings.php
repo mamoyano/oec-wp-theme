@@ -26,6 +26,8 @@ function oec_get_defaults(): array {
 		'oec_api_tokens'     => [], // tokens secundarios: formaciones de otras comunidades (ver OEC_AI_Catalog::sources())
 		'oec_anthropic_key'  => '',
 		'oec_ai_model'       => 'haiku-4-5',
+		'oec_chat_kb'        => '', // vacío = OEC_AI_Chat::default_kb()
+		'oec_chat_whatsapp'  => '', // vacío = OEC_NL_WHATSAPP
 		'credits_api_key'    => '',
 		'catalog_sync_time'  => '03:00', // hora local del sync diario del catálogo (ver OEC_AI_Catalog::schedule())
 		// Topbar & footer content
@@ -161,6 +163,14 @@ function oec_sanitize_options( $raw ): array {
 	$clean['oec_anthropic_key'] = sanitize_text_field( $raw['oec_anthropic_key'] ?? '' );
 	$model                      = sanitize_key( $raw['oec_ai_model'] ?? '' );
 	$clean['oec_ai_model']      = class_exists( 'OEC_AI_Chat' ) && isset( OEC_AI_Chat::MODELS[ $model ] ) ? $model : $defaults['oec_ai_model'];
+	// Conocimiento de ventas: si queda igual al texto por defecto se guarda vacío,
+	// así las mejoras futuras del texto por defecto llegan solas.
+	$kb = mb_substr( trim( sanitize_textarea_field( $raw['oec_chat_kb'] ?? '' ) ), 0, 20000 );
+	if ( class_exists( 'OEC_AI_Chat' ) && trim( sanitize_textarea_field( OEC_AI_Chat::default_kb() ) ) === $kb ) {
+		$kb = '';
+	}
+	$clean['oec_chat_kb']       = $kb;
+	$clean['oec_chat_whatsapp'] = esc_url_raw( trim( (string) ( $raw['oec_chat_whatsapp'] ?? '' ) ) );
 
 	// Topbar & footer
 	$clean['campus_virtual_url'] = esc_url_raw( $raw['campus_virtual_url'] ?? '' );
@@ -214,7 +224,7 @@ function oec_admin_section_keys(): array {
 		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
-		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model' ],
+		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp' ],
 		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
 		'conversaciones'  => [],
@@ -949,7 +959,25 @@ function oec_render_settings_page(): void {
 									<?php endforeach; ?>
 								</select>
 								<p class="description">
-									<?php esc_html_e( 'Haiku 5.5 es la generación nueva. En nuestras pruebas costó cerca de 9 veces menos por consulta y terminó de responder en la mitad del tiempo, con respuestas algo más breves. El registro de Chat IA guarda qué modelo respondió cada consulta, para compararlos. Se puede volver a Haiku 4.5 desde acá en cualquier momento.', 'oec-theme' ); ?>
+									<?php /* (ayuda del selector de modelo) */ esc_html_e( 'Haiku 5.5 es la generación nueva. En nuestras pruebas costó cerca de 9 veces menos por consulta y terminó de responder en la mitad del tiempo, con respuestas algo más breves. El registro de Chat IA guarda qué modelo respondió cada consulta, para compararlos. Se puede volver a Haiku 4.5 desde acá en cualquier momento.', 'oec-theme' ); ?>
+								</p>
+							</div>
+							<div class="oec-tracker-row__field">
+								<label for="oec-chat-whatsapp"><?php esc_html_e( 'WhatsApp para derivar a una persona', 'oec-theme' ); ?></label>
+								<input type="url" id="oec-chat-whatsapp" class="large-text"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_chat_whatsapp]"
+								       value="<?php echo esc_attr( $opts['oec_chat_whatsapp'] ?? '' ); ?>"
+								       placeholder="<?php echo esc_attr( defined( 'OEC_NL_WHATSAPP' ) ? OEC_NL_WHATSAPP : 'https://api.whatsapp.com/send?phone=…' ); ?>">
+								<p class="description">
+									<?php esc_html_e( 'El chat ofrece este enlace cuando piden hablar con una persona o no tiene el dato. Vacío = el WhatsApp general del sitio.', 'oec-theme' ); ?>
+								</p>
+							</div>
+							<div class="oec-tracker-row__field">
+								<label for="oec-chat-kb"><?php esc_html_e( 'Conocimiento de ventas', 'oec-theme' ); ?></label>
+								<textarea id="oec-chat-kb" class="large-text code" rows="22"
+								          name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_chat_kb]"><?php echo esc_textarea( trim( (string) ( $opts['oec_chat_kb'] ?? '' ) ) ?: OEC_AI_Chat::default_kb() ); ?></textarea>
+								<p class="description">
+									<?php esc_html_e( 'Respuestas oficiales a lo que la ficha de una formación no dice: cuotas, clases grabadas, validez del certificado, descuentos, etc. El chat las usa en todo el sitio y no inventa lo que no esté acá ni en la ficha. Una respuesta por línea, con guion. {CREDITOS_URL} se reemplaza por el enlace a la página de créditos.', 'oec-theme' ); ?>
 								</p>
 							</div>
 						</div>

@@ -90,6 +90,8 @@ class OEC_AI_Chat {
 			'cid'          => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
 			'turn'         => [ 'required' => false, 'type' => 'integer', 'default' => 0 ],
 			'page'         => [ 'required' => false, 'type' => 'string', 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ],
+			// Página desde donde se chatea (ficha / landing de temática): ver page_context()
+			'context'      => [ 'required' => false, 'type' => 'object', 'default' => [] ],
 		];
 
 		register_rest_route( self::NAMESPACE, self::ROUTE, [
@@ -458,7 +460,10 @@ class OEC_AI_Chat {
 		$modality_str = $modality_labels[ $f['modality'] ] ?? $f['modality'];
 		$sync_str     = $sync_labels[ $f['synchronicity'] ] ?? $f['synchronicity'];
 		$lines[] = "Organización: {$f['org']} | Modalidad: {$modality_str} | Sincronicidad: {$sync_str}";
-		$lines[] = "Horas: {$f['lecture_hours']}h | Alumnos históricos: {$f['total_students']}";
+		// La cantidad de módulos va escrita: si hay que contarla del temario, la IA
+		// se equivoca (dijo 3 en un curso de 4 y después se "corrigió" sola).
+		$n_mod   = count( $f['modules'] ?? [] );
+		$lines[] = "Horas: {$f['lecture_hours']}h" . ( $n_mod ? " | Cantidad de módulos: {$n_mod}" : '' ) . " | Alumnos históricos: {$f['total_students']}";
 		$start  = self::format_date_human( $f['start'] ?? '' );
 		$end    = self::format_date_human( $f['end'] ?? '' );
 		$enroll = self::format_date_human( $f['enrollment_end'] ?? '' );
@@ -544,6 +549,17 @@ class OEC_AI_Chat {
 			if ( ! empty( $price_data['payment_methods'] ) ) {
 				$methods = array_column( $price_data['payment_methods'], 'name' );
 				$lines[] = "Formas de pago: " . implode( ', ', $methods );
+
+				// Pago completo con descuento + cuotas de la tarjeta: sale mejor que ir
+				// módulo por módulo sin descuento. Solo si hay un medio con cuotas.
+				$cards = array_values( array_filter( $methods, static fn( $m ) => (bool) preg_match( '/pagotic|mercado\s*pago/i', (string) $m ) ) );
+				$disc  = $price_data['discount'] ?? [];
+				if ( $cards && ! empty( $disc['percentage'] ) && 'early_payment' !== ( $disc['type'] ?? '' ) && ! empty( $disc['total'] ) ) {
+					$saving  = number_format( (float) ( $price_data['price']['total'] ?? 0 ) - (float) $disc['total'], 0, ',', '.' );
+					$lines[] = "CONSEJO DE PAGO: lo más conveniente es pagar el curso completo con el {$disc['percentage']}% de descuento ({$cur} "
+						. number_format( (float) $disc['total'], 0, ',', '.' ) . ", ahorra {$cur} {$saving}) y elegir cuotas con tarjeta en "
+						. implode( ' o ', $cards ) . ": así paga en cuotas igual, pero sobre el precio con descuento. El costo exacto de las cuotas lo muestra el medio de pago antes de confirmar.";
+				}
 			}
 
 			// Module 1 option for multi-module formations
@@ -571,7 +587,22 @@ class OEC_AI_Chat {
 
 	/* ── Message builder ────────────────────────────────────── */
 
-	private static function build_messages( array $history, string $message ): array {
+	/**
+	 * Mensajes para la IA. Cada turno del historial trae la página donde se
+	 * escribió ("ctx": formacion:<id> · tematica:<slug> · catalogo) y solo van
+	 * los de la página actual: los de otra ficha hablan de OTRA formación (otro
+	 * precio, otras fechas) y la IA los tomaba como de esta — llegó a dar el
+	 * precio de una formación en la ficha de otra y a "corregirse" sola. Las
+	 * fichas anteriores no se pierden: viajan como alternativas con sus datos
+	 * reales (visited_fichas()). Sin $ctx_key no se filtra nada.
+	 */
+	private static function build_messages( array $history, string $message, string $ctx_key = '' ): array {
+		if ( '' !== $ctx_key ) {
+			$history = array_values( array_filter(
+				$history,
+				static fn( $turn ) => (string) ( $turn['ctx'] ?? 'catalogo' ) === $ctx_key
+			) );
+		}
 		$messages = [];
 		// Keep only the last 6 history items (3 back-and-forth turns)
 		foreach ( array_slice( $history, -6 ) as $turn ) {
@@ -583,6 +614,48 @@ class OEC_AI_Chat {
 		}
 		$messages[] = [ 'role' => 'user', 'content' => $message ];
 		return $messages;
+	}
+
+	/**
+	 * Imagen de ayuda que acompaña la respuesta. La decide el servidor (no la
+	 * IA) para que salga siempre y nunca una equivocada. Por ahora una sola:
+	 * dónde se carga el código de descuento en el checkout (en el celular hay
+	 * que desplegar el resumen, por eso hay dos versiones).
+	 */
+	private static function help_image( string $message, string $reply ): ?array {
+		$re = '/c[oó]digos?\s+(de\s+|promocional)|cup[oó]n/iu';
+		if ( ! preg_match( $re, $message ) || ! preg_match( '/c[oó]digo de descuento/iu', $reply ) ) {
+			return null;
+		}
+		$base = OEC_THEME_URI . '/assets/img/chat/codigo-descuento-';
+		$ver  = '?v=' . OEC_THEME_VERSION;
+		return [
+			'desktop' => $base . 'desktop.svg' . $ver,
+			'mobile'  => $base . 'mobile.svg' . $ver,
+			'alt'     => 'Dónde se escribe el código de descuento en el checkout',
+		];
+	}
+
+	private static function ctx_key( array $ctx ): string {
+		if ( 'formacion' === $ctx['mode'] ) {
+			return 'formacion:' . $ctx['id'];
+		}
+		return 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : 'catalogo';
+	}
+
+	/** Fichas que la persona miró antes en esta conversación (las 3 más recientes, sin la actual). */
+	private static function visited_fichas( array $history, string $current_id = '' ): array {
+		$ids = [];
+		foreach ( array_reverse( $history ) as $turn ) {
+			if ( preg_match( '/^formacion:(t-[A-Za-z0-9]{14})$/', (string) ( $turn['ctx'] ?? '' ), $m )
+				&& $m[1] !== $current_id && ! in_array( $m[1], $ids, true ) ) {
+				$ids[] = $m[1];
+				if ( count( $ids ) >= 3 ) {
+					break;
+				}
+			}
+		}
+		return $ids;
 	}
 
 	/* ── Streaming handler (SSE) ────────────────────────────── */
@@ -636,14 +709,67 @@ class OEC_AI_Chat {
 		$currency      = strtoupper( $request->get_param( 'currency' ) );
 		$mentioned_ids = $request->get_param( 'mentioned_ids' );
 
-		self::sse_status( 'Analizando tu consulta...' );
-		$expanded = self::expand_query( $api_key, $message );
+		// Rol según la página: ficha de formación, landing de temática o catálogo
+		$ctx   = self::resolve_context( $request->get_param( 'context' ) );
+		$focus = 'formacion' === $ctx['mode'] ? self::focus_formation( $ctx['id'] ) : null;
+		if ( $focus ) {
+			$focus['user_country'] = (string) $country;
+		}
+		$open  = true;
+		$closed = [];
+		$others = [];
+		$visited = self::visited_fichas( (array) $history, $focus['id'] ?? '' );
+		// Fuera de una ficha, las ya vistas solo entran si el mensaje habla de ellas
+		// ("las que vi", "la anterior", "compará"): si no, la IA las recomendaba de
+		// más. Y cuando habla de ellas van solas, sin relleno del buscador.
+		$recall = $visited && ! $focus
+			&& preg_match( '/(?<![\\p{L}])(vi|ví|viste|vimos|mir[eé]|miraba|anterior(es)?|las? otras?|fichas?|esas|compar\\p{L}+)(?![\\p{L}])/iu', (string) $message );
+		if ( ! $focus && ! $recall ) {
+			$visited = [];
+		}
 
-		self::sse_status( 'Revisando el catálogo de formaciones...' );
-		$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
-		$formations = self::prefilter( $message, $extra );
-		$formations = self::merge_mentioned( $formations, $mentioned_ids );
-		$closed     = self::prefilter_closed( $message, $formations, $extra );
+		if ( $focus ) {
+			// Ficha: va siempre esa formación completa + hasta 3 alternativas. Sin
+			// ampliación con IA: no hay que buscar, la formación ya está elegida.
+			self::sse_status( 'Revisando esta formación...' );
+			$index  = OEC_AI_Catalog::get_index( true );
+			$open   = in_array( $focus['id'], array_column( $index, 'id' ), true ) && self::enrollment_open( $focus );
+			// Alternativas: lo que el usuario nombra (si la palabra está en el título o
+			// los docentes: "inscripción" o "abrir" coinciden por azar con cualquier
+			// ficha) y, después, las más parecidas a esta formación.
+			$asked = array_filter(
+				self::rank( $index, $message, '', self::MAX_RESULTS ),
+				static fn( $e ) => self::names_entry( $message, $e )
+			);
+			$similar = self::rank( $index, $focus['title'] . ' ' . implode( ' ', $focus['tematicas'] ?? [] ), '', self::MAX_RESULTS );
+			$picked  = [];
+			foreach ( $focus['parents'] as $p ) {
+				$picked[ $p['id'] ] = [ 'id' => $p['id'] ]; // la incluyen: van con sus datos y precio reales
+			}
+			foreach ( $visited as $vid ) {
+				$picked[ $vid ] = [ 'id' => $vid ]; // fichas que miró antes: para comparar con datos reales
+			}
+			foreach ( array_merge( array_slice( array_values( $asked ), 0, 2 ), $similar ) as $e ) {
+				if ( $e['id'] !== $focus['id'] && count( $picked ) < max( 3, count( $visited ) + count( $focus['parents'] ) + 1 ) ) {
+					$picked[ $e['id'] ] ??= $e;
+				}
+			}
+			$others     = self::load_formations( array_values( $picked ) );
+			$formations = array_merge( [ $focus ], $others );
+		} else {
+			self::sse_status( 'Analizando tu consulta...' );
+			$expanded = self::expand_query( $api_key, $message );
+
+			self::sse_status( 'Revisando el catálogo de formaciones...' );
+			$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
+			$formations = 'tematica' === $ctx['mode']
+				? self::prefilter_tematica( $message, $extra, $ctx['tematica'] )
+				: self::prefilter( $message, $extra );
+			$formations = $recall
+				? self::merge_mentioned( [], $visited )
+				: self::merge_mentioned( $formations, (array) $mentioned_ids );
+			$closed     = self::prefilter_closed( $message, $formations, $extra );
+		}
 
 		$prices = [];
 		if ( $country && $currency && ! empty( $formations ) ) {
@@ -654,10 +780,27 @@ class OEC_AI_Chat {
 		self::sse_status( 'Preparando la respuesta...' );
 		$total            = count( OEC_AI_Catalog::get_index( true ) );
 		$detailed_modules = self::asks_about_content( $message );
-		$context          = self::build_context( $formations, $prices, $detailed_modules, $closed );
-		$messages         = self::build_messages( $history, $message );
+		if ( $focus ) {
+			$context = "FORMACIÓN DE ESTA PÁGINA:\n" . self::format_focus( $focus, $prices[ $focus['id'] ] ?? null, $open );
+			if ( $others ) {
+				$context .= "\n\n---\n\nOTRAS FORMACIONES (alternativas: ofrecelas solo si la de esta página no es lo que busca o está cerrada):\n\n"
+					. self::build_context( $others, $prices, false, [] );
+			}
+		} else {
+			// Las fichas que ya miró van aparte y primero: mezcladas con el resto,
+			// "las que vi" terminaba siendo cualquier formación del contexto.
+			$seen_f = array_values( array_filter( $formations, static fn( $f ) => in_array( $f['id'], $visited, true ) ) );
+			$rest_f = array_values( array_filter( $formations, static fn( $f ) => ! in_array( $f['id'], $visited, true ) ) );
+			$context = $seen_f
+				? "FICHAS QUE LA PERSONA YA MIRÓ EN ESTA CONVERSACIÓN:\n\n" . self::build_context( $seen_f, $prices, false, [] )
+					. ( $rest_f ? "\n\n---\n\nRESTO DEL CATÁLOGO PARA ESTA CONSULTA:\n\n" . self::build_context( $rest_f, $prices, $detailed_modules, $closed ) : '' )
+				: self::build_context( $formations, $prices, $detailed_modules, $closed );
+		}
+		$messages = self::build_messages( (array) $history, $message, self::ctx_key( $ctx ) );
 
-		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total );
+		$by_id_all = array_column( $formations, 'title', 'id' );
+		$seen      = array_values( array_filter( array_map( static fn( $id ) => $by_id_all[ $id ] ?? '', $visited ) ) );
+		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, self::mode_prompt( $ctx, $open, $seen, $focus['parents'] ?? [] ) );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
 		// Sin texto (falla de la API, o el modelo rechazó la consulta): el usuario
@@ -677,16 +820,26 @@ class OEC_AI_Chat {
 				$source[ $id ] = $by_id[ $id ];
 			}
 		}
-		foreach ( $formations as $f ) {
+		// En una ficha no hay respaldo por título: al describir la formación de la
+		// página, palabras como "trail running" coincidían con el título de una
+		// alternativa y aparecía la tarjeta de un curso que la IA nunca nombró.
+		foreach ( $focus ? [] : $formations as $f ) {
 			if ( ! isset( $source[ $f['id'] ] ) && self::title_in_text( $f['title'], $reply ) ) {
 				$source[ $f['id'] ] = $f;
 			}
+		}
+		if ( $focus ) {
+			unset( $source[ $focus['id'] ] ); // ya está en esa página
 		}
 		$source = array_values( $source );
 
 		$cards = array_map( [ __CLASS__, 'card' ], $source );
 
-		self::sse_data( [ 'done' => true, 'formations' => $cards ] );
+		$done = [ 'done' => true, 'formations' => $cards ];
+		if ( $help = self::help_image( (string) $message, $reply ) ) {
+			$done['help'] = $help;
+		}
+		self::sse_data( $done );
 
 		// Se cierra la respuesta al usuario y recién después se guarda el
 		// registro: la escritura en la base no le suma espera a nadie.
@@ -707,6 +860,7 @@ class OEC_AI_Chat {
 				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
 				'error'      => $error,
 				'model'      => self::model_key(),
+				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
 			] );
 		}
 		exit;
@@ -818,21 +972,28 @@ class OEC_AI_Chat {
 		return $expanded ? $query . ' ' . $expanded : $query;
 	}
 
-	private static function stream_anthropic( string $key, string $context, array $messages, int $total = 0 ): string {
-		// System as array: static instructions (cacheable) + dynamic formations context
+	/**
+	 * Bloques de "system": instrucciones + conocimiento de ventas (iguales en
+	 * todas las consultas → se cachean) y, aparte, el rol de esta página y las
+	 * formaciones elegidas para esta consulta.
+	 */
+	private static function system_blocks( string $context, int $total, string $mode = '' ): array {
 		$system = [
 			[
 				'type'          => 'text',
-				'text'          => self::system_prompt( $total ),
+				'text'          => self::system_prompt( $total ) . "\n\n" . self::sales_knowledge(),
 				'cache_control' => [ 'type' => 'ephemeral' ],
 			],
 		];
-		if ( $context ) {
-			$system[] = [
-				'type' => 'text',
-				'text' => "FORMACIONES DISPONIBLES ACTUALMENTE (selección para esta consulta):\n" . $context,
-			];
+		$dynamic = trim( $mode . "\n\n" . ( $context ? "FORMACIONES DISPONIBLES ACTUALMENTE (selección para esta consulta):\n" . $context : '' ) );
+		if ( '' !== $dynamic ) {
+			$system[] = [ 'type' => 'text', 'text' => $dynamic ];
 		}
+		return $system;
+	}
+
+	private static function stream_anthropic( string $key, string $context, array $messages, int $total = 0, string $mode = '' ): string {
+		$system = self::system_blocks( $context, $total, $mode );
 
 		$body = wp_json_encode( self::request_body( [
 			'max_tokens' => 1024,
@@ -1052,20 +1213,7 @@ class OEC_AI_Chat {
 	/* ── Anthropic call ─────────────────────────────────────── */
 
 	private static function call_anthropic( string $key, string $context, array $messages, int $total = 0 ): string|\WP_Error {
-		// System as array: static instructions (cacheable) + dynamic formations context
-		$system = [
-			[
-				'type'          => 'text',
-				'text'          => self::system_prompt( $total ),
-				'cache_control' => [ 'type' => 'ephemeral' ],
-			],
-		];
-		if ( $context ) {
-			$system[] = [
-				'type' => 'text',
-				'text' => "FORMACIONES DISPONIBLES ACTUALMENTE (selección para esta consulta):\n" . $context,
-			];
-		}
+		$system = self::system_blocks( $context, $total );
 
 		$body = wp_json_encode( self::request_body( [
 			'max_tokens' => 2048,
@@ -1098,6 +1246,543 @@ class OEC_AI_Chat {
 		return self::split_ids( $text )[0];
 	}
 
+	/* ══════════════════════════════════════════════════════════
+	   MODO VENDEDOR
+	   El mismo chat cambia de rol según la página donde se abre:
+	     · ficha de formación  → asesor de ESA formación
+	     · landing de temática → asesor de las formaciones de esa área
+	     · resto del sitio     → recomendador del catálogo (como siempre)
+	   La página se detecta en PHP (page_context) y viaja al navegador en
+	   la config del script; cada mensaje la devuelve en "context" y el
+	   servidor la valida (request_context) antes de usarla.
+	   ══════════════════════════════════════════════════════════ */
+
+	/** Contexto de la página que se está generando (front). */
+	public static function page_context(): array {
+		static $ctx = null;
+		if ( null !== $ctx ) {
+			return $ctx;
+		}
+		$path = (string) wp_parse_url( (string) ( $_SERVER['REQUEST_URI'] ?? '' ), PHP_URL_PATH ); // phpcs:ignore
+
+		// Ficha de formación: /formacion/<slug>-t-XXXXXXXXXXXXXX (la arma el plugin)
+		if ( preg_match( '#/formacion/[^/?]*?(t-[A-Za-z0-9]{14})/?$#', $path, $m ) ) {
+			$ctx = self::resolve_context( [ 'mode' => 'formacion', 'id' => $m[1] ] );
+			if ( 'formacion' === $ctx['mode'] ) {
+				return $ctx;
+			}
+		}
+		// Landing de temática
+		if ( function_exists( 'oec_especiales_registradas' ) ) {
+			foreach ( oec_especiales_registradas() as $e ) {
+				$landing = (string) wp_parse_url( (string) ( $e['url'] ?? '' ), PHP_URL_PATH );
+				if ( $landing && untrailingslashit( $landing ) === untrailingslashit( $path ) ) {
+					return $ctx = self::resolve_context( [ 'mode' => 'tematica', 'tematica' => $e['tematica'] ?? '' ] );
+				}
+			}
+		}
+		return $ctx = [ 'mode' => 'catalogo' ];
+	}
+
+	/** Valida un contexto (de la página o enviado por el navegador) y le pone el título real. */
+	private static function resolve_context( $raw ): array {
+		$mode = is_array( $raw ) ? (string) ( $raw['mode'] ?? '' ) : '';
+		if ( 'formacion' === $mode ) {
+			$id = (string) ( $raw['id'] ?? '' );
+			$f  = preg_match( '/^t-[A-Za-z0-9]{14}$/', $id ) ? OEC_AI_Catalog::get_formation( $id ) : null;
+			if ( $f && ! empty( $f['title'] ) ) {
+				return [ 'mode' => 'formacion', 'id' => $id, 'title' => (string) $f['title'] ];
+			}
+		}
+		if ( 'tematica' === $mode && function_exists( 'oec_especiales_registradas' ) ) {
+			foreach ( oec_especiales_registradas() as $e ) {
+				if ( ( $e['tematica'] ?? '' ) === ( $raw['tematica'] ?? null ) ) {
+					return [ 'mode' => 'tematica', 'tematica' => (string) $e['tematica'], 'title' => (string) $e['title'] ];
+				}
+			}
+		}
+		return [ 'mode' => 'catalogo' ];
+	}
+
+	/** Placeholder del campo del header según la página. */
+	public static function placeholder(): string {
+		$ctx = self::page_context();
+		if ( 'catalogo' === $ctx['mode'] ) {
+			return __( '¿Qué quieres aprender?', 'oec-theme' );
+		}
+		$title = $ctx['title'];
+		if ( mb_strlen( $title ) > 60 ) {
+			$title = rtrim( mb_substr( $title, 0, 58 ) ) . '…';
+		}
+		/* translators: %s: nombre de la formación o de la temática */
+		return sprintf( __( '¿Qué te respondo sobre %s?', 'oec-theme' ), $title );
+	}
+
+	/** Config para ai-chat.js: contexto de la página y enlaces que el chat escribe como [texto](CLAVE). */
+	public static function script_config(): array {
+		$ctx   = self::page_context();
+		$links = array_filter( [ 'WHATSAPP' => self::whatsapp_url() ] );
+		if ( 'formacion' === $ctx['mode'] ) {
+			$focus = self::focus_base( $ctx['id'] ); // sin clases del auditorio: eso se pide recién al chatear
+			if ( ! empty( $focus['register_url'] ) ) {
+				$links['INSCRIPCION'] = esc_url_raw( $focus['register_url'] );
+			}
+		}
+		// El título va aparte: es para el rótulo "Hablando sobre…" del historial;
+		// "context" vuelve al servidor tal cual y ahí se valida de nuevo.
+		$title = (string) ( $ctx['title'] ?? '' );
+		unset( $ctx['title'] );
+		return [ 'context' => $ctx, 'contextTitle' => $title, 'links' => (object) $links ];
+	}
+
+	private static function whatsapp_url(): string {
+		$url = trim( (string) ( oec_get_options()['oec_chat_whatsapp'] ?? '' ) );
+		return $url ?: ( defined( 'OEC_NL_WHATSAPP' ) ? OEC_NL_WHATSAPP : '' );
+	}
+
+	/**
+	 * Ficha en foco, con los campos del vendedor (cómo se cursa, exámenes,
+	 * requisitos, link de inscripción, detalle de certificados). El catálogo
+	 * los guarda desde v1.0.129; a las fichas bajadas antes se les completan
+	 * con la copia que el plugin de formaciones deja en caché al mostrar la
+	 * ficha (opción oec_cache_<md5("trainings/ID")>), sin consultar la API.
+	 */
+	private static function focus_formation( string $id ): ?array {
+		$f = self::focus_base( $id );
+		if ( ! $f ) {
+			return null;
+		}
+		$f['parents']  = self::focus_parents( $id );
+		$f['sessions'] = self::focus_sessions( (string) ( $f['edition_uid'] ?? '' ) );
+		return $f;
+	}
+
+	/**
+	 * Formaciones más grandes que incluyen a esta ("Esta formación está incluida
+	 * en…"). El plugin ya lo pide al mostrar la ficha y lo guarda 24 h: se lee
+	 * de ahí, aunque esté vencido (cambia muy poco), sin sumarle pedidos a oas-api.
+	 */
+	private static function focus_parents( string $id ): array {
+		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}/parents" ) );
+		$out    = [];
+		foreach ( is_array( $cached ) && is_array( $cached['data'] ?? null ) ? $cached['data'] : [] as $p ) {
+			if ( ! empty( $p['title'] ) && preg_match( '/^t-[A-Za-z0-9]{14}$/', (string) ( $p['uid'] ?? '' ) ) ) {
+				$out[] = [ 'id' => $p['uid'], 'title' => (string) $p['title'] ];
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * Próximas clases en vivo ya programadas en el auditorio virtual (lo mismo
+	 * que anuncia la ficha). Es la API del campus, no oas-api; un pedido por
+	 * edición por hora como mucho, y si falla no se reintenta por 10 minutos.
+	 */
+	private static function focus_sessions( string $edition_uid ): array {
+		if ( ! preg_match( '/^te-[A-Za-z0-9]{14}$/', $edition_uid ) ) {
+			return [];
+		}
+		$key    = 'oec_chat_ses_' . $edition_uid;
+		$cached = get_transient( $key );
+		if ( ! is_array( $cached ) ) {
+			$base = apply_filters( 'oec_chat_campus_api', 'https://g-se.onlineeducation.center/campus/api' );
+			$res  = wp_remote_get( "{$base}/editions/{$edition_uid}/auditorium-sessions", [ 'timeout' => 3, 'headers' => [ 'Accept' => 'application/json' ] ] );
+			$data = ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) ? json_decode( wp_remote_retrieve_body( $res ), true ) : null;
+			if ( ! is_array( $data ) ) {
+				set_transient( $key, [], 10 * MINUTE_IN_SECONDS );
+				return [];
+			}
+			$cached = [];
+			foreach ( $data['sessions'] ?? [] as $s ) {
+				$start = strtotime( (string) ( $s['acSesion']['inicio'] ?? '' ) );
+				if ( $start && ! empty( $s['nombre'] ) ) {
+					$cached[] = [
+						'start'   => $start,
+						'name'    => sanitize_text_field( $s['nombre'] ),
+						'minutes' => (int) ( $s['acSesion']['minutosSesion'] ?? 0 ),
+						'module'  => (int) ( $s['asignatura']['modulo']['numero'] ?? 0 ),
+					];
+				}
+			}
+			usort( $cached, static fn( $a, $b ) => $a['start'] <=> $b['start'] );
+			set_transient( $key, $cached, HOUR_IN_SECONDS );
+		}
+		return array_slice( array_values( array_filter( $cached, static fn( $s ) => $s['start'] > time() ) ), 0, 8 );
+	}
+
+	/** Huso del país del usuario, solo donde hay uno claro: [ DateTimeZone, nombre del país ]. */
+	private static function country_timezone( string $country ): ?array {
+		$map = [
+			'MX' => [ 'America/Mexico_City', 'México (hora del centro)' ], 'ES' => [ 'Europe/Madrid', 'España (península)' ],
+			'CL' => [ 'America/Santiago', 'Chile' ],        'CO' => [ 'America/Bogota', 'Colombia' ],
+			'PE' => [ 'America/Lima', 'Perú' ],             'EC' => [ 'America/Guayaquil', 'Ecuador' ],
+			'UY' => [ 'America/Montevideo', 'Uruguay' ],    'PY' => [ 'America/Asuncion', 'Paraguay' ],
+			'BO' => [ 'America/La_Paz', 'Bolivia' ],        'VE' => [ 'America/Caracas', 'Venezuela' ],
+			'CR' => [ 'America/Costa_Rica', 'Costa Rica' ], 'GT' => [ 'America/Guatemala', 'Guatemala' ],
+			'PA' => [ 'America/Panama', 'Panamá' ],         'DO' => [ 'America/Santo_Domingo', 'República Dominicana' ],
+			'SV' => [ 'America/El_Salvador', 'El Salvador' ], 'HN' => [ 'America/Tegucigalpa', 'Honduras' ],
+			'NI' => [ 'America/Managua', 'Nicaragua' ],     'PR' => [ 'America/Puerto_Rico', 'Puerto Rico' ],
+			'CU' => [ 'America/Havana', 'Cuba' ],           'PT' => [ 'Europe/Lisbon', 'Portugal' ],
+		];
+		if ( ! isset( $map[ $country ] ) ) {
+			return null; // Argentina (ya es la hora base) o país con varios husos / sin datos
+		}
+		try {
+			return [ new \DateTimeZone( $map[ $country ][0] ), $map[ $country ][1] ];
+		} catch ( \Exception $e ) {
+			return null;
+		}
+	}
+
+	private static function focus_base( string $id ): ?array {
+		$f = OEC_AI_Catalog::get_formation( $id );
+		if ( ! $f || array_key_exists( 'methodology', $f ) ) {
+			return $f;
+		}
+		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
+		$d      = is_array( $cached ) ? ( $cached['data'] ?? null ) : null;
+		if ( ! is_array( $d ) ) {
+			return $f;
+		}
+		$f['edition_uid']       = (string) ( $d['edition_uid'] ?? '' );
+		$prose = static fn( $html ) => trim( preg_replace( '/\s+/u', ' ', wp_strip_all_tags( preg_replace( '/<(br|\/p|\/li|\/div|\/h\d)\b[^>]*>/i', ' ', (string) $html ) ) ) );
+		$f['methodology']       = $prose( $d['methodology'] ?? '' );
+		$f['exams_description'] = $prose( $d['exams_description'] ?? '' );
+		$f['requirements']      = $prose( $d['requirements'] ?? '' );
+		$f['register_url']      = (string) ( $d['register_url'] ?? '' );
+		$certs = [];
+		foreach ( $d['certificates']['data'] ?? [] as $c ) {
+			$certs[] = [
+				'name'        => (string) ( $c['name'] ?? '' ),
+				'type'        => (string) ( $c['type'] ?? '' ),
+				'description' => $prose( $c['description'] ?? '' ),
+				'cecs'        => (float) ( $c['cecs'] ?? 0 ),
+			];
+		}
+		if ( $certs ) {
+			$f['certificates'] = $certs;
+		}
+		return $f;
+	}
+
+	/** Bloque de contexto de la ficha en foco: la ficha completa + lo que solo usa el vendedor. */
+	private static function format_focus( array $f, ?array $price, bool $open ): string {
+		$lines   = [ self::format_formation( $f, $price, true ) ];
+		$lines[] = '';
+		$lines[] = $open
+			? 'ESTADO: inscripción ABIERTA.'
+			: 'ESTADO: INSCRIPCIÓN CERRADA. No se puede inscribir ahora y no hay fecha de una próxima edición (la decide el organizador).';
+		if ( ! empty( $f['methodology'] ) ) {
+			$lines[] = 'Cómo se cursa (días, horarios, clases): ' . mb_substr( $f['methodology'], 0, 900 );
+		}
+		if ( ! empty( $f['exams_description'] ) ) {
+			$lines[] = 'Exámenes: ' . mb_substr( $f['exams_description'], 0, 600 );
+		}
+		if ( ! empty( $f['requirements'] ) ) {
+			$lines[] = 'Requisitos: ' . mb_substr( $f['requirements'], 0, 400 );
+		}
+		$certs = array_filter( $f['certificates'] ?? [], static fn( $c ) => ! empty( $c['description'] ) || ! empty( $c['cecs'] ) );
+		if ( $certs ) {
+			$lines[] = 'Detalle de certificados:';
+			foreach ( $f['certificates'] as $c ) {
+				$meta = array_filter( [
+					! empty( $c['type'] ) ? 'formato ' . $c['type'] : '',
+					! empty( $c['cecs'] ) ? rtrim( rtrim( number_format( (float) $c['cecs'], 2, ',', '' ), '0' ), ',' ) . ' créditos de educación continua' : '',
+				] );
+				$lines[] = '- ' . $c['name'] . ( $meta ? ' (' . implode( ', ', $meta ) . ')' : '' )
+					. ( ! empty( $c['description'] ) ? ': ' . mb_substr( $c['description'], 0, 280 ) : '' );
+			}
+		}
+		$year = substr( (string) ( $f['publish_start'] ?? '' ), 0, 4 );
+		if ( $year ) {
+			$lines[] = "Esta edición se publicó en {$year}.";
+		}
+		if ( ! empty( $f['sessions'] ) ) {
+			// La hora del país del usuario la calcula el servidor: la IA se equivoca
+			// al convertir husos (dio 12:00 para México cuando eran las 11:00).
+			$local   = self::country_timezone( (string) ( $f['user_country'] ?? '' ) );
+			$lines[] = '';
+			$lines[] = 'PRÓXIMAS CLASES EN VIVO ya programadas en el auditorio virtual (hora de Argentina, GMT-3'
+				. ( $local ? '; entre paréntesis, la hora en ' . $local[1] : '' ) . '; quedan grabadas):';
+			foreach ( $f['sessions'] as $s ) {
+				$lines[] = '- ' . wp_date( 'l j \\d\\e F, H:i', $s['start'] ) . ' hs de Argentina'
+					. ( $local ? ' (' . wp_date( 'H:i', $s['start'], $local[0] ) . ' hs en ' . $local[1] . ')' : '' )
+					. ': "' . $s['name'] . '"'
+					. ( $s['minutes'] ? " ({$s['minutes']} min" . ( $s['module'] ? ", módulo {$s['module']}" : '' ) . ')' : '' );
+			}
+		}
+		if ( count( $f['modules'] ?? [] ) <= 1 ) {
+			$lines[] = 'Tiene un solo módulo: NO existe la opción de pagar módulo por módulo.';
+		}
+		if ( ! empty( $f['parents'] ) ) {
+			$lines[] = '';
+			$lines[] = 'ESTA FORMACIÓN ESTÁ INCLUIDA EN (formaciones más completas que la contienen; quien se inscribe a una de ellas ya cursa esta): '
+				. implode( ' · ', array_map( static fn( $p ) => "«{$p['title']}»", $f['parents'] ) );
+		}
+		if ( $open && ( $args = self::selling_points( $f, $price ) ) ) {
+			$lines[] = '';
+			$lines[] = 'ARGUMENTOS DE VENTA de esta formación (datos reales; usá uno distinto en cada respuesta):';
+			foreach ( $args as $a ) {
+				$lines[] = '- ' . $a;
+			}
+		}
+		if ( $open ) {
+			$lines[] = ! empty( $f['register_url'] )
+				? 'Para inscribirse: escribí exactamente [Inscribirme](INSCRIPCION) (el sistema lo convierte en el enlace al checkout).'
+				: 'Para inscribirse: con el botón de inscripción de esta misma página.';
+		}
+		return implode( "\n", $lines );
+	}
+
+	/**
+	 * ¿Sigue abierta hoy? El índice de abiertas se rehace una vez por día: entre
+	 * el cierre de inscripción y el próximo sync, la fecha manda. La inscripción
+	 * cierra al terminar ese día; las asincrónicas no tienen fecha de cierre.
+	 */
+	private static function enrollment_open( array $f ): bool {
+		if ( str_starts_with( (string) ( $f['synchronicity'] ?? '' ), 'ASYNC' ) ) {
+			return true;
+		}
+		$end = substr( (string) ( $f['enrollment_end'] ?? '' ), 0, 10 );
+		return ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $end ) || $end >= current_time( 'Y-m-d' );
+	}
+
+	/** ¿Alguna palabra de búsqueda del mensaje está en el título o en los docentes de la formación? */
+	private static function names_entry( string $message, array $entry ): bool {
+		$hay = ' ' . self::title_norm( ( $entry['title'] ?? '' ) . ' ' . implode( ' ', $entry['teachers'] ?? [] ) ) . ' ';
+		foreach ( explode( ' ', self::title_norm( $message ) ) as $w ) {
+			if ( strlen( $w ) >= 4 && ! in_array( $w, self::SEARCH_STOPWORDS, true ) && str_contains( $hay, ' ' . $w . ' ' ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Lo más vendible de una formación, armado con sus datos (nada inventado). */
+	private static function selling_points( array $f, ?array $price ): array {
+		$out = [];
+		$async = str_starts_with( (string) ( $f['synchronicity'] ?? '' ), 'ASYNC' );
+		$end   = substr( (string) ( $f['enrollment_end'] ?? '' ), 0, 10 );
+		if ( ! $async && preg_match( '/^\d{4}-\d{2}-\d{2}$/', $end ) ) {
+			$days = (int) floor( ( strtotime( $end ) - strtotime( current_time( 'Y-m-d' ) ) ) / DAY_IN_SECONDS );
+			if ( $days >= 0 && $days <= 15 ) {
+				$out[] = 0 === $days ? 'La inscripción cierra HOY.' : ( 1 === $days ? 'La inscripción cierra mañana.' : "Quedan {$days} días para el cierre de inscripción." );
+			}
+		}
+		if ( $async ) {
+			$out[] = 'Se puede empezar hoy mismo y cursar a su ritmo, sin horarios fijos.';
+		}
+		if ( ! empty( $f['sessions'] ) ) {
+			$next  = $f['sessions'][0];
+			$out[] = 'Próxima clase en vivo: ' . wp_date( 'l j \\d\\e F, H:i', $next['start'] ) . ' hs (hora de Argentina), "' . $next['name'] . '". Ya hay ' . count( $f['sessions'] ) . ' clase(s) en vivo programada(s).';
+		}
+		$disc = $price['discount'] ?? null;
+		if ( ! empty( $disc['percentage'] ) ) {
+			$until = ( 'early_payment' === ( $disc['type'] ?? '' ) && ! empty( $disc['expiration'] ) )
+				? ' (vence el ' . self::format_date_human( substr( $disc['expiration'], 0, 10 ) ) . ')'
+				: '';
+			$out[] = "Descuento vigente del {$disc['percentage']}%{$until}.";
+		}
+		if ( count( $f['modules'] ?? [] ) > 1 ) {
+			$out[] = 'Se puede empezar pagando solo el Módulo 1 y seguir módulo por módulo.';
+		}
+		if ( ! empty( $f['teachers'] ) ) {
+			$t     = $f['teachers'][0];
+			$out[] = ( ! empty( $f['great_lecturers'] ) ? 'Docentes destacados: ' : 'Lo dicta ' ) . $t['name']
+				. ( ! empty( $t['background'] ) ? ' (' . mb_substr( $t['background'], 0, 110 ) . ')' : '' )
+				. ( count( $f['teachers'] ) > 1 ? ' y ' . ( count( $f['teachers'] ) - 1 ) . ' docente(s) más' : '' ) . '.';
+		}
+		if ( ! empty( $f['supports'] ) ) {
+			$out[] = 'Aval de ' . implode( ', ', array_slice( $f['supports'], 0, 3 ) ) . ': figura en el certificado.';
+		}
+		$students = (int) ( $f['total_students'] ?? 0 );
+		if ( $students >= 50 ) {
+			$out[] = number_format( $students, 0, ',', '.' ) . ' alumnos ya la cursaron.';
+		}
+		$rs = $f['reviews_summary'] ?? null;
+		if ( ! empty( $rs['count'] ) && (float) ( $rs['average'] ?? 0 ) >= 4.5 ) {
+			$out[] = 'Opiniones de alumnos: ' . number_format( (float) $rs['average'], 1, ',', '' ) . '/5 sobre ' . (int) $rs['count'] . ' opiniones.';
+		}
+		if ( ! empty( $f['great_topic'] ) ) {
+			$out[] = 'Temática destacada: muy pedida y actual en el campo profesional.';
+		}
+		$out[] = 'Todo queda grabado y con acceso por un año: no se pierde nada si un día no se puede asistir.';
+		return $out;
+	}
+
+	/** Formaciones de una temática para esta consulta; sin tema en el mensaje, las destacadas del área. */
+	private static function prefilter_tematica( string $query, string $extra, string $slug ): array {
+		$all = OEC_AI_Catalog::get_index( true );
+		$in  = array_values( array_filter( $all, static fn( $e ) => in_array( $slug, $e['tags'] ?? [], true ) ) );
+		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
+		if ( count( $top ) < 3 ) {
+			// Pregunta por otra área: se responde igual, con lo que haya en todo el catálogo
+			$seen = array_flip( array_column( $top, 'id' ) );
+			foreach ( self::rank( $all, $query, $extra, self::MAX_RESULTS ) as $e ) {
+				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < self::MAX_RESULTS ) {
+					$top[] = $e;
+				}
+			}
+		}
+		if ( ! $top ) {
+			$top = array_slice( $in, 0, 6 ); // "Hola" / "Info": las primeras en el orden sugerido por la API
+		}
+		return self::load_formations( $top );
+	}
+
+	/** Instrucciones del rol según la página (van junto al contexto, fuera de la parte cacheada). */
+	private static function mode_prompt( array $ctx, bool $open = true, array $seen = [], array $parents = [] ): string {
+		$incl = $parents
+			? "\n- IMPORTANTE: esta formación también se cursa como parte de " . implode( ' y de ', array_map( static fn( $p ) => "«{$p['title']}»", $parents ) )
+				. ', formaciones más completas que la incluyen (sus datos y precios están en "OTRAS FORMACIONES"). Decilo SIEMPRE en tu primera respuesta de la conversación y cada vez que pregunte por precio, inscripción o certificados: puede hacer solo esta o ir por la más completa, que ya la trae adentro. Nombralas y ponelas en la línea <<IDS:…>>.'
+			: '';
+		$before = $seen
+			? "\nPÁGINAS ANTERIORES: en esta misma conversación la persona ya miró la ficha de " . implode( ' y la de ', array_map( static fn( $t ) => "«{$t}»", $seen ) )
+				. '. Sus datos reales están en el contexto. Cuando diga "la anterior", "la otra", "las que vi" o pida comparar, se refiere SOLO a esas (y a la de esta página, si es una ficha), no al resto del contexto. Si la pregunta no es sobre ellas, no las nombres, y nunca digas que "ya vio" una formación que no sea una de esas. Respondé directo con el dato correcto: sin dudar en voz alta ni rectificarte dentro del mismo mensaje. Cada formación tiene su propio precio: usá siempre el del contexto y nunca te disculpes ni "corrijas" respuestas anteriores por eso (eran sobre otra formación).'
+			: '';
+		if ( 'formacion' === $ctx['mode'] ) {
+			$closed = $open ? '' : "\n- Esta formación tiene la INSCRIPCIÓN CERRADA: decilo con claridad apenas sea relevante, no invites a inscribirse ni prometas fechas, y ofrecé las formaciones similares de \"OTRAS FORMACIONES\".";
+			return <<<TXT
+MODO DE ESTA CONVERSACIÓN: ASESOR DE UNA FORMACIÓN
+La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte se refiere a ESA formación, salvo que nombre otra. Es la primera que aparece abajo ("FORMACIÓN DE ESTA PÁGINA").
+- Tu objetivo es resolver sus dudas y que se inscriba. Sos un vendedor que conoce el producto: respondé primero lo que preguntó, con los datos de la ficha y del conocimiento de ventas.
+- ESTRUCTURA DE CADA RESPUESTA en esta página, en tres mensajes separados por |||:
+  1) La respuesta a lo que preguntó.
+  2) Un punto fuerte de la formación que NO te preguntó, en una o dos frases, tomado de "ARGUMENTOS DE VENTA" (o de sus docentes, opiniones y temario). Tiene que ser de OTRO tema que la pregunta: si preguntó por precio o pagos, hablá de docentes, avales, alumnos, opiniones, temario o modalidad; si preguntó por contenidos, hablá del docente, el aval o el descuento. Mirá la conversación y no repitas un punto que ya dijiste. Si quedan pocos días para el cierre o el descuento vence pronto, ese es el punto.
+  3) Una pregunta o una invitación concreta a inscribirse. Si ya resolviste dos o tres dudas, invitá directamente a inscribirse.
+- El mensaje 2 va SIEMPRE, aunque la pregunta haya sido corta. Excepciones: si la persona ya es alumna, pide hablar con alguien o la inscripción está cerrada.
+- No presiones ni exageres: solo datos reales de la ficha.
+- Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale esta formación en 2 o 3 mensajes (qué es y para quién; cómo y cuándo se cursa; precio con el descuento vigente) y preguntá qué más quiere saber.{$incl}
+- Precio: usá los valores del contexto (ya están en su moneda). Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1.
+- Si el contexto trae "CONSEJO DE PAGO" y pregunta por precio, cuotas o cómo pagar, recomendá ESO primero y con convicción (pago completo con descuento + cuotas con tarjeta, con el monto y el ahorro); el pago módulo por módulo va después, como alternativa. No inventes tasas, cantidad de cuotas ni digas "sin interés".
+- No repitas el título completo en cada mensaje: decí "esta formación" o "el curso".
+- Si pregunta cómo pagar o pide datos para pagar (transferencia, CBU, link de pago): la respuesta es inscribirse por el checkout, y en ese mismo mensaje va SIEMPRE la línea "Para inscribirse" del contexto (el enlace [Inscribirme](INSCRIPCION) si figura).
+- "Empezar solo con el Módulo 1" se ofrece únicamente si el contexto trae "Opción de inicio"; si la formación tiene un solo módulo, no lo nombres.
+- Datos (cantidad de módulos, horas, fechas, precios): tomalos tal cual del contexto y decilos una sola vez, con seguridad. Nunca dudes en voz alta, te contradigas ni te rectifiques dentro de la respuesta, y no digas que vas a confirmar un dato que ya está en el contexto.
+- Si esta formación no es lo que busca, ofrecele una de las "OTRAS FORMACIONES".
+- Si el contexto trae "PRÓXIMAS CLASES EN VIVO", usalas cuando pregunte por fechas, horarios, cronograma o cómo se cursa, y como punto fuerte ("la próxima clase en vivo es el…"). Aclará siempre que el horario es de Argentina y que quedan grabadas. Si la lista trae entre paréntesis la hora de su país, dá esa también. NUNCA conviertas vos el horario a otro país o ciudad (te equivocás con los husos): si pide otra zona, dale la hora de Argentina (GMT-3) para que la convierta, y no te ofrezcas a convertirla. No inventes clases que no estén en la lista.{$closed}
+- En la línea <<IDS:…>> poné SOLO las otras formaciones que nombres; nunca la de esta ficha (la persona ya está en su página).{$before}
+TXT;
+		}
+		if ( 'tematica' === $ctx['mode'] ) {
+			return <<<TXT
+MODO DE ESTA CONVERSACIÓN: ASESOR DE LA TEMÁTICA «{$ctx['title']}»
+La persona está en la página de {$ctx['title']}. Las formaciones de abajo son de esa área (salvo que haya preguntado por otra cosa).
+- Tu objetivo es ayudarla a elegir una formación de esta área e inscribirse.
+- Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones destacadas de la lista, con una frase sobre para quién es cada una, y preguntá por su perfil u objetivo para afinar.
+- Si pregunta por otra área, respondé igual con lo que haya en el contexto.{$before}
+TXT;
+		}
+		return ltrim( $before );
+	}
+
+	/**
+	 * Conocimiento de ventas: las respuestas oficiales del equipo comercial a
+	 * lo que la ficha no dice (cuotas, grabaciones, validez del certificado…)
+	 * + cuándo y a dónde derivar. Editable en Tema OEC → Chat IA → Configuración.
+	 */
+	private static function sales_knowledge(): string {
+		$opts = oec_get_options();
+		$kb   = trim( (string) ( $opts['oec_chat_kb'] ?? '' ) ) ?: self::default_kb();
+		$kb   = str_replace( '{CREDITOS_URL}', home_url( '/creditos-por-descuentos' ), $kb );
+		$site = get_bloginfo( 'name' );
+
+		$redes = array_filter( [
+			'Instagram' => $opts['social_instagram'] ?? '',
+			'Facebook'  => $opts['social_facebook'] ?? '',
+			'YouTube'   => $opts['social_youtube'] ?? '',
+			'LinkedIn'  => $opts['social_linkedin'] ?? '',
+		] );
+		$redes_txt = $redes
+			? '- Redes oficiales de ' . $site . ': ' . implode( '; ', array_map( static fn( $k, $v ) => "$k $v", array_keys( $redes ), $redes ) ) . '.'
+			: '';
+
+		$wa     = self::whatsapp_url();
+		$humano = $wa
+			? 'escribí exactamente este enlace: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el link real)'
+			: 'indicá que escriba a ventas@onlineeducation.center';
+
+		return <<<TXT
+CONOCIMIENTO DE VENTAS — respuestas oficiales a lo que la ficha no dice. Usalas tal cual; no agregues condiciones, plazos ni beneficios que no figuren acá.
+{$kb}
+{$redes_txt}
+
+CÓMO PAGAR — regla fija: todo pago empieza en el checkout. Si pide los datos para transferir o depositar, el CBU/alias, un link de pago o "cómo pago", NO lo derives a una persona ni digas que alguien le va a pasar los datos: decile que inicie la inscripción (en una ficha, con el enlace [Inscribirme](INSCRIPCION) si el contexto lo indica; si no, con el botón de inscripción de la ficha de la formación), que elija ahí su medio de pago y que el sistema le muestra y le envía los datos para completarlo. Empezá la respuesta por ese paso ("Los datos te los da el sistema al inscribirte: …"), sin frases como "no puedo" o "no te puedo pasar".
+
+CUÁNDO DERIVAR A UNA PERSONA — para derivar, {$humano}:
+- Si pide hablar con una persona.
+- Si pregunta algo de ventas que no está en la ficha ni en este conocimiento: decí que no tenés ese dato (no lo inventes) y derivá.
+- Pedidos especiales (beneficios, un medio de pago que no figura en "Formas de pago", cambio de formación, devoluciones), consultas de empresas o instituciones, y propuestas comerciales o de colaboración.
+
+SI LA PERSONA YA ES ALUMNA (dice que pagó, que no puede entrar, o pregunta por su examen, su diploma o su clase): no le vendas nada; decile a dónde ir:
+- Pagó y no recibió el acceso, o no puede entrar al campus; o consultó a la Mesa de Ayuda y no le respondieron → derivá a una persona (como arriba).
+- No encuentra la clase o el link; necesita más tiempo para rendir o terminar; no le aparecen los exámenes; quiere darse de baja; su diploma tiene un error → Mesa de Ayuda del campus virtual.
+- Perdió o quiere cambiar el email de su cuenta → ventas@onlineeducation.center.
+TXT;
+	}
+
+	/** Texto por defecto del conocimiento de ventas (respuestas del equipo comercial, octubre 2026). */
+	public static function default_kb(): string {
+		$site = get_bloginfo( 'name' );
+		return <<<TXT
+PAGOS
+- Cómo se paga, sea el medio que sea (tarjeta, transferencia, depósito, efectivo, PayPal…): SIEMPRE inscribiéndose por el checkout de la formación. Ahí se elige el medio de pago y el mismo sistema muestra y envía por mail los datos para completar el pago (por ejemplo, los datos bancarios para la transferencia). Nadie pasa datos de pago por chat, WhatsApp ni mail.
+- Cuotas: las formaciones con más de un módulo se pueden pagar módulo por módulo (cada módulo dura en general un mes), lo que funciona como cuotas. Además, si entre las formas de pago de la formación figuran PagoTic o Mercado Pago, esos medios ofrecen cuotas con interés. Si figura Klarna, permite comprar ahora y pagar después.
+- Pagar el Módulo 1 y después los siguientes: sí. El precio no cambia: se paga el que figura hoy. Los módulos se pueden pagar hasta un año después de terminada la formación; quien paga tarde solo pierde la interacción en vivo con los docentes, porque todo queda grabado.
+- No se puede comprar un módulo suelto que no sea el primero: los módulos son consecutivos.
+- Pagando por módulos con tarjeta, el cobro se hace cada mes.
+- Medios de pago: solo los que figuran en "Formas de pago" de cada formación (dependen del país). No ofrezcas otros.
+- Se puede pagar desde la cuenta de otra persona.
+- Monedas: el checkout muestra precios en EUR, USD, ARS, COP, CLP o MXN. En los demás países el precio se muestra en USD, pero los medios de pago locales cobran en la moneda local.
+- Factura: sí, a empresas, universidades o personas (incluida factura "A"). Se pide por la Mesa de Ayuda una vez dentro de la formación.
+- No se puede reservar un lugar para pagar después del cierre de inscripción.
+- Confirmación del pago: con medios directos (tarjeta, PayPal) el mail de bienvenida llega al instante (revisar spam y promociones). Con medios indirectos (transferencia, depósito) hay que informar el pago en el sistema y una persona lo verifica: hasta 2 días hábiles. Pasado ese plazo, escribir a ventas@onlineeducation.center.
+
+CURSADA
+- Las clases en vivo, las conferencias y las sesiones de consulta quedan grabadas (con subtítulos). Se pueden ver mientras dure el acceso al campus: en formaciones sincrónicas, hasta 1 año después de que terminan; en asincrónicas, hasta 1 año después de que el alumno termina.
+- Quien se inscribe con el curso empezado puede ver todo lo anterior, incluso las preguntas de sus compañeros. No pierde contenido: solo la interacción en vivo de las clases ya dadas.
+- Días y horarios: si la ficha los indica ("Cómo se cursa"), usá eso. Si no los indica: en las formaciones sincrónicas los docentes proponen los horarios en vivo y quien no puede asistir no pierde nada porque queda grabado; en las asincrónicas todas las clases ya están grabadas.
+- Dentro del campus los horarios se muestran en el huso horario de cada alumno.
+- Las clases en vivo son por Zoom; se entra con un botón desde el campus virtual.
+- Cursos a tu ritmo: al menos un año de acceso desde el pago.
+- Acceso al material: hasta un año después de terminada la formación.
+- Dudas durante la cursada: Mesa de Ayuda (privada, con los coordinadores académicos) y foros (con docentes y compañeros).
+- Exámenes: si la ficha tiene "Exámenes", usá eso; si no, no afirmes nada.
+- Presencial u online, en vivo o grabado: según la "Modalidad" y la "Sincronicidad" de cada formación.
+
+CERTIFICADOS
+- Reconocimiento: no se puede asegurar que se reconozca en todos los países; tiene el reconocimiento de las organizaciones que lo avalan, que figuran en el certificado. El diploma va acompañado de un certificado analítico con las asignaturas, los docentes y los contenidos.
+- No son habilitantes para ejercer (salvo que la descripción de un certificado lo diga): es formación complementaria.
+- Puntaje docente: no hay un trámite especial, pero en muchos institutos y profesorados de educación física de Argentina, Colombia y México, y en grados de CAFYD de España, se valoraron en la historia curricular de quienes aspiran a cargos docentes.
+- Se entrega al final de la formación, no por módulo. Una formación puede tener más de un certificado.
+- Formato: la mayoría son digitales (PDF para descargar); el tipo de cada uno figura en la ficha.
+- Suele haber un certificado de asistencia para quien no rinde y otro de aprobación para quien rinde y aprueba: fijate cuáles tiene la formación.
+- No avalamos cursos de otras academias o instituciones.
+
+DESCUENTOS
+- Además del descuento por pago anticipado o por pago completo, hay descuentos por créditos: con créditos acumulados se compran descuentos. Benefician a ex alumnos y a quienes hacen más formaciones. Cada formación tiene su propio cambio de créditos por porcentaje de descuento. Más información: {CREDITOS_URL}
+- Código de descuento: se carga en el checkout, en "Resumen de compra", campo "Código de descuento", botón "Aplicar". En el celular el "Resumen de compra" está plegado: primero hay que tocar la flecha que está junto al "Total", abajo de la pantalla. (El chat muestra solo una imagen con el lugar exacto: no la describas ni pongas imágenes vos.) Vos no podés ver ni validar códigos: no pidas que te lo pasen. Si el código no se aplica o da error, derivá a una persona.
+- Descuentos para grupos o socios de asociaciones: depende de la formación; escribir a ventas@onlineeducation.center.
+- No hay becas ni beneficios por discapacidad por el momento.
+- Vencimiento de una promoción: si el descuento tiene fecha de vencimiento, figura junto al precio de la formación.
+
+INSCRIPCIÓN
+- Próxima edición de una formación cerrada: no hay información, la decide el organizador. Ofrecé formaciones similares que estén abiertas.
+- Hasta cuándo se puede entrar: hasta la fecha de cierre de inscripción de la formación.
+- Después de pagar llega el mail de bienvenida (buscar "bienvenida" en el correo), que explica cómo empezar.
+- Edad: no hay requisito de edad salvo que la formación lo indique en "Requisitos".
+- Posgrados y másteres: requieren título de grado. Se aceptan estudiantes, pero el título no se expide hasta que se gradúen.
+- Cambiar de formación después de pagar: solo excepcionalmente (derivar a una persona).
+- Bajas y devoluciones: se devuelve el dinero si de nuestra parte algo no se cumplió (derivar a una persona para el caso puntual).
+
+CONFIANZA
+- {$site} es una comunidad de Online Education Center (OEC), la empresa que opera la plataforma (https://onlineeducation.center/es). Por eso en el checkout puede aparecer el nombre "Online Education Center". Comunidades de OEC: G-SE, Traumato Site, Fisio One, Swimming Science, Voley, ISF.
+- Para mostrar que es un servicio real podés citar datos de la ficha (docentes, organizaciones que avalan, cantidad de alumnos, opiniones) y las redes oficiales.
+- No hay atención por teléfono ni por videollamada.
+- Direcciones: 1901 60th Place, Suite L2389, Bradenton, FL 34203, USA; y Juan Antonio de Bárcena 121, Torre 1 – 3D, Villasol, Córdoba (5003), Argentina. Presencia administrativa en España, México, Chile y Colombia.
+TXT;
+	}
+
 	/* ── System prompt ──────────────────────────────────────── */
 
 	private static function system_prompt( int $total_formations = 0 ): string {
@@ -1116,6 +1801,7 @@ ESTILO DE COMUNICACIÓN:
 
 FORMATO DE RESPUESTA — MUY IMPORTANTE:
 - Dividí tu respuesta en 2 o 3 mensajes cortos separados EXACTAMENTE por |||
+- Una lista (viñetas, fechas, cronograma de clases) va ENTERA dentro de un mismo mensaje: nunca pongas ||| entre los ítems de una lista
 - Cada mensaje debe ser breve y directo (no más de 4-5 líneas)
 - NO uses headers markdown (##, ###) — el tono es conversacional, como un chat
 - Usá negrita (**texto**) solo para nombres de cursos y datos clave
@@ -1129,6 +1815,7 @@ COMPORTAMIENTO:
 - Usá opiniones de alumnos para reforzar recomendaciones cuando preguntan sobre calidad o docentes
 - Si pregunta por contenidos específicos, respondé con los datos exactos del módulo
 - Si pregunta por precios, mostralos con descuentos y formas de pago disponibles
+- Si la formación trae "CONSEJO DE PAGO" y pregunta por cuotas o cómo pagar, recomendá eso primero (pago completo con descuento + cuotas con tarjeta) y dejá el pago módulo por módulo como alternativa. No inventes tasas ni cantidad de cuotas
 - Si no hay formación que coincida exactamente, decilo con honestidad y ofrecé la alternativa más cercana
 - Algunas formaciones son de otras comunidades de OEC (campo "Comunidad:", p. ej. swimming.science): recomendalas igual que las demás cuando encajen, aclarando en pocas palabras que se cursan en ese sitio, y usá su URL tal cual
 
