@@ -1745,7 +1745,7 @@ TXT;
 
 		$wa     = self::whatsapp_url();
 		$humano = $wa
-			? 'escribí exactamente este enlace: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el link real)'
+			? 'escribí exactamente este enlace: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el link real; nunca escribas vos una dirección de WhatsApp como wa.me ni un número de teléfono)'
 			: 'indicá que escriba a ventas@onlineeducation.center';
 
 		$derivar = self::$derive

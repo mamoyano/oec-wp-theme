@@ -54,8 +54,12 @@
 
   // Cambia cada clave por su URL real; si esta página no la tiene, deja solo el texto.
   function resolveLinks(text) {
-    return String(text).replace(/\[([^\]\n]+)\]\((WHATSAPP|INSCRIPCION)\)/g,
-      (_, label, key) => chatLinks[key] ? '[' + label + '](' + chatLinks[key] + ')' : label);
+    return String(text)
+      // A veces la IA escribe una dirección de WhatsApp inventada ("https://wa.me/") en vez
+      // de la clave: cualquier enlace a WhatsApp pasa a ser el oficial del sitio.
+      .replace(/\[([^\]\n]+)\]\((?:https?:\/\/)?(?:wa\.me|(?:[a-z]+\.)?whatsapp\.com)[^)\s]*\)/gi, '[$1](WHATSAPP)')
+      .replace(/\[([^\]\n]+)\]\((WHATSAPP|INSCRIPCION)\)/g,
+        (_, label, key) => chatLinks[key] ? '[' + label + '](' + chatLinks[key] + ')' : label);
   }
   const botName        = 'Asistente OEC';
 
