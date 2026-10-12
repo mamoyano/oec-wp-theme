@@ -57,7 +57,7 @@ class OEC_AI_Chat {
 	}
 
 	/** Cuerpo del pedido a la API: modelo elegido + sus parámetros + lo propio de la llamada. */
-	private static function request_body( array $body ): array {
+	public static function request_body( array $body ): array {
 		$m = self::MODELS[ self::model_key() ];
 		return array_merge( [ 'model' => $m['id'] ], $m['params'], $body );
 	}

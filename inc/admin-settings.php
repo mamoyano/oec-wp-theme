@@ -30,6 +30,10 @@ function oec_get_defaults(): array {
 		'oec_chat_whatsapp'  => '', // vacío = OEC_NL_WHATSAPP
 		'credits_api_key'    => '',
 		'catalog_sync_time'  => '03:00', // hora local del sync diario del catálogo (ver OEC_AI_Catalog::schedule())
+		// Revisor de contenidos (inc/content-reviewer.php)
+		'reviewer_mode'      => 'off',   // off | simulate | on
+		'reviewer_time'      => '05:00', // hora local de la corrida diaria
+		'reviewer_email'     => '',      // vacío = admin_email
 		// Topbar & footer content
 		'campus_virtual_url' => '',
 		'footer_desc'        => 'La comunidad educativa en ciencias del ejercicio físico más grande de hispanoamérica.',
@@ -172,6 +176,13 @@ function oec_sanitize_options( $raw ): array {
 	$clean['oec_chat_kb']       = $kb;
 	$clean['oec_chat_whatsapp'] = esc_url_raw( trim( (string) ( $raw['oec_chat_whatsapp'] ?? '' ) ) );
 
+	// Revisor de contenidos
+	$mode                    = sanitize_key( $raw['reviewer_mode'] ?? '' );
+	$clean['reviewer_mode']  = in_array( $mode, [ 'off', 'simulate', 'on' ], true ) ? $mode : $defaults['reviewer_mode'];
+	$time                    = (string) ( $raw['reviewer_time'] ?? '' );
+	$clean['reviewer_time']  = preg_match( '/^([01]\d|2[0-3]):[0-5]\d$/', $time ) ? $time : $defaults['reviewer_time'];
+	$clean['reviewer_email'] = implode( ', ', array_filter( array_map( 'sanitize_email', explode( ',', (string) ( $raw['reviewer_email'] ?? '' ) ) ), 'is_email' ) );
+
 	// Topbar & footer
 	$clean['campus_virtual_url'] = esc_url_raw( $raw['campus_virtual_url'] ?? '' );
 	$clean['footer_desc']        = sanitize_text_field( $raw['footer_desc'] ?? '' );
@@ -204,6 +215,7 @@ function oec_admin_pages(): array {
 			'conversaciones' => __( 'Conversaciones', 'oec-theme' ),
 			'chat'           => __( 'Configuración', 'oec-theme' ),
 		] ],
+		'oec-revisor'         => [ 'title' => __( 'Revisor de contenidos', 'oec-theme' ), 'tabs' => [ 'revisor' => '' ] ],
 		'oec-newsletter'      => [ 'title' => __( 'Newsletter', 'oec-theme' ), 'tabs' => [] ],
 		'oec-integraciones'   => [ 'title' => __( 'Integraciones', 'oec-theme' ), 'tabs' => [ 'integraciones' => '' ] ],
 		'oec-images'          => [ 'title' => __( 'Optimizar imágenes', 'oec-theme' ), 'tabs' => [] ],
@@ -225,6 +237,7 @@ function oec_admin_section_keys(): array {
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
 		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp' ],
+		'revisor'         => [ 'reviewer_mode', 'reviewer_time', 'reviewer_email' ],
 		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
 		'conversaciones'  => [],
@@ -1288,6 +1301,9 @@ function oec_render_settings_page(): void {
 
 					</div>
 				</div>
+
+				<?php elseif ( $tab === 'revisor' ) : ?>
+				<?php OEC_Content_Reviewer::render_settings( $opts ); ?>
 
 				<?php endif; ?>
 
