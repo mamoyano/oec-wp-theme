@@ -530,7 +530,7 @@ class OEC_AI_Chat {
 		if ( $price_data ) {
 			$total    = number_format( $price_data['price']['total'] ?? 0, 0, ',', '.' );
 			$cur      = $price_data['price']['currency'] ?? '';
-			$lines[]  = "\nPrecio: {$cur} {$total}";
+			$lines[]  = "\nPrecio: {$cur} {$total}" . self::approx( (float) ( $price_data['price']['total'] ?? 0 ), $cur );
 
 			if ( ! empty( $price_data['discount'] ) ) {
 				$disc       = $price_data['discount'];
@@ -540,9 +540,9 @@ class OEC_AI_Chat {
 
 				if ( $disc_type === 'early_payment' && ! empty( $disc['expiration'] ) ) {
 					$until    = self::format_date_human( substr( $disc['expiration'], 0, 10 ) );
-					$lines[]  = "{$disc_label} {$disc['percentage']}% → {$cur} {$disc_total} (válido hasta {$until})";
+					$lines[]  = "{$disc_label} {$disc['percentage']}% → {$cur} {$disc_total}" . self::approx( (float) ( $disc['total'] ?? 0 ), $cur ) . " (válido hasta {$until})";
 				} else {
-					$lines[]  = "{$disc_label} {$disc['percentage']}% → {$cur} {$disc_total}";
+					$lines[]  = "{$disc_label} {$disc['percentage']}% → {$cur} {$disc_total}" . self::approx( (float) ( $disc['total'] ?? 0 ), $cur );
 				}
 			}
 
@@ -567,7 +567,7 @@ class OEC_AI_Chat {
 				$m1_total = $price_data['first_module_price']['price']['total'] ?? null;
 				if ( $m1_total ) {
 					$m1_price = number_format( (float) $m1_total, 0, ',', '.' );
-					$lines[]  = "Opción de inicio: también puede inscribirse SOLO al Módulo 1 por {$cur} {$m1_price}";
+					$lines[]  = "Opción de inicio: también puede inscribirse SOLO al Módulo 1 por {$cur} {$m1_price}" . self::approx( (float) $m1_total, $cur );
 				} else {
 					$lines[]  = "Opción de inicio: también puede inscribirse SOLO al Módulo 1 (precio disponible al consultar)";
 				}
@@ -658,9 +658,79 @@ class OEC_AI_Chat {
 			? 'decile que puede cambiarlo y poné exactamente este enlace: [Cambiar país o moneda](REGION) (abre el selector; también está al pie de cada página, en "Ver precios: …"). Apenas lo cambie, le das el precio exacto.'
 			: 'decile que puede cambiarlo con el selector "Ver precios: …" de la ficha de la formación.';
 		$all  = implode( ', ', self::PRICE_CURRENCIES );
-		return "\n\nPAÍS Y MONEDA: los precios del contexto son para {$name}, en {$currency}. Los precios y los medios de pago dependen del país."
-			. " Si pide el precio en otra moneda, dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
-			. " Monedas disponibles: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
+		$note = "\n\nPAÍS Y MONEDA: los precios del contexto son para {$name}, en {$currency}. Los precios y los medios de pago dependen del país.";
+		if ( self::$local ) {
+			// La moneda de su país no se cotiza: el servidor ya dejó el equivalente
+			// aproximado al lado de cada precio (la IA no hace la cuenta).
+			$l     = self::$local;
+			$note .= " La moneda de {$name} ({$l['code']}, {$l['name']}) no está entre las que muestra el sitio, por eso el precio sale en {$currency}."
+				. " Si pide el precio en {$l['name']} / {$l['code']} o \"en mi moneda\": dale el monto en {$currency} y, al lado, el equivalente que figura en el contexto como \"aprox. {$l['code']} …\""
+				. " aclarando que es una referencia (tipo de cambio del {$l['date']}, puede variar)."
+				. " Y contale que, aunque el checkout muestra el precio en {$currency}, según la forma de pago que elija puede pagar en su moneda local."
+				. ' Usá solo esos equivalentes ya calculados: no hagas vos otras conversiones.';
+		}
+		return $note
+			. " Si pide el precio en otra moneda que no sea esa, dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
+			. " Monedas que muestra el sitio: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
+	}
+
+	/** Moneda local del usuario cuando el sitio no la cotiza: [ code, name, rate, date, base ] o null. */
+	private static ?array $local = null;
+
+	/** Monedas locales que se nombran por su nombre; el resto sale del sistema (intl) solo con su código. */
+	private const LOCAL_CURRENCIES = [
+		'PE' => [ 'PEN', 'soles' ],            'CR' => [ 'CRC', 'colones' ],        'UY' => [ 'UYU', 'pesos uruguayos' ],
+		'BO' => [ 'BOB', 'bolivianos' ],       'PY' => [ 'PYG', 'guaraníes' ],      'BR' => [ 'BRL', 'reales' ],
+		'GT' => [ 'GTQ', 'quetzales' ],        'DO' => [ 'DOP', 'pesos dominicanos' ], 'HN' => [ 'HNL', 'lempiras' ],
+		'NI' => [ 'NIO', 'córdobas' ],
+	];
+
+	/**
+	 * Tipo de cambio de referencia para decir un precio en la moneda del país
+	 * cuando el sitio no la cotiza (soles, colones…). Tabla pública de
+	 * open.er-api.com, una vez cada 12 h para todo el sitio; si falla, no se
+	 * ofrece equivalente. Sin Venezuela ni Cuba: su cambio oficial no sirve de guía.
+	 */
+	private static function local_currency( string $country, string $currency ): ?array {
+		if ( in_array( $country, [ 'VE', 'CU' ], true ) ) {
+			return null;
+		}
+		[ $code, $name ] = self::LOCAL_CURRENCIES[ $country ] ?? [ '', '' ];
+		if ( ! $code && class_exists( '\\NumberFormatter' ) ) {
+			$code = (string) ( new \NumberFormatter( 'es_' . $country, \NumberFormatter::CURRENCY ) )->getTextAttribute( \NumberFormatter::CURRENCY_CODE );
+			$name = $code;
+		}
+		if ( ! preg_match( '/^[A-Z]{3}$/', $code ) || $code === $currency || in_array( $code, self::PRICE_CURRENCIES, true ) || 'XXX' === $code ) {
+			return null;
+		}
+		$fx = get_transient( 'oec_chat_fx' );
+		if ( ! is_array( $fx ) ) {
+			$res  = wp_remote_get( 'https://open.er-api.com/v6/latest/USD', [ 'timeout' => 3 ] );
+			$data = ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) ? json_decode( wp_remote_retrieve_body( $res ), true ) : null;
+			if ( ! is_array( $data ) || 'success' !== ( $data['result'] ?? '' ) || empty( $data['rates'] ) ) {
+				set_transient( 'oec_chat_fx', [ 'rates' => [] ], 30 * MINUTE_IN_SECONDS );
+				return null;
+			}
+			$fx = [ 'rates' => $data['rates'], 'time' => (int) ( $data['time_last_update_unix'] ?? time() ) ];
+			set_transient( 'oec_chat_fx', $fx, 12 * HOUR_IN_SECONDS );
+		}
+		$to   = (float) ( $fx['rates'][ $code ] ?? 0 );
+		$from = (float) ( $fx['rates'][ $currency ] ?? 0 );
+		if ( $to <= 0 || $from <= 0 ) {
+			return null;
+		}
+		return [ 'code' => $code, 'name' => $name, 'rate' => $to / $from, 'base' => $currency, 'date' => wp_date( 'j \\d\\e F', $fx['time'] ?? time() ) ];
+	}
+
+	/** " (aprox. PEN 1.370)" al lado de un precio, si hay moneda local de referencia. */
+	private static function approx( float $amount, string $cur ): string {
+		if ( ! self::$local || $amount <= 0 || $cur !== self::$local['base'] ) {
+			return '';
+		}
+		$v = $amount * self::$local['rate'];
+		// Redondeo "de referencia": 2 cifras menos que el número, para que no parezca exacto
+		$step = $v >= 100000 ? 1000 : ( $v >= 10000 ? 100 : ( $v >= 1000 ? 10 : 1 ) );
+		return ' (aprox. ' . self::$local['code'] . ' ' . number_format( round( $v / $step ) * $step, 0, ',', '.' ) . ')';
 	}
 
 	/** ¿El mensaje habla de una ficha que vio antes? ("las que vi", "la anterior", "compará") */
@@ -755,6 +825,7 @@ class OEC_AI_Chat {
 		// API de precios solo cotiza PRICE_CURRENCIES: con otra moneda, USD.
 		$country  = preg_match( '/^[A-Z]{2}$/', $country ) ? $country : '';
 		$currency = $country ? ( in_array( $currency, self::PRICE_CURRENCIES, true ) ? $currency : 'USD' ) : '';
+		self::$local = $country ? self::local_currency( $country, $currency ) : null;
 
 		// Rol según la página: ficha de formación, landing de temática o catálogo
 		$ctx   = self::resolve_context( $request->get_param( 'context' ) );
