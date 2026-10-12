@@ -652,8 +652,7 @@ class OEC_AI_Chat {
 		if ( ! $country ) {
 			return '';
 		}
-		$name = class_exists( '\\Locale' ) ? (string) \Locale::getDisplayRegion( '-' . $country, 'es' ) : '';
-		$name = $name && $name !== $country ? "{$name} ({$country})" : $country;
+		$name = self::country_label( $country );
 		$how  = $selector
 			? 'decile que puede cambiarlo y poné exactamente este enlace: [Cambiar país o moneda](REGION) (abre el selector; también está al pie de cada página, en "Ver precios: …"). Apenas lo cambie, le das el precio exacto.'
 			: 'decile que puede cambiarlo con el selector "Ver precios: …" de la ficha de la formación.';
@@ -677,6 +676,25 @@ class OEC_AI_Chat {
 		return $note
 			. " Si pide el precio en otra moneda" . ( $own ? " (que no sea {$own})" : ( self::$local ? ' que no sea esa' : '' ) ) . ", dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
 			. " Monedas que muestra el sitio: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
+	}
+
+	/** "Perú (PE)" — nombre del país en español si el servidor lo sabe; si no, el código. */
+	private static function country_label( string $country ): string {
+		$name = class_exists( '\\Locale' ) ? (string) \Locale::getDisplayRegion( '-' . $country, 'es' ) : '';
+		return $name && $name !== $country ? "{$name} ({$country})" : $country;
+	}
+
+	/** ¿Se viene hablando de precio o moneda? (el mensaje lo nombra, o hace poco se ofreció cambiarla) */
+	private static function talks_about_currency( string $message, array $history ): bool {
+		if ( preg_match( '/precio|cu[aá]nto|sale|cuesta|vale|d[oó]lar|usd|euro|eur\b|peso|moneda|divisa|pa[ií]s|cambi|ya lo hice|listo|ya est[aá]/iu', $message ) ) {
+			return true;
+		}
+		foreach ( array_slice( $history, -6 ) as $turn ) {
+			if ( preg_match( '/oec-region|\(REGION\)|Cambiar pa[ií]s o moneda/iu', (string) ( $turn['content'] ?? '' ) ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Moneda local del usuario cuando el sitio no la cotiza: [ code, name, rate, date, base ] o null. */
@@ -929,6 +947,15 @@ class OEC_AI_Chat {
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
 		$mode .= self::region_note( $country, $currency, (bool) $request->get_param( 'region' ) );
+		// Tras cambiar la moneda, la IA seguía diciendo "no tengo el precio en dólares"
+		// (lo había dicho ella misma dos mensajes antes, con la selección anterior). Si
+		// se venía hablando de moneda o precio, la selección vigente va pegada a la pregunta.
+		if ( $country && self::talks_about_currency( (string) $message, (array) $history ) ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: la selección vigente AHORA es " . self::country_label( $country ) . " · {$currency}."
+				. " Los precios del contexto ya están en {$currency} (los mensajes anteriores pueden ser de otra selección: no valen)."
+				. " Si pregunta el precio, dice que ya cambió la moneda o había pedido verlo en {$currency}: dale ahora el precio en {$currency} con los números del contexto. No digas que no lo tenés ni lo mandes a mirarlo en la ficha.]";
+		}
 		// "¿Es más barata que la anterior?": a veces respondía que no sabía qué ficha
 		// había visto, porque en los mensajes solo ve los de esta página. Si habla de
 		// otra ficha, el dato va pegado a su propia pregunta (en las reglas no alcanzaba).
