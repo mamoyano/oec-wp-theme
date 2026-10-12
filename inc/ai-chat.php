@@ -678,6 +678,125 @@ class OEC_AI_Chat {
 			. " Monedas que muestra el sitio: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
 	}
 
+	/**
+	 * Créditos por descuentos, cuando la conversación trata de eso: el saldo de la
+	 * persona y, en una ficha, los canjes de esa formación con la cuenta ya hecha
+	 * (le alcanza / cuánto le falta).
+	 *
+	 * El saldo sale de lo que el navegador ya tiene guardado (el mismo "userEmail"
+	 * del bloque de créditos y de la ficha) o, si la persona escribe su email en el
+	 * chat, de la API de créditos. En ese caso se devuelve también para que el
+	 * navegador lo guarde: queda identificada en todo el sitio. Nunca viaja a la IA
+	 * el código de descuento de un canje.
+	 *
+	 * @return array{0:string,1:?array} [ nota para la IA, { email, balance } a guardar o null ]
+	 */
+	private static function credits_note( string $message, array $history, ?array $focus, array $stored ): array {
+		$typed = preg_match( '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i', $message, $m ) ? sanitize_email( $m[0] ) : '';
+		$topic = (bool) preg_match( '/cr[eé]dito|canje|canjear/iu', $message );
+		if ( ! $topic ) {
+			foreach ( array_slice( $history, -4 ) as $turn ) {
+				// Se venía hablando de créditos (p. ej. le pedimos el email y ahora lo escribe)
+				if ( preg_match( '/cr[eé]dito|canje/iu', (string) ( $turn['content'] ?? '' ) ) ) {
+					$topic = (bool) $typed || (bool) preg_match( '/alcanza|cu[aá]nt|tengo|saldo|descuento|mi (e-?mail|correo)/iu', $message );
+					break;
+				}
+			}
+		}
+		if ( ! $topic || ! function_exists( 'oec_credits_api_key' ) || ! oec_credits_api_key() ) {
+			return [ '', null ];
+		}
+
+		$email   = $typed ?: ( is_email( (string) ( $stored['email'] ?? '' ) ) ? sanitize_email( $stored['email'] ) : '' );
+		$balance = ( ! $typed && is_numeric( $stored['balance'] ?? null ) ) ? (int) $stored['balance'] : null;
+		$save    = null;
+		$failed  = false;
+		if ( $email && null === $balance ) {
+			self::sse_status( 'Consultando tus créditos...' );
+			$balance = self::credits_balance( $email );
+			$failed  = null === $balance;
+			if ( ! $failed ) {
+				$save = [ 'email' => $email, 'balance' => $balance ];
+			}
+		}
+
+		$lines = [ 'CRÉDITOS POR DESCUENTOS — datos reales para esta respuesta:' ];
+		if ( null !== $balance ) {
+			$lines[] = "- Saldo: la persona tiene {$balance} créditos (email {$email})." . ( $save ? ' Lo acabás de consultar: decíselo, y contale que su email ya quedó guardado en el sitio (va a ver su saldo arriba, en el menú).' : '' )
+				. ( 0 === $balance ? ' Con saldo 0: si todavía no los pidió, en ' . home_url( '/creditos-por-descuentos' ) . ' puede sumar sus créditos de bienvenida.' : '' );
+		} elseif ( $failed ) {
+			$lines[] = "- No se pudo consultar el saldo de {$email} en este momento: decíselo y pedile que pruebe de nuevo en un rato o lo mire en " . home_url( '/creditos-por-descuentos' ) . '.';
+		} else {
+			$lines[] = '- Saldo: todavía no se sabe. Si pregunta cuántos créditos tiene o si le alcanzan, pedile el email con el que se inscribe o compra, para consultarlo. Es lo único que hay que pedirle.';
+		}
+
+		if ( $focus ) {
+			$coupons = self::credits_coupons( (string) ( $focus['edition_uid'] ?? '' ) );
+			if ( null === $coupons ) {
+				$lines[] = '- Canjes de esta formación: no se pudieron consultar ahora; puede verlos en la ficha, en "Canjea créditos por descuentos".';
+			} elseif ( ! $coupons ) {
+				$lines[] = '- Esta formación NO tiene descuentos por créditos en este momento (los créditos sirven en las formaciones que tienen el canje habilitado: se ve en cada ficha).';
+			} else {
+				$lines[] = '- Canjes de esta formación:';
+				foreach ( $coupons as $c ) {
+					$fits = null === $balance ? '' : ( $balance >= $c['points'] ? ' → LE ALCANZA' : ' → le faltan ' . ( $c['points'] - $balance ) . ' créditos' );
+					$lines[] = "  · {$c['percentage']}% de descuento por {$c['points']} créditos" . ( $c['full_payment'] ? ' (con pago completo)' : '' ) . $fits;
+				}
+			}
+		} else {
+			$lines[] = '- Cada formación tiene su propio canje (qué descuento y cuántos créditos cuesta): se ve en la ficha de cada una.';
+		}
+		$lines[] = '- Cómo se canjea: en la ficha de la formación, recuadro "Canjea créditos por descuentos", elige el descuento; le llega un email para confirmar; al confirmarlo se descuentan los créditos y recibe un código de descuento (en pantalla y por email) para cargar en el checkout.';
+		$lines[] = '- Cómo se suman: 1 crédito por cada dólar (o equivalente) invertido en formaciones, más los del newsletter semanal. No vencen. Más información: ' . home_url( '/creditos-por-descuentos' );
+		$lines[] = 'Usá solo estos números: no inventes saldos, porcentajes ni cantidades de créditos.';
+
+		return [ "\n\n" . implode( "\n", $lines ), $save ];
+	}
+
+	/** Saldo de créditos de un email (API de créditos, con la clave del servidor). null = no se pudo. */
+	private static function credits_balance( string $email ): ?int {
+		$res = wp_remote_get(
+			'https://api.onlineeducation.center/contable/api/points/' . rawurlencode( $email ) . '/details',
+			[ 'headers' => [ 'X-API-KEY' => oec_credits_api_key() ], 'timeout' => 8 ]
+		);
+		$data = ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) ? json_decode( wp_remote_retrieve_body( $res ), true ) : null;
+		return is_array( $data ) && isset( $data['balance'] ) ? (int) $data['balance'] : null;
+	}
+
+	/**
+	 * Descuentos canjeables por créditos de una edición, de mayor a menor (como el
+	 * recuadro de la ficha). Solo porcentaje y créditos: el código del cupón no
+	 * sale de acá. Una consulta por edición por hora; null = no se pudo.
+	 */
+	private static function credits_coupons( string $edition_uid ): ?array {
+		if ( ! preg_match( '/^te-[A-Za-z0-9]{14}$/', $edition_uid ) ) {
+			return [];
+		}
+		$key    = 'oec_chat_cup_' . $edition_uid;
+		$cached = get_transient( $key );
+		if ( is_array( $cached ) ) {
+			return $cached;
+		}
+		$res  = wp_remote_get(
+			'https://api.onlineeducation.center/contable/api/coupons?edition_uid=' . rawurlencode( $edition_uid ),
+			[ 'headers' => [ 'X-API-KEY' => oec_credits_api_key() ], 'timeout' => 6 ]
+		);
+		$data = ( ! is_wp_error( $res ) && 200 === wp_remote_retrieve_response_code( $res ) ) ? json_decode( wp_remote_retrieve_body( $res ), true ) : null;
+		if ( ! is_array( $data ) ) {
+			return null;
+		}
+		$today = gmdate( 'Y-m-d' );
+		$out   = [];
+		foreach ( $data as $c ) {
+			if ( (int) ( $c['percentage'] ?? 0 ) > 0 && (int) ( $c['points_value'] ?? 0 ) > 0 && (string) ( $c['expiration'] ?? '' ) >= $today ) {
+				$out[] = [ 'percentage' => (int) $c['percentage'], 'points' => (int) $c['points_value'], 'full_payment' => ! empty( $c['full_payment'] ) ];
+			}
+		}
+		usort( $out, static fn( $a, $b ) => $b['percentage'] <=> $a['percentage'] );
+		set_transient( $key, $out, HOUR_IN_SECONDS );
+		return $out;
+	}
+
 	/** "Perú (PE)" — nombre del país en español si el servidor lo sabe; si no, el código. */
 	private static function country_label( string $country ): string {
 		$name = class_exists( '\\Locale' ) ? (string) \Locale::getDisplayRegion( '-' . $country, 'es' ) : '';
@@ -768,7 +887,7 @@ class OEC_AI_Chat {
 	/** ¿El mensaje plantea un problema o pide contacto humano? (habilita ofrecer WhatsApp) */
 	private static function wants_human( string $message ): bool {
 		return (bool) preg_match(
-			'/error|no puedo|no pude|no (me |lo |la |me lo |me la |se )*(toma|acepta|reconoce|sirve|funcion|anda|carga|deja|aplica|valida|pasa)|no me deja|no me dej|no funciona|no anda|no carga|falla|fall[oó]|rechaz|inv[aá]lid|no es v[aá]lid|no (se )?aplica|problema|reclamo|queja|devoluci|reembols|darme de baja|whats|persona|humano|alguien|asesor|vendedor|hablar|llamar|tel[eé]fono|contact|ya pagu|no recib|no me lleg|empresa|instituci|convenio|factura/iu',
+			'/regal|obsequi|tercero|a nombre de|para (mi|mis|un|una|el|la|otro|otra) (novi|hij|espos|marido|mujer|pareja|herman|amig|mam|pap|padre|madre|sobrin|niet|prim|emplead|alumn|pacient|colega|compa|jef|entrenador|m[eé]dic|doctor|profe|client)|error|no puedo|no pude|no (me |lo |la |me lo |me la |se )*(toma|acepta|reconoce|sirve|funcion|anda|carga|deja|aplica|valida|pasa)|no me deja|no me dej|no funciona|no anda|no carga|falla|fall[oó]|rechaz|inv[aá]lid|no es v[aá]lid|no (se )?aplica|problema|reclamo|queja|devoluci|reembols|darme de baja|whats|persona|humano|alguien|asesor|vendedor|hablar|llamar|tel[eé]fono|contact|ya pagu|no recib|no me lleg|empresa|instituci|convenio|factura/iu',
 			$message
 		);
 	}
@@ -947,6 +1066,8 @@ class OEC_AI_Chat {
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
 		$mode .= self::region_note( $country, $currency, (bool) $request->get_param( 'region' ) );
+		[ $credits_note, $credits_done ] = self::credits_note( (string) $message, (array) $history, $focus, (array) $request->get_param( 'credits' ) );
+		$mode .= $credits_note;
 		// Tras cambiar la moneda, la IA seguía diciendo "no tengo el precio en dólares"
 		// (lo había dicho ella misma dos mensajes antes, con la selección anterior). Si
 		// se venía hablando de moneda o precio, la selección vigente va pegada a la pregunta.
@@ -1004,6 +1125,9 @@ class OEC_AI_Chat {
 		$done = [ 'done' => true, 'formations' => $cards ];
 		if ( $help = self::help_image( (string) $message, $reply ) ) {
 			$done['help'] = $help;
+		}
+		if ( $credits_done ) {
+			$done['credits'] = $credits_done; // el navegador lo guarda: queda identificado en todo el sitio
 		}
 		self::sse_data( $done );
 
@@ -1885,6 +2009,7 @@ TXT;
 CUÁNDO DERIVAR A UNA PERSONA — para derivar, {$humano}.
 El contacto con una persona NO se ofrece por las dudas ("si tenés algún problema, escribinos…", "cualquier cosa, por WhatsApp…"): solo se da en los casos de esta lista, cuando la persona ya lo planteó. En el resto de las respuestas no lo nombres.
 - Si pide hablar con una persona.
+- Si quiere comprar o regalar la formación para otra persona (él o ella hace la inscripción y paga, pero el alumno es un tercero): es una venta especial. Decile que se puede y que lo coordina una persona del equipo, y derivá.
 - Si DICE que algo le da error o que no puede: el código de descuento no se aplica, el checkout o el pago fallan, no logra inscribirse.
 - Si pregunta algo de ventas que no está en la ficha ni en este conocimiento: decí que no tenés ese dato (no lo inventes) y derivá.
 - Pedidos especiales (beneficios, un medio de pago que no figura en "Formas de pago", cambio de formación, devoluciones), consultas de empresas o instituciones, y propuestas comerciales o de colaboración.
@@ -1920,7 +2045,8 @@ PAGOS
 - No se puede comprar un módulo suelto que no sea el primero: los módulos son consecutivos.
 - Pagando por módulos con tarjeta, el cobro se hace cada mes.
 - Medios de pago: solo los que figuran en "Formas de pago" de cada formación (dependen del país). No ofrezcas otros.
-- Se puede pagar desde la cuenta de otra persona.
+- Se puede pagar desde la cuenta de otra persona (paga otro, pero se inscribe y cursa quien hace la inscripción).
+- Comprar para un tercero (yo hago la inscripción y el pago, pero el alumno es otra persona: un regalo, mi pareja, mi hijo o hija, un empleado, un colega): es una venta especial y la gestiona una persona del equipo. No expliques cómo hacerlo por el checkout: derivá.
 - Monedas: el checkout muestra precios en EUR, USD, ARS, COP, CLP o MXN. En los demás países el precio se muestra en USD, pero los medios de pago locales cobran en la moneda local.
 - Factura: sí, a empresas, universidades o personas (incluida factura "A"). Se pide por la Mesa de Ayuda una vez dentro de la formación.
 - No se puede reservar un lugar para pagar después del cierre de inscripción.

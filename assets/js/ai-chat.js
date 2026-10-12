@@ -165,6 +165,27 @@
   }
 
   /* ── Country/currency (browser-side, uses user IP) ──────── */
+  // Créditos por descuentos: mismas claves que el bloque de créditos del tema y la
+  // ficha del plugin ("userEmail" + saldo). Si la persona da su email en el chat,
+  // el servidor devuelve el saldo y acá se guarda: queda identificada en todo el sitio.
+  function storedCredits() {
+    try {
+      const email = localStorage.getItem('userEmail') || '';
+      if (!email) return {};
+      const b = sessionStorage.getItem('userCredits') || localStorage.getItem('oec_credits_balance');
+      return { email, balance: (b !== null && b !== '' && !isNaN(b)) ? Number(b) : null };
+    } catch (_) { return {}; }
+  }
+  function saveCredits(c) {
+    if (!c || !c.email || typeof c.balance !== 'number') return;
+    try {
+      localStorage.setItem('userEmail', c.email);
+      sessionStorage.setItem('userCredits', String(c.balance));
+      localStorage.setItem('oec_credits_balance', String(c.balance));
+    } catch (_) {}
+    window.dispatchEvent(new CustomEvent('oec:credits-updated', { detail: { balance: c.balance } }));
+  }
+
   // País y moneda salen de window.oecRegion (assets/js/region.js): lo que la persona
   // eligió en el selector o en la URL manda sobre la detección por IP. Si esa página
   // todavía no lo trae (HTML en caché), queda la detección directa de antes.
@@ -705,6 +726,7 @@
           cid, turn: saved.filter(m => m.u !== undefined).length, page: location.pathname,
           context: pageContext,
           region: window.oecRegion ? 1 : 0, // este navegador tiene el selector de país y moneda
+          credits: storedCredits(),          // email y saldo de créditos, si ya se identificó en el sitio
         }),
       };
       let res = await fetch(streamEndpoint, req);
@@ -803,6 +825,7 @@
     const lastBot = saved.length ? saved[saved.length - 1] : null;
     if (doneData.help && lastBot && lastBot.h) doneData.help = null;
     if (doneData.help) renderHelp(doneData.help);
+    if (doneData.credits) saveCredits(doneData.credits);
 
     // Update conversation history
     // Con los enlaces ya resueltos: en otra página las claves apuntarían a otra cosa
