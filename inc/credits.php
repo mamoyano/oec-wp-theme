@@ -2,8 +2,7 @@
 defined( 'ABSPATH' ) || exit;
 
 /* ============================================================
-   API KEY — hardcodeada a propósito, mismo criterio que
-   OEC_BOTMAKER_PROJECT_ID en el plugin: este tema siempre lo instalamos
+   API KEY — hardcodeada a propósito: este tema siempre lo instalamos
    nosotros, así que el sistema de créditos funciona apenas se activa,
    sin depender de que alguien la cargue a mano en Ajustes. Si algún
    proyecto puntual necesitara otra key, el campo "credits_api_key" de

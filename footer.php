@@ -147,6 +147,7 @@ $_socials = [
 		</div><!-- .container -->
 	</footer>
 
+	<?php oec_chat_bubble(); ?>
 	<?php wp_footer(); ?>
 </body>
 </html>

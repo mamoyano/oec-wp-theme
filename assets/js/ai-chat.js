@@ -865,6 +865,26 @@
     openWithMorph(msg); // vacío + conversación guardada = reabrirla
   }
 
+  /* ── Abrir el chat desde afuera: globo flotante, botones de las landings y la
+     ficha de formación del plugin (cualquier .oec-chat-ia-trigger) ──
+     Si ya se venía conversando sobre esta misma página, se reabre esa conversación;
+     si no, se envía el saludo (data-msg, por defecto "Hola") y la IA se presenta
+     según dónde esté: la formación de la ficha, la temática de la landing o el catálogo. */
+  function openChat(msg) {
+    if (overlayOpen || busy) return;
+    const last = saved.length ? saved[saved.length - 1] : null;
+    const samePage = last && ((last.p && last.p.k) || 'catalogo') === ctxKey;
+    openWithMorph(samePage ? '' : (String(msg || '').trim() || 'Hola'));
+  }
+  window.oecChat = { open: openChat };
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest && e.target.closest('.oec-chat-ia-trigger');
+    if (!t) return;
+    e.preventDefault();
+    ensureLocation();
+    openChat(t.dataset.msg);
+  });
+
   /* ── Hero "¿Qué quieres aprender?" → tipea "Hola" y abre el chat ── */
   let helloRunning = false;
 

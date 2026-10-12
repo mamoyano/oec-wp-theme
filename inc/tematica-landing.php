@@ -668,50 +668,72 @@ function oec_render_tematica_nav_shortcode(): string {
 }
 
 /* ============================================================
-   CHAT ANÓNIMO (Botmaker) en el home y las landings
+   CHAT CON IA en el home, las landings y el listado
 
-   Las páginas traían en su contenido un <script> que inyectaba el widget
-   de Botmaker en CADA visita (~300 KB de JS + fuentes). Ahora lo maneja
-   assets/js/botmaker.js, que lo pide recién cuando el usuario se acerca
-   a un botón .oec-botmaker-trigger (igual que la ficha del plugin).
-   El <script> viejo se saca al vuelo del contenido: así alcanza con
-   actualizar el tema, sin tener que editar cada página a mano. La ficha
-   de formación (/formacion) la resuelve el plugin con su propio JS.
+   El home y las landings traían en su contenido el webchat de Botmaker
+   (un <script>, un globo flotante y, en las landings, el botón "Hablar
+   con un asesor" del hero). Botmaker se dio de baja: ahora todo abre el
+   chat con IA del tema (assets/js/ai-chat.js, cualquier elemento con la
+   clase .oec-chat-ia-trigger). El contenido viejo se reescribe al vuelo:
+   alcanza con actualizar el tema, sin editar cada página a mano. La ficha
+   de formación (/formacion) la resuelve el plugin.
    ============================================================ */
 
-/** URL del widget: el mismo proyecto que usa el plugin, o el que traiga la página. */
-function oec_botmaker_src( string $content = '' ): string {
-	if ( defined( 'OEC_BOTMAKER_PROJECT_ID' ) && OEC_BOTMAKER_PROJECT_ID ) {
-		return 'https://go.botmaker.com/rest/webchat/p/' . rawurlencode( OEC_BOTMAKER_PROJECT_ID ) . '/init.js';
+/** ¿El chat con IA está disponible en este sitio? (hay clave de Anthropic cargada) */
+function oec_chat_ia_available(): bool {
+	return class_exists( 'OEC_AI_Chat' ) && '' !== trim( (string) ( oec_get_options()['oec_anthropic_key'] ?? '' ) );
+}
+// El plugin de formaciones pregunta por este filtro para ofrecer "chat con IA"
+// en la ficha (si no hay tema o no hay chat, ofrece WhatsApp).
+add_filter( 'oec_chat_ia_available', static fn( $v ) => $v || oec_chat_ia_available() );
+
+/** Globo flotante "¿Alguna pregunta?": home, landings de temática y listado de formaciones. */
+function oec_chat_bubble(): void {
+	if ( ! oec_chat_ia_available() ) {
+		return;
 	}
-	return preg_match( '#https://go\.botmaker\.com/rest/webchat/p/[A-Za-z0-9]+/init\.js#', $content, $m ) ? $m[0] : '';
+	$show = is_front_page() || is_page( 'formaciones' )
+		|| 'tematica' === ( OEC_AI_Chat::page_context()['mode'] ?? '' );
+	if ( ! apply_filters( 'oec_chat_bubble', $show ) ) {
+		return;
+	}
+	?>
+	<button type="button" class="oec-chat-bubble oec-chat-ia-trigger" data-msg="Hola" aria-label="<?php esc_attr_e( 'Chatear con nuestro asistente con IA', 'oec-theme' ); ?>">
+		<span class="oec-chat-bubble__tip" aria-hidden="true"><?php esc_html_e( '¿Alguna pregunta?', 'oec-theme' ); ?></span>
+		<i class="bi bi-stars" aria-hidden="true"></i>
+	</button>
+	<?php
 }
 
-add_action( 'wp_enqueue_scripts', function (): void {
-	$post = is_singular() ? get_queried_object() : null;
-	if ( ! $post instanceof WP_Post || is_page( 'formacion' ) || false === strpos( $post->post_content, 'oec-botmaker-trigger' ) ) {
-		return;
-	}
-	$src = oec_botmaker_src( $post->post_content );
-	if ( ! $src ) {
-		return;
-	}
-	wp_enqueue_script( 'oec-botmaker', OEC_THEME_URI . '/assets/js/botmaker.js', [], oec_asset_version( 'assets/js/botmaker.js' ), [ 'strategy' => 'defer', 'in_footer' => true ] );
-	wp_add_inline_script( 'oec-botmaker', 'window.oecBotmaker = ' . wp_json_encode( [ 'src' => $src ] ) . ';', 'before' );
-} );
-
 add_filter( 'the_content', function ( $content ) {
-	if ( is_page( 'formacion' ) ) {
+	$content = (string) $content;
+	if ( is_page( 'formacion' ) || false === stripos( $content, 'botmaker' ) ) {
 		return $content;
 	}
-	// Los botones de chat eran <a href="javascript:void(0)">: Google no los
-	// considera enlaces rastreables. Con "#chat" + role="button" son válidos y
-	// botmaker.js igual cancela la navegación al hacer clic.
-	$content = preg_replace( '/<a href="javascript:void\(0\)"(?=[^>]*\boec-botmaker-trigger\b)/', '<a href="#chat" role="button"', (string) $content );
-	if ( false === strpos( $content, 'go.botmaker.com/rest/webchat' ) ) {
-		return $content;
+	// Cada reemplazo conserva el contenido si la expresión falla (preg devuelve null).
+	$sub = static fn( string $re, string $to, string $in ): string => preg_replace( $re, $to, $in ) ?? $in;
+	// El <script> que inyectaba el widget y su comentario.
+	$content = $sub( '#<script\b[^>]*>(?:(?!</script>).)*?go\.botmaker\.com/rest/webchat(?:(?!</script>).)*</script>#s', '', $content );
+	$content = $sub( '#<!--(?:(?!-->).)*?Botmaker(?:(?!-->).)*-->#s', '', $content );
+	// Sus estilos en línea: el iframe del widget y el globo viejo.
+	$content = $sub( '#/\*(?:(?!\*/).)*?Botmaker(?:(?!\*/).)*\*/#s', '', $content );
+	$content = $sub( '#^[^\n{}]*(?:iframe\[name="Botmaker"\]|\.oec-float-botmaker)[^\n{}]*\{[^{}]*\}[ \t]*(?:\}[ \t]*)?\n#m', '', $content );
+	$content = $sub( '#^[ \t]*@media[^{\n]*\{[ \t]*\.oec-float-botmaker[^{}]*\{[^{}]*\}[ \t]*\}[ \t]*\n#m', '', $content );
+	// El globo flotante viejo: ahora lo pone el tema (oec_chat_bubble()).
+	$content = $sub( '#<a\b[^>]*\bid="oec-float-botmaker"[^>]*>.*?</a>#s', '', $content );
+	// Sin chat con IA configurado no queda ningún botón que no abra nada.
+	if ( ! oec_chat_ia_available() ) {
+		return $sub( '#<(a|button)\b[^>]*\boec-botmaker-trigger\b[^>]*>.*?</\1>#s', '', $content );
 	}
-	// El <script> que inyectaba el widget (y su comentario "Botmaker — mismo widget…").
-	$content = preg_replace( '#<script\b[^>]*>(?:(?!</script>).)*?go\.botmaker\.com/rest/webchat(?:(?!</script>).)*</script>#s', '', $content );
-	return preg_replace( '#<!--\s*──\s*Botmaker — mismo widget.*?-->#su', '', $content );
+	// Botón del hero: "Hablar con un asesor" → "Pregúntanos", abre el chat con un "Hola".
+	return (string) ( preg_replace_callback(
+		'#<(a|button)\b([^>]*\boec-botmaker-trigger\b[^>]*)>(.*?)</\1>#s',
+		static function ( $m ) {
+			$attrs = preg_replace( '/\s(?:id|data-msg|href|role)="[^"]*"/', '', $m[2] );
+			$attrs = str_replace( 'oec-botmaker-trigger', 'oec-chat-ia-trigger', $attrs );
+			return '<button' . ( 'a' === $m[1] ? ' type="button"' : '' ) . $attrs . ' data-msg="Hola">'
+				. esc_html__( 'Pregúntanos', 'oec-theme' ) . ' <i class="bi bi-stars"></i></button>';
+		},
+		$content
+	) ?? $content );
 }, 20 );
