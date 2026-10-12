@@ -695,10 +695,12 @@ class OEC_AI_Chat {
 		$typed = preg_match( '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}/i', $message, $m ) ? sanitize_email( $m[0] ) : '';
 		$topic = (bool) preg_match( '/cr[eé]dito|canje|canjear/iu', $message );
 		if ( ! $topic ) {
-			foreach ( array_slice( $history, -4 ) as $turn ) {
-				// Se venía hablando de créditos (p. ej. le pedimos el email y ahora lo escribe)
+			// Si se venía hablando de créditos, los datos siguen viajando en los mensajes
+			// siguientes ("dale, contame los pasos"): sin ellos la IA veía que antes había
+			// dicho un saldo, no lo encontraba en el contexto y se desdecía.
+			foreach ( array_slice( $history, -6 ) as $turn ) {
 				if ( preg_match( '/cr[eé]dito|canje/iu', (string) ( $turn['content'] ?? '' ) ) ) {
-					$topic = (bool) $typed || (bool) preg_match( '/alcanza|cu[aá]nt|tengo|saldo|descuento|mi (e-?mail|correo)/iu', $message );
+					$topic = true;
 					break;
 				}
 			}
@@ -749,6 +751,9 @@ class OEC_AI_Chat {
 		$lines[] = '- Cómo se canjea: en la ficha de la formación, recuadro "Canjea créditos por descuentos", elige el descuento; le llega un email para confirmar; al confirmarlo se descuentan los créditos y recibe un código de descuento (en pantalla y por email) para cargar en el checkout.';
 		$lines[] = '- Cómo se suman: 1 crédito por cada dólar (o equivalente) invertido en formaciones, más los del newsletter semanal. No vencen. Más información: ' . home_url( '/creditos-por-descuentos' );
 		$lines[] = 'Usá solo estos números: no inventes saldos, porcentajes ni cantidades de créditos.';
+		if ( null !== $balance ) {
+			$lines[] = 'El saldo es un dato real consultado por el sitio: si ya se lo dijiste en un mensaje anterior, sigue valiendo. No te corrijas, no digas que no tenés acceso a su cuenta ni que no puede fiarse de ese número.';
+		}
 
 		return [ "\n\n" . implode( "\n", $lines ), $save ];
 	}
