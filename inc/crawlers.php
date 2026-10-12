@@ -79,6 +79,19 @@ add_filter( 'robots_txt', function ( $output, $public ) {
 		'Disallow: /*&s=',
 		'Disallow: /*?q=',
 		'Disallow: /*&q=',
+		// Filtros del listado de formaciones: cada combinación es una URL
+		// distinta (tipo × mes × modalidad × temáticas…) y ninguna es una
+		// página propia (su canonical es /formaciones). Search Console tenía
+		// ~2 millones de estas URLs conocidas, entre los filtros del sitio
+		// viejo (/formaciones?type=…&subject=a,b y /formaciones-filtradas)
+		// y los actuales (?oec_subject=…), y Google las seguía rastreando.
+		// La paginación (/formaciones/page/2) no lleva "?" y sigue abierta.
+		'Disallow: /*/formaciones?',
+		'Disallow: /formaciones?',
+		'Disallow: /*formaciones-filtradas',
+		// Paginación del tema anterior (Divi): /tag/x/page/65?et_blog
+		'Disallow: /*?et_blog',
+		'Disallow: /*&et_blog',
 		// Datos crudos del catálogo (los usa el tema, no son páginas).
 		'Disallow: /*oec-ai-catalog/',
 		'Disallow: /*oec-seo/',
