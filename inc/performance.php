@@ -297,8 +297,8 @@ add_filter( 'wp_preload_resources', function ( array $resources ): array {
        style.css (~175 KB) bloquea el render y la mitad son comentarios y
        espacios: se sirve una copia minificada (35 → 22 KB comprimido).
        Se genera sola la primera vez que cambia style.css (por fecha y
-       tamaño), en uploads/oec-theme/ con el hash en el nombre: no hace
-       falta purgar Cloudflare. El tema sigue sin paso de build; si no se
+       tamaño), en uploads/oec-theme/ con el hash del contenido en el nombre:
+       no hace falta purgar Cloudflare. El tema sigue sin paso de build; si no se
        puede escribir, se usa style.css tal cual.
    ============================================================ */
 function oec_minify_css( string $css ): string {
@@ -345,23 +345,38 @@ function oec_min_stylesheet_uri(): string {
 	if ( ! is_readable( $src ) ) {
 		return get_stylesheet_uri();
 	}
-	$name = 'style-' . substr( md5( OEC_THEME_VERSION . '|' . filemtime( $src ) . '|' . filesize( $src ) ), 0, 12 ) . '.min.css';
+	// El nombre sale del contenido, no de la versión: si una release no toca
+	// style.css, el archivo (y la caché del navegador) sigue siendo el mismo.
+	// El hash se recalcula solo cuando cambia la fecha o el tamaño.
+	$key   = filemtime( $src ) . '|' . filesize( $src );
+	$saved = get_site_option( 'oec_min_css' );
+	if ( is_array( $saved ) && ( $saved['key'] ?? '' ) === $key && is_file( "{$dir}/{$saved['name']}" ) ) {
+		return network_site_url( '/wp-content/uploads/oec-theme/' . $saved['name'] );
+	}
+	$raw  = (string) file_get_contents( $src );
+	$name = 'style-' . substr( md5( $raw ), 0, 12 ) . '.min.css';
 	$file = "{$dir}/{$name}";
 	if ( ! is_file( $file ) ) {
-		$css = oec_minify_css( (string) file_get_contents( $src ) );
+		$css = oec_minify_css( $raw );
 		$tmp = $file . '.' . wp_generate_password( 6, false ) . '.tmp';
 		if ( '' === $css || ! wp_mkdir_p( $dir ) || false === file_put_contents( $tmp, $css ) || ! rename( $tmp, $file ) ) {
 			@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 			return get_stylesheet_uri();
 		}
-		// Las versiones viejas se borran recién al día: páginas cacheadas en
-		// Cloudflare todavía pueden estar pidiéndolas.
+		// Las versiones viejas se guardan 45 días. Las siguen pidiendo las
+		// páginas cacheadas en Cloudflare (hasta 30 días, más stale-if-error)
+		// y las grabaciones de Clarity, que no guardan el CSS: lo bajan del
+		// sitio al reproducir (retención: 30 días). Borradas antes, las
+		// grabaciones se ven sin estilos.
 		foreach ( glob( "{$dir}/style-*.min.css" ) ?: [] as $old ) {
-			if ( $old !== $file && filemtime( $old ) < time() - DAY_IN_SECONDS ) {
+			if ( $old !== $file && filemtime( $old ) < time() - 45 * DAY_IN_SECONDS ) {
 				@unlink( $old ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
 			}
 		}
+	} else {
+		touch( $file ); // vuelve a estar en uso: que no la borre la limpieza
 	}
+	update_site_option( 'oec_min_css', [ 'key' => $key, 'name' => $name ] );
 	return network_site_url( '/wp-content/uploads/oec-theme/' . $name );
 }
 
