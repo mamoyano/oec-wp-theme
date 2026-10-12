@@ -802,6 +802,13 @@ class OEC_AI_Chat {
 		return $out;
 	}
 
+	/** ¿Es solo un saludo o un pedido genérico de información? ("Hola", "buenas, info", "quiero más información") */
+	private static function is_greeting( string $message ): bool {
+		$m = trim( preg_replace( '/[^\p{L}\s]+/u', ' ', mb_strtolower( $message ) ) );
+		return mb_strlen( $m ) <= 40
+			&& (bool) preg_match( '/^(hola+|holis|buenas|buen d[ií]a|buenos d[ií]as|buenas (tardes|noches)|hi|hello|info|informaci[oó]n|m[aá]s info(rmaci[oó]n)?|quiero (m[aá]s )?info(rmaci[oó]n)?|quisiera (m[aá]s )?info(rmaci[oó]n)?|me interesa)(\s+(hola|buenas|que tal|qu[eé] tal|como (est[aá]n?|va)|info|informaci[oó]n|por favor|quiero info(rmaci[oó]n)?|me interesa|quisiera info(rmaci[oó]n)?|m[aá]s info(rmaci[oó]n)?))*$/u', preg_replace( '/\s+/u', ' ', $m ) );
+	}
+
 	/** "Perú (PE)" — nombre del país en español si el servidor lo sabe; si no, el código. */
 	private static function country_label( string $country ): string {
 		$name = class_exists( '\\Locale' ) ? (string) \Locale::getDisplayRegion( '-' . $country, 'es' ) : '';
@@ -1071,6 +1078,18 @@ class OEC_AI_Chat {
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
 		$mode .= self::region_note( $country, $currency, (bool) $request->get_param( 'region' ) );
+		// Saludo en una ficha ("Hola" del globo o del botón de contacto): la regla sola
+		// daba una presentación tibia que terminaba en "¿qué querés saber?". La
+		// indicación va pegada al saludo, con lo que tiene que decir.
+		if ( $focus && $open && self::is_greeting( (string) $message ) ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde la ficha de «{$focus['title']}» y todavía no preguntó nada."
+				. ' Presentale ESA formación para venderla, en 3 mensajes separados por |||:'
+				. ' 1) saludo de una línea + qué es y para quién;'
+				. ' 2) sus dos o tres puntos más fuertes, con los datos concretos del contexto ("ARGUMENTOS DE VENTA", flags, docentes): quién la dicta y su trayectoria, aval o certificación, alumnos y opiniones, próxima clase en vivo o cierre de inscripción;'
+				. ' 3) el precio con el descuento vigente (y el Módulo 1 si existe) y una invitación concreta a inscribirse.'
+				. ' No termines con "¿qué querés saber?" ni con un menú de temas, y no nombres otras formaciones' . ( empty( $focus['parents'] ) ? '' : ' (salvo las que la incluyen)' ) . '.]';
+		}
 		[ $credits_note, $credits_done ] = self::credits_note( (string) $message, (array) $history, $focus, (array) $request->get_param( 'credits' ) );
 		$mode .= $credits_note;
 		// Tras cambiar la moneda, la IA seguía diciendo "no tengo el precio en dólares"
@@ -1122,6 +1141,10 @@ class OEC_AI_Chat {
 		}
 		if ( $focus ) {
 			unset( $source[ $focus['id'] ] ); // ya está en esa página
+			// En una ficha se vende ESA formación: la tarjeta de otra solo aparece si la
+			// IA la nombró en el texto. Declararla en <<IDS:…>> no alcanza (a un "Hola"
+			// respondía solo sobre la ficha y aun así salían tres tarjetas de otros cursos).
+			$source = array_filter( $source, static fn( $f ) => self::title_named( (string) $f['title'], $reply ) );
 		}
 		$source = array_values( $source );
 
@@ -1478,6 +1501,28 @@ class OEC_AI_Chat {
 	 * de un test…"). El título principal solo vale si tiene 4+ palabras, para
 	 * que un genérico como "Nutrición Deportiva: …" no dispare la tarjeta.
 	 */
+	/**
+	 * ¿El texto nombra esta formación? Versión estricta de title_in_text(): el título
+	 * entero, su parte principal (antes de ":" o " - ") o sus primeras cinco palabras
+	 * seguidas. Sin coincidencias parciales por palabras sueltas.
+	 */
+	private static function title_named( string $title, string $text ): bool {
+		$t = self::title_norm( $title );
+		$x = ' ' . self::title_norm( $text ) . ' ';
+		if ( '' === $t ) {
+			return false;
+		}
+		if ( str_contains( $x, ' ' . $t . ' ' ) ) {
+			return true;
+		}
+		$main = self::title_norm( preg_split( '/\s*[:|]\s*|\s+[—–-]\s+/u', $title )[0] ?? '' );
+		if ( $main !== $t && substr_count( $main, ' ' ) >= 2 && str_contains( $x, ' ' . $main . ' ' ) ) {
+			return true;
+		}
+		$words = explode( ' ', $t );
+		return count( $words ) > 5 && str_contains( $x, ' ' . implode( ' ', array_slice( $words, 0, 5 ) ) . ' ' );
+	}
+
 	private static function title_in_text( string $title, string $text ): bool {
 		$t = self::title_norm( $title );
 		$x = ' ' . self::title_norm( $text ) . ' ';
@@ -1646,6 +1691,19 @@ class OEC_AI_Chat {
 		$f = self::focus_base( $id );
 		if ( ! $f ) {
 			return null;
+		}
+		// Fechas: si la copia que el plugin guarda al mostrar la ficha es más nueva que la
+		// del catálogo (p. ej. se extendió la inscripción), mandan esas. Sin esto el chat
+		// trataba como cerrada una formación que la ficha mostraba abierta.
+		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
+		$d      = is_array( $cached ) && is_array( $cached['data'] ?? null ) ? $cached['data'] : [];
+		if ( $d && (int) ( $d['edition_number'] ?? 0 ) === (int) ( $f['edition_number'] ?? 0 ) ) {
+			foreach ( [ 'start', 'end', 'enrollment_end' ] as $k ) {
+				$v = substr( (string) ( $d[ $k ] ?? '' ), 0, 10 );
+				if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) && $v > (string) ( $f[ $k ] ?? '' ) ) {
+					$f[ $k ] = $v;
+				}
+			}
 		}
 		$f['parents']  = self::focus_parents( $id );
 		$f['sessions'] = self::focus_sessions( (string) ( $f['edition_uid'] ?? '' ) );
@@ -1959,7 +2017,7 @@ La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte s
   3) Una pregunta o una invitación concreta a inscribirse. Si ya resolviste dos o tres dudas, invitá directamente a inscribirse.
 - El mensaje 2 va SIEMPRE, aunque la pregunta haya sido corta. Excepciones: si la persona ya es alumna, pide hablar con alguien o la inscripción está cerrada.
 - No presiones ni exageres: solo datos reales de la ficha.
-- Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale esta formación en 2 o 3 mensajes (qué es y para quién; cómo y cuándo se cursa; precio con el descuento vigente) y preguntá qué más quiere saber.{$incl}
+- Si solo saluda o pide "info": vendele ESTA formación, no le preguntes qué quiere saber ni qué área le interesa. En 3 mensajes: 1) qué es y para quién, en una frase; 2) lo MÁS FUERTE que tenga, con datos concretos de "ARGUMENTOS DE VENTA" y de sus flags: docentes destacados (nombralos, con su cargo), aval o certificación, alumnos y opiniones, próxima clase en vivo, cierre de inscripción cercano; 3) el precio con el descuento vigente y una invitación concreta (inscribirse o una pregunta puntual). En el saludo solo existe la formación de esta página: no nombres otras ni las pongas en <<IDS:…>> (única excepción: las que la incluyen, si más abajo se indica).{$incl}
 - Precio: usá los valores del contexto (ya están en su moneda). Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1.
 - Si el contexto trae "CONSEJO DE PAGO" y pregunta por precio, cuotas o cómo pagar, recomendá ESO primero y con convicción (pago completo con descuento + cuotas con tarjeta, con el monto y el ahorro); el pago módulo por módulo va después, como alternativa. No inventes tasas, cantidad de cuotas ni digas "sin interés".
 - No repitas el título completo en cada mensaje: decí "esta formación" o "el curso".
