@@ -669,8 +669,13 @@ class OEC_AI_Chat {
 				. " Y contale que, aunque el checkout muestra el precio en {$currency}, según la forma de pago que elija puede pagar en su moneda local."
 				. ' Usá solo esos equivalentes ya calculados: no hagas vos otras conversiones.';
 		}
+		// Países donde no se da equivalente (cambio oficial y paralelo muy distintos)
+		$own = [ 'BO' => 'bolivianos', 'VE' => 'bolívares', 'CU' => 'pesos cubanos' ][ $country ] ?? '';
+		if ( ! self::$local && $own ) {
+			$note .= " CASO ESPECIAL — si pide el precio en {$own} o \"en mi moneda\": respondé SOLO esto, con tus palabras: el sitio muestra el precio en {$currency}; no tenés un tipo de cambio confiable para decirle un equivalente en {$own}; y según la forma de pago que elija puede pagar en su moneda local. En ese caso NO pongas el enlace de cambiar país o moneda (cambiarlo no le va a mostrar {$own}).";
+		}
 		return $note
-			. " Si pide el precio en otra moneda que no sea esa, dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
+			. " Si pide el precio en otra moneda" . ( $own ? " (que no sea {$own})" : ( self::$local ? ' que no sea esa' : '' ) ) . ", dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
 			. " Monedas que muestra el sitio: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
 	}
 
@@ -680,7 +685,7 @@ class OEC_AI_Chat {
 	/** Monedas locales que se nombran por su nombre; el resto sale del sistema (intl) solo con su código. */
 	private const LOCAL_CURRENCIES = [
 		'PE' => [ 'PEN', 'soles' ],            'CR' => [ 'CRC', 'colones' ],        'UY' => [ 'UYU', 'pesos uruguayos' ],
-		'BO' => [ 'BOB', 'bolivianos' ],       'PY' => [ 'PYG', 'guaraníes' ],      'BR' => [ 'BRL', 'reales' ],
+		'PY' => [ 'PYG', 'guaraníes' ],        'BR' => [ 'BRL', 'reales' ],
 		'GT' => [ 'GTQ', 'quetzales' ],        'DO' => [ 'DOP', 'pesos dominicanos' ], 'HN' => [ 'HNL', 'lempiras' ],
 		'NI' => [ 'NIO', 'córdobas' ],
 	];
@@ -689,10 +694,11 @@ class OEC_AI_Chat {
 	 * Tipo de cambio de referencia para decir un precio en la moneda del país
 	 * cuando el sitio no la cotiza (soles, colones…). Tabla pública de
 	 * open.er-api.com, una vez cada 12 h para todo el sitio; si falla, no se
-	 * ofrece equivalente. Sin Venezuela ni Cuba: su cambio oficial no sirve de guía.
+	 * ofrece equivalente. Sin Venezuela, Cuba ni Bolivia: tienen un cambio oficial y
+	 * otro paralelo muy distintos, y el número daría una idea equivocada.
 	 */
 	private static function local_currency( string $country, string $currency ): ?array {
-		if ( in_array( $country, [ 'VE', 'CU' ], true ) ) {
+		if ( in_array( $country, [ 'VE', 'CU', 'BO' ], true ) ) {
 			return null;
 		}
 		[ $code, $name ] = self::LOCAL_CURRENCIES[ $country ] ?? [ '', '' ];
