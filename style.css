@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.134
+Version: 1.0.135
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -935,6 +935,57 @@ section { padding-block: 4rem; }
   border-bottom: 1px solid rgba(var(--color-white-rgb),.08);
 }
 .footer-grid--cols-1 { grid-template-columns: 1fr; }
+
+/* ── País y moneda de los precios (pie + paneles; calca el selector de la ficha) ── */
+.footer-region { padding-top: 1.5rem; }
+.oec-geo-trigger {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: inherit; font-size: .8125rem; line-height: 1.2;
+  color: rgba(var(--color-white-rgb),.75);
+  background: rgba(var(--color-white-rgb),.06);
+  border: 1px solid rgba(var(--color-white-rgb),.18);
+  border-radius: 20px; padding: 7px 14px; cursor: pointer;
+  transition: border-color .2s, color .2s;
+}
+.oec-geo-trigger:hover { border-color: rgba(var(--color-white-rgb),.4); color: #fff; }
+.oec-geo-chev { font-size: .625rem; transition: transform .2s; }
+.oec-geo-trigger[aria-expanded="true"] .oec-geo-chev { transform: rotate(180deg); }
+
+.oec-geo-backdrop { position: fixed; inset: 0; background: transparent; z-index: 100000; display: none; }
+.oec-geo-backdrop.is-visible { display: block; }
+.oec-geo-panel {
+  position: fixed; z-index: 100001; width: 300px; max-width: 92vw; max-height: min(440px, 72vh);
+  display: flex; flex-direction: column; text-align: left;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.16);
+  font-family: inherit;
+}
+.oec-geo-panel[hidden] { display: none; }
+.oec-geo-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 12px 14px 16px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0; }
+.oec-geo-title { font-size: 13px; font-weight: 700; color: #111827; }
+.oec-geo-close { display: flex; align-items: center; justify-content: center; width: 26px; height: 26px; font-size: 18px; line-height: 1; color: #9ca3af; background: #f3f4f6; border: none; border-radius: 50%; cursor: pointer; flex-shrink: 0; }
+.oec-geo-close:hover { background: #e5e7eb; color: #374151; }
+.oec-geo-body { padding: 16px; overflow-y: auto; }
+.oec-geo-back { display: flex; align-items: center; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--color-primary); background: none; border: none; padding: 0; cursor: pointer; }
+.oec-geo-label, .oec-geo-sublabel { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: #9ca3af; text-transform: uppercase; line-height: 1.2; }
+.oec-geo-label { margin: 0 0 8px; }
+.oec-geo-label--gap { margin-top: 16px; }
+.oec-geo-sublabel { margin: 14px 0 6px; }
+.oec-geo-sublabel:first-child { margin-top: 0; }
+.oec-geo-current { width: 100%; display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 600; color: #111827; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.oec-geo-current:hover { background: #f3f4f6; }
+.oec-geo-list { list-style: none; margin: 0; padding: 0; }
+.oec-geo-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13.5px; color: #374151; padding: 8px 6px; border-radius: 6px; cursor: pointer; }
+.oec-geo-list li:hover { background: #f3f4f6; }
+.oec-geo-list li i { font-size: 13px; color: var(--color-primary); opacity: 0; flex-shrink: 0; }
+.oec-geo-list li[aria-selected="true"] { color: var(--color-primary); font-weight: 600; background: rgba(var(--color-primary-rgb),.08); }
+.oec-geo-list li[aria-selected="true"] i { opacity: 1; }
+.oec-geo-foot { padding: 12px 16px 14px; border-top: 1px solid #f3f4f6; flex-shrink: 0; }
+.oec-geo-apply { width: 100%; background: var(--color-primary); color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13.5px; font-weight: 700; cursor: pointer; transition: filter .2s; }
+.oec-geo-apply:hover { filter: brightness(.92); }
+.oec-geo-apply:disabled { opacity: .5; cursor: default; }
+.oec-geo-auto { display: block; width: 100%; margin-top: 8px; background: none; border: none; padding: 4px; font-size: 12px; color: #6b7280; text-decoration: underline; cursor: pointer; }
+.oec-geo-auto[hidden] { display: none; }
+@media (max-width: 600px) { .oec-geo-panel { width: 320px; } }
 .footer-grid--cols-2 { grid-template-columns: 2fr 1fr; }
 .footer-grid--cols-3 { grid-template-columns: 2fr 1fr 1fr; }
 .footer-grid--cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }

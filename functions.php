@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.134' );
+define( 'OEC_THEME_VERSION', '1.0.135' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -72,6 +72,10 @@ function oec_enqueue_assets(): void {
 		oec_asset_version( 'assets/js/main.js' ),
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
+
+	// País y moneda de los precios: en el <head> y sin defer, tiene que correr
+	// antes que el script de la ficha (ver assets/js/region.js).
+	wp_enqueue_script( 'oec-region', OEC_THEME_URI . '/assets/js/region.js', [], oec_asset_version( 'assets/js/region.js' ), false );
 
 	// Asistente IA — TODO: re-condicionar a oec_anthropic_key tras pruebas de UI
 	wp_enqueue_script(

@@ -58,6 +58,7 @@
       // A veces la IA escribe una dirección de WhatsApp inventada ("https://wa.me/") en vez
       // de la clave: cualquier enlace a WhatsApp pasa a ser el oficial del sitio.
       .replace(/\[([^\]\n]+)\]\((?:https?:\/\/)?(?:wa\.me|(?:[a-z]+\.)?whatsapp\.com)[^)\s]*\)/gi, '[$1](WHATSAPP)')
+      .replace(/\[([^\]\n]+)\]\(REGION\)/g, (_, label) => window.oecRegion ? '[' + label + '](#oec-region)' : label)
       .replace(/\[([^\]\n]+)\]\((WHATSAPP|INSCRIPCION)\)/g,
         (_, label, key) => chatLinks[key] ? '[' + label + '](' + chatLinks[key] + ')' : label);
   }
@@ -164,8 +165,17 @@
   }
 
   /* ── Country/currency (browser-side, uses user IP) ──────── */
+  // País y moneda salen de window.oecRegion (assets/js/region.js): lo que la persona
+  // eligió en el selector o en la URL manda sobre la detección por IP. Si esa página
+  // todavía no lo trae (HTML en caché), queda la detección directa de antes.
   async function detectLocation() {
     try {
+      if (window.oecRegion) {
+        const r = await window.oecRegion.get();
+        country  = r.country  || '';
+        currency = r.currency || '';
+        return;
+      }
       const res = await fetch('https://api.g-se.com/v2/initialPreferences', { cache: 'default' });
       if (res.ok) {
         const d = await res.json();
@@ -174,6 +184,21 @@
       }
     } catch (_) {}
   }
+  // Si cambia la selección con el chat abierto, la próxima respuesta ya usa la nueva
+  document.addEventListener('oec:region', (e) => {
+    if (e.detail && e.detail.country) { country = e.detail.country; currency = e.detail.currency; }
+  });
+  // [Cambiar país o moneda](REGION) en una respuesta abre el selector ahí mismo
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href="#oec-region"]');
+    if (!a) return;
+    e.preventDefault();
+    if (!window.oecRegion) return;
+    // En una ficha, aplicar el cambio recarga la página (para que recalcule sus
+    // precios): se deja anotado para volver a abrir el chat donde estaba.
+    try { sessionStorage.setItem('oec_chat_reopen', '1'); } catch (_) {}
+    window.oecRegion.open(a);
+  });
 
   function ensureLocation() {
     if (!locationFetched) {
@@ -667,6 +692,9 @@
     });
 
     try {
+      // Sin país todavía (mensaje enviado apenas cargó la página): se espera la
+      // detección un momento, para no responder sin precios.
+      if (!country) await Promise.race([detectLocation(), new Promise(r => setTimeout(r, 1500))]);
       const req = {
         method:  'POST',
         // Sin X-WP-Nonce: la página puede venir de la caché de Cloudflare con un
@@ -676,6 +704,7 @@
           message, history, country, currency, mentioned_ids: mentionedFormationIds,
           cid, turn: saved.filter(m => m.u !== undefined).length, page: location.pathname,
           context: pageContext,
+          region: window.oecRegion ? 1 : 0, // este navegador tiene el selector de país y moneda
         }),
       };
       let res = await fetch(streamEndpoint, req);
@@ -955,6 +984,13 @@
     buildOverlay();
     wireEvents();
     updateEntryPoints();
+    try {
+      if (sessionStorage.getItem('oec_chat_reopen')) {
+        sessionStorage.removeItem('oec_chat_reopen');
+        // Solo si la página se recargó por el cambio de país o moneda
+        if (hasConversation() && /[?&]country=/.test(location.search)) openWithMorph();
+      }
+    } catch (_) {}
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', fitToViewport);
       window.visualViewport.addEventListener('scroll', fitToViewport);

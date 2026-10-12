@@ -135,6 +135,15 @@ $_socials = [
 
 			</div><!-- .footer-grid -->
 
+			<!-- País y moneda de los precios (assets/js/region.js) -->
+			<div class="footer-region">
+				<button type="button" class="oec-geo-trigger" aria-haspopup="true" aria-expanded="false">
+					<i class="bi bi-globe2" aria-hidden="true"></i>
+					<span data-oec-geo-label><?php esc_html_e( 'Ver precios por país', 'oec-theme' ); ?></span>
+					<i class="bi bi-chevron-down oec-geo-chev" aria-hidden="true"></i>
+				</button>
+			</div>
+
 		</div><!-- .container -->
 	</footer>
 

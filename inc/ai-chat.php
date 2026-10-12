@@ -640,6 +640,29 @@ class OEC_AI_Chat {
 		];
 	}
 
+	/** Monedas que cotiza la API de precios (las mismas del selector de país y moneda). */
+	private const PRICE_CURRENCIES = [ 'EUR', 'USD', 'ARS', 'MXN', 'COP', 'CLP' ];
+
+	/**
+	 * Para qué país y en qué moneda están los precios del contexto, y qué hacer si
+	 * la persona los quiere en otra: no se convierte a mano, se cambia la selección
+	 * del sitio (el enlace REGION abre el selector; solo si el navegador lo tiene).
+	 */
+	private static function region_note( string $country, string $currency, bool $selector ): string {
+		if ( ! $country ) {
+			return '';
+		}
+		$name = class_exists( '\\Locale' ) ? (string) \Locale::getDisplayRegion( '-' . $country, 'es' ) : '';
+		$name = $name && $name !== $country ? "{$name} ({$country})" : $country;
+		$how  = $selector
+			? 'decile que puede cambiarlo y poné exactamente este enlace: [Cambiar país o moneda](REGION) (abre el selector; también está al pie de cada página, en "Ver precios: …"). Apenas lo cambie, le das el precio exacto.'
+			: 'decile que puede cambiarlo con el selector "Ver precios: …" de la ficha de la formación.';
+		$all  = implode( ', ', self::PRICE_CURRENCIES );
+		return "\n\nPAÍS Y MONEDA: los precios del contexto son para {$name}, en {$currency}. Los precios y los medios de pago dependen del país."
+			. " Si pide el precio en otra moneda, dice que está en otro país o que el país detectado no es el suyo: NO conviertas ni estimes montos (no tenés el tipo de cambio ni los precios de otro país); {$how}"
+			. " Monedas disponibles: {$all}. No ofrezcas cambiar país o moneda si no lo pide.";
+	}
+
 	/** ¿El mensaje habla de una ficha que vio antes? ("las que vi", "la anterior", "compará") */
 	private static function refers_to_seen( string $message ): bool {
 		return (bool) preg_match( '/(?<![\p{L}])(vi|ví|viste|vimos|mir[eé]|miraba|anterior(es)?|las? otras?|el otro|fichas?|esas|esa otra|compar\p{L}+)(?![\p{L}])/iu', $message );
@@ -728,6 +751,10 @@ class OEC_AI_Chat {
 		$country       = strtoupper( $request->get_param( 'country' ) );
 		$currency      = strtoupper( $request->get_param( 'currency' ) );
 		$mentioned_ids = $request->get_param( 'mentioned_ids' );
+		// País y moneda vienen del selector del sitio (o de la detección por IP). La
+		// API de precios solo cotiza PRICE_CURRENCIES: con otra moneda, USD.
+		$country  = preg_match( '/^[A-Z]{2}$/', $country ) ? $country : '';
+		$currency = $country ? ( in_array( $currency, self::PRICE_CURRENCIES, true ) ? $currency : 'USD' ) : '';
 
 		// Rol según la página: ficha de formación, landing de temática o catálogo
 		$ctx   = self::resolve_context( $request->get_param( 'context' ) );
@@ -824,6 +851,7 @@ class OEC_AI_Chat {
 		// IA lo agregaba igual ("si te da error, escribinos…"), así que la lista de
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
+		$mode .= self::region_note( $country, $currency, (bool) $request->get_param( 'region' ) );
 		// "¿Es más barata que la anterior?": a veces respondía que no sabía qué ficha
 		// había visto, porque en los mensajes solo ve los de esta página. Si habla de
 		// otra ficha, el dato va pegado a su propia pregunta (en las reglas no alcanzaba).
