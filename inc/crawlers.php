@@ -95,8 +95,10 @@ add_filter( 'robots_txt', function ( $output, $public ) {
 		// Datos crudos del catálogo (los usa el tema, no son páginas).
 		'Disallow: /*oec-ai-catalog/',
 		'Disallow: /*oec-seo/',
-		// Vista web del último newsletter.
-		'Disallow: /*?oec_newsletter=',
+		// La vista web del newsletter (/?oec_newsletter=ultimo) NO se bloquea acá:
+		// responde con X-Robots-Tag: noindex (inc/newsletter.php) y Google tiene
+		// que poder entrar para leerlo. Bloqueada, una URL enlazada desde afuera
+		// se puede indexar igual, "a ciegas".
 	] );
 
 	if ( $blocked ) {
