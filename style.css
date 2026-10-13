@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.149
+Version: 1.0.150
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5203,7 +5203,7 @@ body.oec-chat-open .oec-chat-bubble { display: none; }
 /* ============================================================
    [oec-subtematica] (inc/subtematica.php) — espacio de una subárea dentro
    de una landing (Antropometría en Nutrición Deportiva): la formación
-   principal grande y el resto como un recorrido al lado. Bloque oscuro con
+   principal grande y el resto en una lista al lado. Bloque oscuro con
    los colores de la temática y una regla graduada dibujada en CSS arriba
    (medir es el tema); sin video ni imagen de fondo que mantener.
    ============================================================ */
@@ -5266,7 +5266,7 @@ body.oec-chat-open .oec-chat-bubble { display: none; }
 .oec-sub__caras__cara--mas { background: var(--sub-acc); color: var(--sub-dk); }
 .oec-sub__cta { display: inline-flex; align-items: center; gap: .5rem; padding: .75rem 1.25rem; border-radius: var(--radius); background: var(--sub-acc); color: var(--sub-dk); font-weight: 700; font-size: .9375rem; }
 
-/* Recorrido */
+/* Lista del resto de las formaciones del área */
 .oec-sub__aside-title { font-size: .8125rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(var(--color-white-rgb), .7); margin: .375rem 0 .75rem; }
 .oec-sub__list { list-style: none; margin: 0; padding: 0; }
 .oec-sub__list li { border-top: 1px solid rgba(var(--color-white-rgb), .14); }

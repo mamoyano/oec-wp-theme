@@ -11,16 +11,18 @@ defined( 'ABSPATH' ) || exit;
    [oec-subtematica tematica="nutricion-deportiva,antropometria"
        title="Antropometría y composición corporal"
        texto="Medir bien es el primer paso para…"
-       lista="Completo o por partes"]
+       lista="Más formaciones de antropometría"]
 
    - tematica: las etiquetas que tiene que tener la formación (TODAS). La
      primera es la de la landing (sale en el rótulo "Dentro de …").
    - La principal es la de mayor relevancia (y, a igual relevancia, la de
      más peso: alumnos y calificación, ver oec_destacada_datos()). Va
      grande, con portada, docentes y datos. El resto, en una lista al lado,
-     ordenado por nivel (máster → posgrado → curso…) y fecha de inicio: si
-     es un programa que se puede cursar entero o por módulos, se lee como
-     un recorrido.
+     por fecha de inicio. Cada una se presenta como una formación
+     independiente: aunque algunas sean módulos o tramos de la principal,
+     acá no se dice (a pedido de Mario: en el área conviven formaciones que
+     no tienen nada que ver con ella) — rótulo = su tipo, y el título sin
+     el sufijo "- MOD N".
    - Sin video ni imagen de fondo a propósito: solo imágenes del catálogo
      (portada y fotos de docentes), nada que subir ni mantener a mano. El
      fondo es el oscuro de la temática con una regla graduada en CSS.
@@ -31,7 +33,7 @@ defined( 'ABSPATH' ) || exit;
    Todo sale del catálogo sincronizado (OEC_AI_Catalog), sin API en vivo.
    ============================================================ */
 
-/** Orden de los tipos en la lista: lo más abarcador primero. */
+/** Desempate del orden de la lista (a igual fecha de inicio): lo más abarcador primero. */
 const OEC_SUB_NIVELES = [ 'master' => 0, 'posgrado' => 1, 'diplomado' => 2, 'certificacion' => 3, 'curso' => 4, 'taller' => 5, 'webinar' => 6 ];
 
 /** Formaciones abiertas que tienen todas las etiquetas, con los datos de las destacadas. */
@@ -73,15 +75,12 @@ function oec_subtematica_inicio( array $d ): string {
 }
 
 /**
- * Título para la lista: "Fundamentos… - MOD 1" → [ "Módulo 1", "Fundamentos…" ].
- * Sin ese sufijo, el rótulo es el tipo ("Posgrado", "Curso").
+ * Rótulo y título para la lista: [ tipo, título ]. Al título se le saca el
+ * sufijo "- MOD 1" con que vienen los módulos de un programa: en la lista
+ * cada formación va como independiente, sin referencia a otra.
  */
 function oec_subtematica_item_titulo( array $d ): array {
-	$title = trim( (string) $d['title'] );
-	if ( preg_match( '/^(.*?)\s*[-–—]\s*M[OÓ]D(?:ULO)?\.?\s*(\d+)\s*$/iu', $title, $m ) ) {
-		/* translators: %d: número de módulo */
-		return [ sprintf( __( 'Módulo %d', 'oec-theme' ), (int) $m[2] ), trim( $m[1] ) ];
-	}
+	$title = trim( (string) preg_replace( '/\s*[-–—]\s*M[OÓ]D(?:ULO)?\.?\s*\d+\s*$/iu', '', trim( (string) $d['title'] ) ) );
 	return [ oec_subtematica_tipo( $d ), $title ];
 }
 
@@ -128,8 +127,9 @@ function oec_render_subtematica_shortcode( $atts ): string {
 	// La principal: mayor relevancia; a igual relevancia, más peso.
 	usort( $all, fn( $a, $b ) => [ $b['relevance'], $b['peso'] ] <=> [ $a['relevance'], $a['peso'] ] );
 	$main  = array_shift( $all );
+	// El resto, por fecha de inicio (a igual fecha, lo más abarcador primero).
 	$nivel = fn( $d ) => OEC_SUB_NIVELES[ sanitize_title( (string) $d['type'] ) ] ?? 9;
-	usort( $all, fn( $a, $b ) => [ $nivel( $a ), $a['start'] ] <=> [ $nivel( $b ), $b['start'] ] );
+	usort( $all, fn( $a, $b ) => [ $a['start'], $nivel( $a ) ] <=> [ $b['start'], $nivel( $b ) ] );
 	$resto = array_slice( $all, 0, max( 0, (int) $atts['limit'] ) );
 
 	$padre  = function_exists( 'oec_destacada_tematica_nombre' ) ? oec_destacada_tematica_nombre( $tags[0] ) : '';
@@ -177,7 +177,7 @@ function oec_render_subtematica_shortcode( $atts ): string {
 			<?php if ( $resto ) : ?>
 			<div class="oec-sub__aside">
 				<h3 class="oec-sub__aside-title"><?php echo esc_html( $atts['lista'] ); ?></h3>
-				<ol class="oec-sub__list">
+				<ul class="oec-sub__list">
 					<?php foreach ( $resto as $d ) :
 						[ $rotulo, $titulo ] = oec_subtematica_item_titulo( $d );
 						$cuando              = oec_subtematica_inicio( $d );
@@ -193,7 +193,7 @@ function oec_render_subtematica_shortcode( $atts ): string {
 						</a>
 					</li>
 					<?php endforeach; ?>
-				</ol>
+				</ul>
 			</div>
 			<?php endif; ?>
 		</div>
