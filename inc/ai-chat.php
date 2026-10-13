@@ -1328,11 +1328,15 @@ class OEC_AI_Chat {
 		if ( $help = self::help_image( (string) $message, $reply ) ) {
 			$done['help'] = $help;
 		}
-		// Fotos de docentes: en una ficha, los de esa formación; fuera de ella, solo si la
-		// respuesta trata de UNA formación. Cuando recomienda varias, una foto suelta
-		// de un docente quedaba fuera de lugar (y las tarjetas ya llevan su imagen).
-		$with_photos = $focus ? [ $focus ] : ( 1 === count( $source ) ? $source : [] );
-		if ( $media = self::reply_media( $reply, (string) $message, $with_photos, $focus ) ) {
+		// Imágenes de docentes, avales y certificado: solo cuando la respuesta habla de UNA
+		// formación y los nombra.
+		// - En una ficha abierta: los de esa formación, y solo si la respuesta no pasó a
+		//   recomendar otras. En una ficha cerrada, nunca: ahí se ofrecen alternativas, y
+		//   nombrar a un docente o un aval de la alternativa traía las fotos de la cerrada.
+		// - Fuera de una ficha: solo si la respuesta trata de una única formación.
+		$about_focus = $focus && $open && ! $source;
+		$with_photos = $focus ? ( $about_focus ? [ $focus ] : [] ) : ( 1 === count( $source ) ? $source : [] );
+		if ( $media = self::reply_media( $reply, (string) $message, $with_photos, $about_focus ? $focus : null ) ) {
 			$done['media'] = $media;
 		}
 		if ( $credits_done ) {
