@@ -499,9 +499,10 @@ class OEC_AI_Chat {
 		if ( ! empty( $f['teachers'] ) ) {
 			$lines[] = "\nDocentes:";
 			foreach ( $f['teachers'] as $t ) {
-				$photo = $t['photo'] ? self::cdn_image( $t['photo'], 300 ) : '';
-				$photo_line = $photo ? " | Foto: {$photo}" : '';
-				$lines[] = "- {$t['name']} ({$t['background']}): {$t['bio']}{$photo_line}";
+				// Sin la URL de la foto: la agrega el sitio cuando la respuesta nombra al
+				// docente (reply_media()). Dejarlo en manos de la IA era parejo con Haiku
+				// 4.5 y casi nunca pasaba con 5.5.
+				$lines[] = "- {$t['name']} ({$t['background']}): {$t['bio']}";
 			}
 		}
 
@@ -802,6 +803,138 @@ class OEC_AI_Chat {
 		return $out;
 	}
 
+	/** Copia de la formación que el plugin guarda al mostrar la ficha (datos completos de la API). */
+	private static function plugin_data( string $id ): array {
+		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
+		return is_array( $cached ) && is_array( $cached['data'] ?? null ) ? $cached['data'] : [];
+	}
+
+	/**
+	 * Fechas: si la copia del plugin es más nueva que la del catálogo (p. ej. se
+	 * extendió la inscripción), mandan esas. Sin esto el chat trataba como cerrada
+	 * una formación que la ficha mostraba abierta.
+	 */
+	private static function focus_dates( array $f ): array {
+		$d = self::plugin_data( (string) ( $f['id'] ?? '' ) );
+		if ( $d && (int) ( $d['edition_number'] ?? 0 ) === (int) ( $f['edition_number'] ?? 0 ) ) {
+			foreach ( [ 'start', 'end', 'enrollment_end' ] as $k ) {
+				$v = substr( (string) ( $d[ $k ] ?? '' ), 0, 10 );
+				if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) && $v > (string) ( $f[ $k ] ?? '' ) ) {
+					$f[ $k ] = $v;
+				}
+			}
+		}
+		return $f;
+	}
+
+	/**
+	 * Las formaciones más destacadas hoy (de una temática o de todo el catálogo), para
+	 * cuando el chat se abre desde un lanzador y no hay nada que buscar: primero las
+	 * de mayor relevancia para OEC y, a igual relevancia, las que más distintivos
+	 * tienen (docentes, tema, certificación, precio); el resto queda en el orden de la API.
+	 */
+	private static function featured( string $tematica = '', int $n = 5 ): array {
+		$index = OEC_AI_Catalog::get_index( true );
+		if ( '' !== $tematica ) {
+			$index = array_values( array_filter( $index, static fn( $e ) => in_array( $tematica, $e['tags'] ?? [], true ) ) );
+		}
+		$pool = self::load_formations( array_slice( $index, 0, 40 ) );
+		$rank = [];
+		foreach ( $pool as $i => $f ) {
+			$flags      = (int) ! empty( $f['great_lecturers'] ) + (int) ! empty( $f['great_topic'] ) + (int) ! empty( $f['great_certification'] ) + (int) ! empty( $f['great_price'] );
+			$rank[ $i ] = [ -(int) ( $f['relevance'] ?? 1 ), -$flags, $i ];
+		}
+		asort( $rank );
+		$order = array_keys( $rank );
+		if ( '' !== $tematica ) {
+			return array_values( array_map( static fn( $i ) => $pool[ $i ], array_slice( $order, 0, $n ) ) );
+		}
+		// Todo el catálogo: una por temática primero, para que "lo mejor de hoy" no
+		// sean cinco cursos de la misma área; si faltan, se completa con las siguientes.
+		$picked = [];
+		$areas  = [];
+		foreach ( $order as $i ) {
+			$area = (string) ( $pool[ $i ]['tematicas'][0] ?? '' );
+			if ( count( $picked ) < $n && ( '' === $area || ! isset( $areas[ $area ] ) ) ) {
+				$picked[ $i ]   = $pool[ $i ];
+				$areas[ $area ] = true;
+			}
+		}
+		foreach ( $order as $i ) {
+			if ( count( $picked ) < $n && ! isset( $picked[ $i ] ) ) {
+				$picked[ $i ] = $pool[ $i ];
+			}
+		}
+		return array_values( $picked );
+	}
+
+	/**
+	 * Imágenes que acompañan la respuesta, elegidas por el sitio (no por la IA):
+	 * - la foto de cada docente que la respuesta nombra;
+	 * - en una ficha, los logos de los avales cuando la respuesta habla de avales, y
+	 *   la muestra del certificado cuando la persona pregunta por él.
+	 * El navegador no repite una imagen que ya mostró en la misma conversación.
+	 *
+	 * @return array<int,array{kind:string,src:string,name:string}>
+	 */
+	private static function reply_media( string $reply, string $message, array $formations, ?array $focus ): array {
+		$text  = ' ' . self::title_norm( $reply ) . ' ';
+		$out   = [];
+		$seen  = [];
+		$named = static function ( string $name ) use ( $text ): bool {
+			// "Lic. Horacio Anselmi" → nombre completo sin el título, o el apellido solo
+			$n     = trim( preg_replace( '/\b(lic|lda|ldo|dr|dra|mg|mgtr|msc|mtra|mtro|prof|profa|pf|phd|ing|kin|klgo|esp|tec)\b\.?/iu', ' ', self::title_norm( $name ) ) );
+			$n     = trim( preg_replace( '/\s+/', ' ', $n ) );
+			$words = explode( ' ', $n );
+			// Nombre y apellido juntos (con tres o más palabras alcanzan las dos primeras o
+			// las dos últimas). El apellido solo no: "García" traía la foto de otro docente.
+			if ( count( $words ) < 2 ) {
+				return false;
+			}
+			$forms = [ $n, implode( ' ', array_slice( $words, 0, 2 ) ), implode( ' ', array_slice( $words, -2 ) ) ];
+			foreach ( array_unique( $forms ) as $form ) {
+				if ( strlen( $form ) >= 8 && str_contains( $text, ' ' . $form . ' ' ) ) {
+					return true;
+				}
+			}
+			return false;
+		};
+		foreach ( $formations as $f ) {
+			foreach ( $f['teachers'] ?? [] as $t ) {
+				$src = self::cdn_image( (string) ( $t['photo'] ?? '' ), 300 );
+				if ( $src && ! isset( $seen[ $src ] ) && count( $out ) < 4 && $named( (string) ( $t['name'] ?? '' ) ) ) {
+					$seen[ $src ] = true;
+					$out[]        = [ 'kind' => 'teacher', 'src' => $src, 'name' => trim( preg_replace( '/\s+,/', ',', (string) $t['name'] ) ) ];
+				}
+			}
+		}
+		if ( $focus ) {
+			$d = self::plugin_data( (string) $focus['id'] );
+			if ( preg_match( '/\baval|avalad|respald|certific/iu', $reply ) ) {
+				$n = 0;
+				foreach ( $d['supports']['data'] ?? $d['supports'] ?? [] as $s ) {
+					$src  = self::cdn_image( (string) ( $s['logo_gse'] ?? $s['thumb'] ?? '' ), 240 );
+					$name = (string) ( $s['name'] ?? '' );
+					$hit  = $name && ( str_contains( $text, ' ' . self::title_norm( $name ) . ' ' )
+						|| ( ! empty( $s['short_name'] ) && strlen( (string) $s['short_name'] ) >= 3 && str_contains( $text, ' ' . self::title_norm( (string) $s['short_name'] ) . ' ' ) ) );
+					if ( $src && $hit && $n++ < 4 ) {
+						$out[] = [ 'kind' => 'logo', 'src' => $src, 'name' => $name ];
+					}
+				}
+			}
+			if ( preg_match( '/certificad|diploma|t[ií]tulo/iu', $message ) ) {
+				foreach ( $d['certificates']['data'] ?? $d['certificates'] ?? [] as $c ) {
+					$src = self::cdn_image( (string) ( $c['thumb'] ?? '' ), 480 );
+					if ( $src ) {
+						$out[] = [ 'kind' => 'cert', 'src' => $src, 'name' => (string) ( $c['name'] ?? 'Certificado' ) ];
+						break;
+					}
+				}
+			}
+		}
+		return $out;
+	}
+
 	/** ¿Es solo un saludo o un pedido genérico de información? ("Hola", "buenas, info", "quiero más información") */
 	private static function is_greeting( string $message ): bool {
 		$m = trim( preg_replace( '/[^\p{L}\s]+/u', ' ', mb_strtolower( $message ) ) );
@@ -985,6 +1118,8 @@ class OEC_AI_Chat {
 		// Rol según la página: ficha de formación, landing de temática o catálogo
 		$ctx   = self::resolve_context( $request->get_param( 'context' ) );
 		$focus = 'formacion' === $ctx['mode'] ? self::focus_formation( $ctx['id'] ) : null;
+		// El mensaje lo puso un lanzador del sitio (globo, "Pregúntanos"), no lo tipeó la persona
+		$launch = (bool) $request->get_param( 'launch' );
 		if ( $focus ) {
 			$focus['user_country'] = (string) $country;
 		}
@@ -1030,13 +1165,19 @@ class OEC_AI_Chat {
 			$formations = array_merge( [ $focus ], $others );
 		} else {
 			self::sse_status( 'Analizando tu consulta...' );
-			$expanded = self::expand_query( $api_key, $message );
+			// Mensaje de un lanzador (globo, "Pregúntanos"): no hay nada que buscar ni
+			// ampliar; van las más destacadas de la landing o de todo el catálogo.
+			$expanded = $launch ? $message : self::expand_query( $api_key, $message );
 
 			self::sse_status( 'Revisando el catálogo de formaciones...' );
 			$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
-			$formations = 'tematica' === $ctx['mode']
-				? self::prefilter_tematica( $message, $extra, $ctx['tematica'] )
-				: self::prefilter( $message, $extra );
+			if ( $launch ) {
+				$formations = self::featured( 'tematica' === $ctx['mode'] ? $ctx['tematica'] : '' );
+			} else {
+				$formations = 'tematica' === $ctx['mode']
+					? self::prefilter_tematica( $message, $extra, $ctx['tematica'] )
+					: self::prefilter( $message, $extra );
+			}
 			$formations = $recall
 				? self::merge_mentioned( [], $visited )
 				: self::merge_mentioned( $formations, (array) $mentioned_ids );
@@ -1081,7 +1222,28 @@ class OEC_AI_Chat {
 		// Saludo en una ficha ("Hola" del globo o del botón de contacto): la regla sola
 		// daba una presentación tibia que terminaba en "¿qué querés saber?". La
 		// indicación va pegada al saludo, con lo que tiene que decir.
-		if ( $focus && $open && self::is_greeting( (string) $message ) ) {
+		if ( ! $focus && $launch ) {
+			$where = 'tematica' === $ctx['mode'] ? 'la página de formaciones de «' . ( $ctx['title'] ?? $ctx['tematica'] ) . '»' : 'el sitio';
+			$last  = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde {$where} con esa pregunta."
+				. ' Las formaciones del contexto son las más destacadas de hoy. Respondé en 3 mensajes separados por |||:'
+				. ' 1) saludo de una línea;'
+				. ' 2) tres formaciones del contexto' . ( 'tematica' === $ctx['mode'] ? '' : ', de áreas distintas si se puede' ) . ', cada una en una viñeta con su nombre en negrita y SU porqué en una línea con datos concretos (quién la dicta, aval, alumnos u opiniones, descuento vigente, cierre de inscripción cercano);'
+				. ' 3) una pregunta para afinar: a qué se dedica o qué quiere lograr.'
+				. ' No expliques cómo funciona el sitio ni listes más de tres.]';
+		}
+		if ( $focus && ! $open && ( $launch || self::is_greeting( (string) $message ) ) ) {
+			// Inscripción cerrada: nadie sabe cuándo reabre. Es la ocasión de ofrecer
+			// formaciones parecidas que sí están abiertas.
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde la ficha de «{$focus['title']}», que tiene la INSCRIPCIÓN CERRADA."
+				. ' No hay fecha de reapertura: la decide el organizador y ni el sitio ni vos la conocen (no la estimes).'
+				. ' Respondé en 3 mensajes separados por |||:'
+				. ' 1) decile con claridad que hoy no se puede inscribir y que no hay fecha de reapertura, y que puede dejar sus datos en el formulario "Avísame cuando abra inscripciones" de esta misma página para que le avisemos;'
+				. ' 2) recomendale dos o tres de las "OTRAS FORMACIONES" del contexto, las más parecidas, que SÍ están abiertas: cada una en una viñeta, con su nombre en negrita y su porqué con datos concretos (quién la dicta, aval, precio con descuento, cierre de inscripción);'
+				. ' 3) una pregunta para afinar: qué buscaba en esta formación.]';
+		}
+		if ( $focus && $open && ( $launch || self::is_greeting( (string) $message ) ) ) {
 			$last = count( $messages ) - 1;
 			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde la ficha de «{$focus['title']}» y todavía no preguntó nada."
 				. ' Presentale ESA formación para venderla, en 3 mensajes separados por |||:'
@@ -1154,6 +1316,9 @@ class OEC_AI_Chat {
 		if ( $help = self::help_image( (string) $message, $reply ) ) {
 			$done['help'] = $help;
 		}
+		if ( $media = self::reply_media( $reply, (string) $message, $formations, $focus ) ) {
+			$done['media'] = $media;
+		}
 		if ( $credits_done ) {
 			$done['credits'] = $credits_done; // el navegador lo guarda: queda identificado en todo el sitio
 		}
@@ -1178,7 +1343,10 @@ class OEC_AI_Chat {
 				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
 				'error'      => $error,
 				'model'      => self::model_key(),
-				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
+				// Ficha con inscripción cerrada: se anota aparte ("cerrada:ID") para contar
+				// cuánta gente pregunta por cada una (Chat IA → Conversaciones) y poder
+				// pedirle al socio educativo que la reabra.
+				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
 			] );
 		}
 		exit;
@@ -1672,7 +1840,26 @@ class OEC_AI_Chat {
 		// "context" vuelve al servidor tal cual y ahí se valida de nuevo.
 		$title = (string) ( $ctx['title'] ?? '' );
 		unset( $ctx['title'] );
-		return [ 'context' => $ctx, 'contextTitle' => $title, 'links' => (object) $links ];
+
+		// Pregunta con la que abre el chat cada lanzador (globo flotante, "Pregúntanos",
+		// botones de la ficha): según la página, en vez de un "Hola" a secas.
+		if ( 'formacion' === $ctx['mode'] ) {
+			$is_open = ! empty( $focus ) && in_array( $ctx['id'], array_column( OEC_AI_Catalog::get_index( true ), 'id' ), true ) && self::enrollment_open( self::focus_dates( $focus ) );
+			$launch  = $is_open
+				? __( 'Hola, ¿me cuentas más sobre esta formación?', 'oec-theme' )
+				: __( 'Hola, veo que esta formación tiene la inscripción cerrada. ¿Qué otras parecidas me recomiendas?', 'oec-theme' );
+		} elseif ( 'tematica' === $ctx['mode'] ) {
+			/* translators: %s = nombre de la temática */
+			$launch = sprintf( __( 'Hola, ¿qué formaciones de %s me recomiendas?', 'oec-theme' ), $title );
+		} elseif ( is_front_page() ) {
+			/* translators: %s = nombre del sitio */
+			$launch = sprintf( __( 'Hola, ¿qué es lo mejor que tiene hoy %s?', 'oec-theme' ), get_bloginfo( 'name' ) );
+		} elseif ( is_page( 'formaciones' ) ) {
+			$launch = __( 'Hola, ¿qué formaciones me recomiendas hoy?', 'oec-theme' );
+		} else {
+			$launch = __( 'Hola', 'oec-theme' );
+		}
+		return [ 'context' => $ctx, 'contextTitle' => $title, 'launch' => $launch, 'links' => (object) $links ];
 	}
 
 	private static function whatsapp_url(): string {
@@ -1692,19 +1879,7 @@ class OEC_AI_Chat {
 		if ( ! $f ) {
 			return null;
 		}
-		// Fechas: si la copia que el plugin guarda al mostrar la ficha es más nueva que la
-		// del catálogo (p. ej. se extendió la inscripción), mandan esas. Sin esto el chat
-		// trataba como cerrada una formación que la ficha mostraba abierta.
-		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
-		$d      = is_array( $cached ) && is_array( $cached['data'] ?? null ) ? $cached['data'] : [];
-		if ( $d && (int) ( $d['edition_number'] ?? 0 ) === (int) ( $f['edition_number'] ?? 0 ) ) {
-			foreach ( [ 'start', 'end', 'enrollment_end' ] as $k ) {
-				$v = substr( (string) ( $d[ $k ] ?? '' ), 0, 10 );
-				if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) && $v > (string) ( $f[ $k ] ?? '' ) ) {
-					$f[ $k ] = $v;
-				}
-			}
-		}
+		$f             = self::focus_dates( $f );
 		$f['parents']  = self::focus_parents( $id );
 		$f['sessions'] = self::focus_sessions( (string) ( $f['edition_uid'] ?? '' ) );
 		return $f;
@@ -2199,7 +2374,7 @@ COMPORTAMIENTO:
 REGLAS SEGÚN DATOS DEL CATÁLOGO — seguí estas reglas según los flags que figuran en cada formación:
 - Campo "Relevance": indica la importancia de la formación para OEC. Valor 2 = formación MUY DESTACADA (priorizala en recomendaciones, resaltá sus puntos fuertes). Valor 1 = promedio (recomendalas normalmente). Valor 0 = relleno (mencionala SOLO si es la única opción disponible o el usuario pregunta específicamente; nunca la pongas primero).
 - Sincronicidad ASYNC: NUNCA menciones fechas de inicio, fin ni de inscripción. Destacá que se puede "cursarlo a su ritmo", "empezarlo cuando quiera", "sin horarios fijos". Omití completamente el período y el enrollment_end.
-- Flag docentes_destacados: hacé énfasis en el equipo docente — nombralos, mencioná sus cargos y trayectoria. Si el docente tiene URL de foto en sus datos (campo "Foto:"), mostrala usando markdown de imagen: ![Nombre del docente](url_foto). Las imágenes se renderizan correctamente en el chat.
+- Flag docentes_destacados: hacé énfasis en el equipo docente — nombralos, mencioná sus cargos y trayectoria. Nombralos con nombre y apellido: el sitio muestra solo la foto de cada docente que nombres (no pongas imágenes vos).
 - Flag tema_destacado: destacá la relevancia, actualidad e impacto del temario en el campo profesional.
 - Flag certificacion_destacada: destacá el valor del certificado o aval para la carrera del alumno.
 - Promedio de opiniones ≥ 4.5/5: citá una o dos reseñas reales de alumnos para respaldar la recomendación.

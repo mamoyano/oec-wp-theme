@@ -211,11 +211,23 @@ class OEC_AI_Chat_Log {
 			 FROM $t WHERE $where GROUP BY m ORDER BY consultas DESC", // phpcs:ignore
 			...$args
 		) );
-		$mode_names = [ 'catalogo' => 'Catálogo (resto del sitio)', 'tematica' => 'Vendedor de temática (landings)', 'formacion' => 'Vendedor de una formación (fichas)' ];
+		$mode_names = [ 'catalogo' => 'Catálogo (resto del sitio)', 'tematica' => 'Vendedor de temática (landings)', 'formacion' => 'Vendedor de una formación (fichas)', 'cerrada' => 'Ficha con inscripción cerrada' ];
+		// Interés en formaciones con inscripción cerrada: para pedirle al socio que reabra
+		$closed_demand = $wpdb->get_results( $wpdb->prepare(
+			"SELECT SUBSTRING(ctx, 9) AS fid, COUNT(DISTINCT cid) AS conversaciones, COUNT(*) AS consultas,
+			        COUNT(DISTINCT NULLIF(country,'')) AS paises, MAX(created_at) AS ultima
+			 FROM $t WHERE $where AND ctx LIKE %s GROUP BY fid ORDER BY conversaciones DESC, consultas DESC LIMIT 50", // phpcs:ignore
+			...array_merge( $args, [ 'cerrada:%' ] )
+		) );
+		$orgs = self::orgs_by_id();
 		$ctx_label  = static function ( string $ctx ) use ( $titles ): string {
 			if ( str_starts_with( $ctx, 'formacion:' ) ) {
 				$id = substr( $ctx, 10 );
 				return 'Ficha: ' . ( $titles[ $id ] ?? $id );
+			}
+			if ( str_starts_with( $ctx, 'cerrada:' ) ) {
+				$id = substr( $ctx, 8 );
+				return 'Ficha cerrada: ' . ( $titles[ $id ] ?? $id );
 			}
 			return str_starts_with( $ctx, 'tematica:' ) ? 'Landing: ' . substr( $ctx, 9 ) : '';
 		};
@@ -260,6 +272,26 @@ class OEC_AI_Chat_Log {
 						<td><?php echo esc_html( $sec( (int) $bm->ms_first ) ); ?></td>
 						<td><?php echo esc_html( $sec( (int) $bm->ms_total ) ); ?></td>
 						<td><?php echo esc_html( number_format_i18n( (int) $bm->errores ) ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+				</tbody>
+			</table>
+			<?php endif; ?>
+
+			<?php if ( $closed_demand ) : ?>
+			<h3 style="margin:1.5em 0 .25em">Interés en formaciones con inscripción cerrada</h3>
+			<p style="margin:0 0 .75em;max-width:900px">Conversaciones que la gente inició en la ficha de una formación a la que hoy no se puede inscribir, en el período filtrado. Sirve para pedirle al socio educativo que la reabra. Se cuenta desde la versión 1.0.146 del tema.</p>
+			<table class="widefat striped" style="max-width:900px;margin-bottom:1.5em">
+				<thead><tr><th>Formación</th><th>Organización</th><th>Conversaciones</th><th>Consultas</th><th>Países</th><th>Última</th></tr></thead>
+				<tbody>
+				<?php foreach ( $closed_demand as $cd ) : ?>
+					<tr>
+						<td><strong><?php echo esc_html( $titles[ $cd->fid ] ?? $cd->fid ); ?></strong></td>
+						<td><?php echo esc_html( $orgs[ $cd->fid ] ?? '' ); ?></td>
+						<td><?php echo esc_html( number_format_i18n( (int) $cd->conversaciones ) ); ?></td>
+						<td><?php echo esc_html( number_format_i18n( (int) $cd->consultas ) ); ?></td>
+						<td><?php echo esc_html( number_format_i18n( (int) $cd->paises ) ); ?></td>
+						<td><?php echo esc_html( mysql2date( 'j M Y', $cd->ultima ) ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 				</tbody>
@@ -332,6 +364,16 @@ class OEC_AI_Chat_Log {
 	}
 
 	/** id de formación → título, desde el catálogo (abiertas + cerradas). */
+	/** Organización de cada formación del listado (abiertas y cerradas). */
+	private static function orgs_by_id(): array {
+		$orgs = [];
+		foreach ( OEC_AI_Catalog::get_listing( true ) as $r ) {
+			$o = $r['org'] ?? '';
+			$orgs[ $r['id'] ] = is_array( $o ) ? (string) ( $o['name'] ?? '' ) : (string) $o;
+		}
+		return $orgs;
+	}
+
 	private static function titles_by_id(): array {
 		$titles = [];
 		foreach ( OEC_AI_Catalog::get_listing( true ) as $r ) {

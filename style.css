@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.145
+Version: 1.0.146
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -1527,6 +1527,20 @@ body.oec-chat-open { overflow: hidden; }
   gap: .35rem;
   width: 100px;
   margin: 0;
+}
+/* Galería que agrega el sitio (docentes nombrados, avales, certificado) */
+.oec-msg--media .oec-md-gallery { margin: 0; }
+/* Logos de avales: enteros sobre blanco, sin el recorte de retrato */
+.oec-msg--assistant .oec-md-figure--logo { width: 96px; }
+.oec-msg--assistant .oec-md-figure--logo .oec-md-img {
+  aspect-ratio: 3 / 2; object-fit: contain; object-position: center;
+  background: #fff; padding: 8px; box-sizing: border-box;
+}
+.oec-msg--assistant .oec-md-figure--logo .oec-md-img-caption { font-size: .6875rem; font-weight: 500; }
+/* Muestra del certificado: apaisada y sin recorte */
+.oec-msg--assistant .oec-md-figure--cert { width: min(280px, 100%); }
+.oec-msg--assistant .oec-md-figure--cert .oec-md-img {
+  aspect-ratio: auto; object-fit: contain; object-position: center; background: #fff;
 }
 .oec-msg--assistant .oec-md-img {
   width: 100%;

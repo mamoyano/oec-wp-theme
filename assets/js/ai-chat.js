@@ -347,6 +347,7 @@
         upgradeFormationLinks(bubbles, m.f);
         renderCards(m.f);
       }
+      if (m.m && m.m.length) renderMedia(m.m);
       if (m.h) renderHelp(m.h);
     });
     updateEntryPoints();
@@ -473,6 +474,34 @@
     if (!f.external) return;
     a.target = '_blank';
     a.rel    = 'noopener';
+  }
+
+  /* ── Imágenes que acompañan una respuesta (las elige el servidor): fotos de los
+     docentes nombrados, logos de avales y muestra del certificado. Misma galería
+     que las imágenes del texto (.oec-md-gallery), en una burbuja propia. ── */
+  function renderMedia(items) {
+    const bubble = createAssistantBubble();
+    if (!bubble) return;
+    bubble.classList.add('oec-msg--media');
+    const gallery = document.createElement('div');
+    gallery.className = 'oec-md-gallery';
+    items.forEach(x => {
+      if (!/^https?:\/\//.test(x.src)) return;
+      const fig = document.createElement('figure');
+      fig.className = 'oec-md-figure' + (x.kind === 'logo' ? ' oec-md-figure--logo' : x.kind === 'cert' ? ' oec-md-figure--cert' : '');
+      const img = document.createElement('img');
+      img.className = 'oec-md-img';
+      img.src = x.src;
+      img.alt = x.name || '';
+      img.addEventListener('load', scrollBody);
+      const cap = document.createElement('figcaption');
+      cap.className = 'oec-md-img-caption';
+      cap.textContent = x.name || '';
+      fig.append(img, cap);
+      gallery.appendChild(fig);
+    });
+    bubble.appendChild(gallery);
+    scrollBody();
   }
 
   /* ── Imagen de ayuda (p. ej. dónde va el código de descuento) ──
@@ -727,8 +756,10 @@
           context: pageContext,
           region: window.oecRegion ? 1 : 0, // este navegador tiene el selector de país y moneda
           credits: storedCredits(),          // email y saldo de créditos, si ya se identificó en el sitio
+          launch: launchNext ? 1 : 0,
         }),
       };
+      launchNext = false;
       let res = await fetch(streamEndpoint, req);
       // Si una regla del servidor intercepta la ruta exacta y da 404, la misma
       // ruta con "/" final la atiende WordPress directamente.
@@ -824,6 +855,12 @@
     // La misma imagen no se repite si ya salió en la respuesta anterior
     const lastBot = saved.length ? saved[saved.length - 1] : null;
     if (doneData.help && lastBot && lastBot.h) doneData.help = null;
+    // Fotos de docentes, logos de avales y muestra del certificado: cada imagen una
+    // sola vez por conversación.
+    const shown = new Set();
+    saved.forEach(m => (m.m || []).forEach(x => shown.add(x.src)));
+    const media = (doneData.media || []).filter(x => x && x.src && !shown.has(x.src) && fullText.indexOf(x.src) === -1);
+    if (media.length) renderMedia(media);
     if (doneData.help) renderHelp(doneData.help);
     if (doneData.credits) saveCredits(doneData.credits);
 
@@ -836,7 +873,7 @@
     if (history.length > 20) history = history.slice(-20); // varias páginas: el servidor usa solo las de la actual
 
     // Guardar para seguirla en otra página
-    saved.push({ u: message }, { a: fullText.trim(), f: formations || [], h: doneData.help || null, p: { k: pageTopic.k, t: pageTopic.t, u: pageTopic.u } });
+    saved.push({ u: message }, { a: fullText.trim(), f: formations || [], h: doneData.help || null, m: media, p: { k: pageTopic.k, t: pageTopic.t, u: pageTopic.u } });
     saveConversation();
   }
 
@@ -870,11 +907,17 @@
      Si ya se venía conversando sobre esta misma página, se reabre esa conversación;
      si no, se envía el saludo (data-msg, por defecto "Hola") y la IA se presenta
      según dónde esté: la formación de la ficha, la temática de la landing o el catálogo. */
+  let launchNext = false; // el próximo mensaje lo puso un lanzador, no lo tipeó la persona
   function openChat(msg) {
     if (overlayOpen || busy) return;
     const last = saved.length ? saved[saved.length - 1] : null;
     const samePage = last && ((last.p && last.p.k) || 'catalogo') === ctxKey;
-    openWithMorph(samePage ? '' : (String(msg || '').trim() || 'Hola'));
+    if (samePage) { openWithMorph(''); return; }
+    // Un "Hola" a secas (o nada) se cambia por la pregunta de esta página: la manda el
+    // servidor en cfg.launch (ficha, landing, home, listado). Otro texto se respeta.
+    const text = String(msg || '').trim();
+    launchNext = true;
+    openWithMorph((!text || /^hola$/i.test(text)) ? (cfg.launch || 'Hola') : text);
   }
   window.oecChat = { open: openChat };
   document.addEventListener('click', (e) => {
