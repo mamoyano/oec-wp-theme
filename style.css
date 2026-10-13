@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.148
+Version: 1.0.149
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5199,3 +5199,101 @@ body.oec-chat-open .oec-chat-bubble { display: none; }
 .oec-card .oec-footer .fecha-etiqueta,
 .oec-card .oec-cd-label { color: #646970 !important; }
 .oec-card .oec-start-date.fecha-cierre .fecha-etiqueta { color: #b45309 !important; }
+
+/* ============================================================
+   [oec-subtematica] (inc/subtematica.php) — espacio de una subárea dentro
+   de una landing (Antropometría en Nutrición Deportiva): la formación
+   principal grande y el resto como un recorrido al lado. Bloque oscuro con
+   los colores de la temática y una regla graduada dibujada en CSS arriba
+   (medir es el tema); sin video ni imagen de fondo que mantener.
+   ============================================================ */
+.oec-landing-block:has(> .oec-landing-container > .oec-sub) {
+  background: linear-gradient(160deg, var(--tematica-dark, var(--color-dark)) 0%, var(--tematica-dark-2, var(--color-primary)) 100%);
+  color: var(--color-white);
+}
+/* Regla: marcas cortas cada 10 px y largas cada 50 px. */
+.oec-landing-block:has(> .oec-landing-container > .oec-sub)::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 18px;
+  background:
+    repeating-linear-gradient(90deg, rgba(var(--color-white-rgb), .34) 0 1px, transparent 1px 50px) 0 0 / 100% 18px no-repeat,
+    repeating-linear-gradient(90deg, rgba(var(--color-white-rgb), .16) 0 1px, transparent 1px 10px) 0 0 / 100% 9px no-repeat;
+  pointer-events: none;
+}
+.oec-sub { --sub-acc: var(--tematica-accent, var(--color-accent)); --sub-dk: var(--tematica-dark, var(--color-dark)); }
+.oec-sub__head { max-width: 720px; margin-bottom: 2.25rem; }
+.oec-sub__eyebrow { display: inline-flex; align-items: center; gap: 10px; font-size: .8125rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--sub-acc); margin-bottom: .75rem; }
+.oec-sub__eyebrow::before { content: ""; width: 24px; height: 1px; background: currentColor; opacity: .6; }
+.oec-sub__title { font-size: clamp(1.625rem, 3.2vw, 2.375rem); font-weight: 800; letter-spacing: -.01em; line-height: 1.15; color: var(--color-white); margin: 0 0 .75rem; }
+.oec-sub__text { font-size: 1.0625rem; line-height: 1.6; color: rgba(var(--color-white-rgb), .82); margin: 0; }
+
+.oec-sub__layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+.oec-sub__layout--solo { grid-template-columns: minmax(0, 760px); }
+
+/* Principal */
+.oec-sub__main {
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(var(--color-white-rgb), .06);
+  border: 1px solid rgba(var(--color-white-rgb), .16);
+  color: var(--color-white);
+  text-decoration: none;
+  transition: transform .2s, border-color .2s, box-shadow .2s;
+}
+.oec-sub__main:hover { transform: translateY(-3px); border-color: var(--sub-acc); box-shadow: 0 24px 48px -24px rgba(var(--color-shadow-rgb), .6); color: var(--color-white); }
+/* Portada recortada a 3:1 y centrada. La imagen va absoluta: si no, una
+   portada cuadrada (hay másteres con 1024×1024 y el contenido en la franja
+   del medio) estira el contenedor y aspect-ratio deja de mandar. */
+.oec-sub__cover { display: block; position: relative; aspect-ratio: 3 / 1; overflow: hidden; background: rgba(var(--color-white-rgb), .06); }
+.oec-sub__cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; }
+.oec-sub__main-body { display: flex; flex-direction: column; gap: .875rem; padding: 1.5rem 1.75rem 1.75rem; }
+.oec-sub__chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+.oec-sub__chip { padding: .25rem .625rem; border-radius: 999px; border: 1px solid rgba(var(--color-white-rgb), .28); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: rgba(var(--color-white-rgb), .85); }
+.oec-sub__chip--acc { background: var(--sub-acc); border-color: var(--sub-acc); color: var(--sub-dk); }
+.oec-sub__main-title { font-size: clamp(1.1875rem, 2vw, 1.5rem); font-weight: 800; line-height: 1.25; }
+.oec-sub__main-desc { font-size: .9375rem; line-height: 1.6; color: rgba(var(--color-white-rgb), .78); }
+.oec-sub__facts { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; font-size: .875rem; color: rgba(var(--color-white-rgb), .88); }
+.oec-sub__facts i { color: var(--sub-acc); margin-right: .25rem; }
+.oec-sub__foot { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: .25rem; }
+.oec-sub__caras { display: flex; }
+.oec-sub__caras__cara { width: 44px; height: 44px; border-radius: 50%; overflow: hidden; border: 2px solid var(--sub-dk); margin-left: -10px; background: rgba(var(--color-white-rgb), .14); display: grid; place-items: center; font-size: .8125rem; font-weight: 700; color: var(--color-white); }
+.oec-sub__caras__cara:first-child { margin-left: 0; }
+.oec-sub__caras__cara img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.oec-sub__caras__cara--mas { background: var(--sub-acc); color: var(--sub-dk); }
+.oec-sub__cta { display: inline-flex; align-items: center; gap: .5rem; padding: .75rem 1.25rem; border-radius: var(--radius); background: var(--sub-acc); color: var(--sub-dk); font-weight: 700; font-size: .9375rem; }
+
+/* Recorrido */
+.oec-sub__aside-title { font-size: .8125rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: rgba(var(--color-white-rgb), .7); margin: .375rem 0 .75rem; }
+.oec-sub__list { list-style: none; margin: 0; padding: 0; }
+.oec-sub__list li { border-top: 1px solid rgba(var(--color-white-rgb), .14); }
+.oec-sub__list li:last-child { border-bottom: 1px solid rgba(var(--color-white-rgb), .14); }
+.oec-sub__item {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+  grid-template-areas: "label title arrow" "label meta arrow";
+  column-gap: .875rem;
+  align-items: baseline;
+  padding: .75rem .25rem;
+  color: var(--color-white);
+  text-decoration: none;
+  transition: background .2s, padding .2s;
+}
+.oec-sub__item:hover { background: rgba(var(--color-white-rgb), .06); padding-inline: .75rem; color: var(--color-white); }
+.oec-sub__item-label { grid-area: label; font-size: .6875rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--sub-acc); line-height: 1.5; }
+.oec-sub__item-title { grid-area: title; font-weight: 600; font-size: .9375rem; line-height: 1.35; }
+.oec-sub__item-meta { grid-area: meta; font-size: .8125rem; color: rgba(var(--color-white-rgb), .62); }
+.oec-sub__item-arrow { grid-area: arrow; align-self: center; font-size: .875rem; color: rgba(var(--color-white-rgb), .5); transition: transform .2s, color .2s; }
+.oec-sub__item:hover .oec-sub__item-arrow { transform: translateX(3px); color: var(--sub-acc); }
+
+@media (max-width: 960px) {
+  .oec-sub__layout { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+}
+@media (max-width: 520px) {
+  .oec-sub__main-body { padding: 1.25rem; }
+  .oec-sub__item { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label arrow" "title arrow" "meta arrow"; }
+  .oec-sub__cta { width: 100%; justify-content: center; }
+}

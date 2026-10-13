@@ -747,6 +747,23 @@
     }
   });
 
+  /* [oec-subtematica] (inc/subtematica.php): lo que cerró inscripción desde
+     que se guardó la página sale de la lista; si era la principal, o no
+     queda nada, se va el bloque entero. */
+  document.querySelectorAll('.oec-sub').forEach((sub) => {
+    sub.querySelectorAll('[data-oec-sub-item]').forEach((el) => {
+      if (Date.parse(el.dataset.cierre || '') < Date.now()) {
+        if (el.classList.contains('oec-sub__main')) (sub.closest('.oec-landing-block') || sub).remove();
+        else el.remove();
+      }
+    });
+    const lista = sub.querySelector('.oec-sub__list');
+    if (lista && !lista.children.length) {
+      sub.querySelector('.oec-sub__aside').remove();
+      sub.querySelector('.oec-sub__layout').classList.add('oec-sub__layout--solo');
+    }
+  });
+
   const antes = document.querySelector('[data-oec-antes-irte]');
   if (antes) {
     document.body.appendChild(antes); // fuera del hero/secciones: position fixed sin sorpresas
