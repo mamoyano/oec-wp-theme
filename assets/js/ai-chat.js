@@ -343,11 +343,11 @@
         if (b) b.innerHTML = renderMarkdown(part);
         return b;
       }).filter(Boolean);
+      if (m.m && m.m.length) renderMedia(m.m, bubbles);
       if (m.f && m.f.length) {
         upgradeFormationLinks(bubbles, m.f);
         renderCards(m.f);
       }
-      if (m.m && m.m.length) renderMedia(m.m);
       if (m.h) renderHelp(m.h);
     });
     updateEntryPoints();
@@ -479,28 +479,38 @@
   /* ── Imágenes que acompañan una respuesta (las elige el servidor): fotos de los
      docentes nombrados, logos de avales y muestra del certificado. Misma galería
      que las imágenes del texto (.oec-md-gallery), en una burbuja propia. ── */
-  function renderMedia(items) {
-    const bubble = createAssistantBubble();
-    if (!bubble) return;
-    bubble.classList.add('oec-msg--media');
-    const gallery = document.createElement('div');
-    gallery.className = 'oec-md-gallery';
+  function renderMedia(items, bubbles) {
+    // Cada imagen va dentro de la burbuja que nombra al docente o al aval ("at" lo
+    // calcula el servidor); si esa burbuja no está, en una burbuja propia al final.
+    const groups = new Map();
     items.forEach(x => {
-      if (!/^https?:\/\//.test(x.src)) return;
-      const fig = document.createElement('figure');
-      fig.className = 'oec-md-figure' + (x.kind === 'logo' ? ' oec-md-figure--logo' : x.kind === 'cert' ? ' oec-md-figure--cert' : '');
-      const img = document.createElement('img');
-      img.className = 'oec-md-img';
-      img.src = x.src;
-      img.alt = x.name || '';
-      img.addEventListener('load', scrollBody);
-      const cap = document.createElement('figcaption');
-      cap.className = 'oec-md-img-caption';
-      cap.textContent = x.name || '';
-      fig.append(img, cap);
-      gallery.appendChild(fig);
+      if (!x || !/^https?:\/\//.test(x.src)) return;
+      const host = (bubbles && Number.isInteger(x.at) && bubbles[x.at]) || null;
+      if (!groups.has(host)) groups.set(host, []);
+      groups.get(host).push(x);
     });
-    bubble.appendChild(gallery);
+    groups.forEach((list, host) => {
+      const bubble = host || createAssistantBubble();
+      if (!bubble) return;
+      if (!host) bubble.classList.add('oec-msg--media');
+      const gallery = document.createElement('div');
+      gallery.className = 'oec-md-gallery oec-md-gallery--site';
+      list.forEach(x => {
+        const fig = document.createElement('figure');
+        fig.className = 'oec-md-figure' + (x.kind === 'logo' ? ' oec-md-figure--logo' : x.kind === 'cert' ? ' oec-md-figure--cert' : '');
+        const img = document.createElement('img');
+        img.className = 'oec-md-img';
+        img.src = x.src;
+        img.alt = x.name || '';
+        img.addEventListener('load', scrollBody);
+        const cap = document.createElement('figcaption');
+        cap.className = 'oec-md-img-caption';
+        cap.textContent = x.name || '';
+        fig.append(img, cap);
+        gallery.appendChild(fig);
+      });
+      bubble.appendChild(gallery);
+    });
     scrollBody();
   }
 
@@ -840,6 +850,13 @@
     // Guard: if stream ended without a 'done' event
     if (!doneData) return;
 
+    // Fotos de docentes, logos de avales y muestra del certificado: cada imagen una
+    // sola vez por conversación. Van pegadas al texto, antes de las tarjetas.
+    const shown = new Set();
+    saved.forEach(m => (m.m || []).forEach(x => shown.add(x.src)));
+    const media = (doneData.media || []).filter(x => x && x.src && !shown.has(x.src) && fullText.indexOf(x.src) === -1);
+    if (media.length) renderMedia(media, allBubbles.filter(b => b && b.textContent.trim()));
+
     // Upgrade formation URLs inside bubbles to inline cards, then show card strip
     const formations = doneData.formations;
     if (formations && formations.length) {
@@ -855,12 +872,6 @@
     // La misma imagen no se repite si ya salió en la respuesta anterior
     const lastBot = saved.length ? saved[saved.length - 1] : null;
     if (doneData.help && lastBot && lastBot.h) doneData.help = null;
-    // Fotos de docentes, logos de avales y muestra del certificado: cada imagen una
-    // sola vez por conversación.
-    const shown = new Set();
-    saved.forEach(m => (m.m || []).forEach(x => shown.add(x.src)));
-    const media = (doneData.media || []).filter(x => x && x.src && !shown.has(x.src) && fullText.indexOf(x.src) === -1);
-    if (media.length) renderMedia(media);
     if (doneData.help) renderHelp(doneData.help);
     if (doneData.credits) saveCredits(doneData.credits);
 

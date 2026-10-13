@@ -878,33 +878,45 @@ class OEC_AI_Chat {
 	 * @return array<int,array{kind:string,src:string,name:string}>
 	 */
 	private static function reply_media( string $reply, string $message, array $formations, ?array $focus ): array {
-		$text  = ' ' . self::title_norm( $reply ) . ' ';
-		$out   = [];
-		$seen  = [];
-		$named = static function ( string $name ) use ( $text ): bool {
-			// "Lic. Horacio Anselmi" → nombre completo sin el título, o el apellido solo
-			$n     = trim( preg_replace( '/\b(lic|lda|ldo|dr|dra|mg|mgtr|msc|mtra|mtro|prof|profa|pf|phd|ing|kin|klgo|esp|tec)\b\.?/iu', ' ', self::title_norm( $name ) ) );
-			$n     = trim( preg_replace( '/\s+/', ' ', $n ) );
-			$words = explode( ' ', $n );
-			// Nombre y apellido juntos (con tres o más palabras alcanzan las dos primeras o
-			// las dos últimas). El apellido solo no: "García" traía la foto de otro docente.
-			if ( count( $words ) < 2 ) {
-				return false;
-			}
-			$forms = [ $n, implode( ' ', array_slice( $words, 0, 2 ) ), implode( ' ', array_slice( $words, -2 ) ) ];
-			foreach ( array_unique( $forms ) as $form ) {
-				if ( strlen( $form ) >= 8 && str_contains( $text, ' ' . $form . ' ' ) ) {
-					return true;
+		// La respuesta, burbuja por burbuja: cada imagen va en la burbuja que nombra al
+		// docente o al aval ("at"), no todas juntas al final.
+		$parts = array_values( array_filter( array_map( 'trim', explode( '|||', $reply ) ), 'strlen' ) );
+		$norm  = array_map( static fn( $p ) => ' ' . self::title_norm( $p ) . ' ', $parts );
+		$where = static function ( array $forms ) use ( $norm ): ?int {
+			foreach ( $norm as $i => $text ) {
+				foreach ( $forms as $form ) {
+					if ( '' !== $form && str_contains( $text, ' ' . $form . ' ' ) ) {
+						return $i;
+					}
 				}
 			}
-			return false;
+			return null;
 		};
+		$last = max( 0, count( $parts ) - 1 );
+		$out  = [];
+		$seen = [];
 		foreach ( $formations as $f ) {
 			foreach ( $f['teachers'] ?? [] as $t ) {
 				$src = self::cdn_image( (string) ( $t['photo'] ?? '' ), 300 );
-				if ( $src && ! isset( $seen[ $src ] ) && count( $out ) < 4 && $named( (string) ( $t['name'] ?? '' ) ) ) {
+				if ( ! $src || isset( $seen[ $src ] ) || count( $out ) >= 4 ) {
+					continue;
+				}
+				// "Lic. Horacio Anselmi" → nombre y apellido juntos, sin el título (con tres o
+				// más palabras alcanzan las dos primeras o las dos últimas). El apellido solo
+				// no: "García" traía la foto de otro docente.
+				$n     = trim( preg_replace( '/\b(lic|lda|ldo|dr|dra|mg|mgtr|msc|mtra|mtro|prof|profa|pf|phd|ing|kin|klgo|esp|tec)\b\.?/iu', ' ', self::title_norm( (string) ( $t['name'] ?? '' ) ) ) );
+				$words = explode( ' ', trim( preg_replace( '/\s+/', ' ', $n ) ) );
+				if ( count( $words ) < 2 ) {
+					continue;
+				}
+				$forms = array_filter(
+					array_unique( [ implode( ' ', $words ), implode( ' ', array_slice( $words, 0, 2 ) ), implode( ' ', array_slice( $words, -2 ) ) ] ),
+					static fn( $form ) => strlen( $form ) >= 8
+				);
+				$at = $where( $forms );
+				if ( null !== $at ) {
 					$seen[ $src ] = true;
-					$out[]        = [ 'kind' => 'teacher', 'src' => $src, 'name' => trim( preg_replace( '/\s+,/', ',', (string) $t['name'] ) ) ];
+					$out[]        = [ 'kind' => 'teacher', 'src' => $src, 'name' => trim( preg_replace( '/\s+,/', ',', (string) $t['name'] ) ), 'at' => $at ];
 				}
 			}
 		}
@@ -913,12 +925,12 @@ class OEC_AI_Chat {
 			if ( preg_match( '/\baval|avalad|respald|certific/iu', $reply ) ) {
 				$n = 0;
 				foreach ( $d['supports']['data'] ?? $d['supports'] ?? [] as $s ) {
-					$src  = self::cdn_image( (string) ( $s['logo_gse'] ?? $s['thumb'] ?? '' ), 240 );
-					$name = (string) ( $s['name'] ?? '' );
-					$hit  = $name && ( str_contains( $text, ' ' . self::title_norm( $name ) . ' ' )
-						|| ( ! empty( $s['short_name'] ) && strlen( (string) $s['short_name'] ) >= 3 && str_contains( $text, ' ' . self::title_norm( (string) $s['short_name'] ) . ' ' ) ) );
-					if ( $src && $hit && $n++ < 4 ) {
-						$out[] = [ 'kind' => 'logo', 'src' => $src, 'name' => $name ];
+					$src   = self::cdn_image( (string) ( $s['logo_gse'] ?? $s['thumb'] ?? '' ), 240 );
+					$name  = (string) ( $s['name'] ?? '' );
+					$short = (string) ( $s['short_name'] ?? '' );
+					$at    = $name ? $where( array_filter( [ self::title_norm( $name ), strlen( $short ) >= 3 ? self::title_norm( $short ) : '' ] ) ) : null;
+					if ( $src && null !== $at && $n++ < 4 ) {
+						$out[] = [ 'kind' => 'logo', 'src' => $src, 'name' => $name, 'at' => $at ];
 					}
 				}
 			}
@@ -926,7 +938,7 @@ class OEC_AI_Chat {
 				foreach ( $d['certificates']['data'] ?? $d['certificates'] ?? [] as $c ) {
 					$src = self::cdn_image( (string) ( $c['thumb'] ?? '' ), 480 );
 					if ( $src ) {
-						$out[] = [ 'kind' => 'cert', 'src' => $src, 'name' => (string) ( $c['name'] ?? 'Certificado' ) ];
+						$out[] = [ 'kind' => 'cert', 'src' => $src, 'name' => (string) ( $c['name'] ?? 'Certificado' ), 'at' => $where( [ 'certificado', 'diploma' ] ) ?? $last ];
 						break;
 					}
 				}
@@ -1316,7 +1328,11 @@ class OEC_AI_Chat {
 		if ( $help = self::help_image( (string) $message, $reply ) ) {
 			$done['help'] = $help;
 		}
-		if ( $media = self::reply_media( $reply, (string) $message, $formations, $focus ) ) {
+		// Fotos de docentes: en una ficha, los de esa formación; fuera de ella, solo si la
+		// respuesta trata de UNA formación. Cuando recomienda varias, una foto suelta
+		// de un docente quedaba fuera de lugar (y las tarjetas ya llevan su imagen).
+		$with_photos = $focus ? [ $focus ] : ( 1 === count( $source ) ? $source : [] );
+		if ( $media = self::reply_media( $reply, (string) $message, $with_photos, $focus ) ) {
 			$done['media'] = $media;
 		}
 		if ( $credits_done ) {
