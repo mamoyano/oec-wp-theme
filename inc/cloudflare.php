@@ -40,22 +40,43 @@ const OEC_CF_PARAMS_NEUTROS = [ 'slug', 'utm_source', 'utm_medium', 'utm_campaig
 /* ── 1. Tiempo en Cloudflare según el tipo de página ─────────── */
 
 function oec_cf_ttl(): int {
+	$con_fechas = oec_cf_con_fechas();
 	if ( array_diff_key( $_GET, array_flip( OEC_CF_PARAMS_NEUTROS ) ) ) { // phpcs:ignore WordPress.Security.NonceVerification
-		return OEC_CF_HOUR; // búsquedas y filtros: infinitas combinaciones
+		return $con_fechas ? min( OEC_CF_HOUR, oec_cf_day() ) : OEC_CF_HOUR; // búsquedas y filtros: infinitas combinaciones
 	}
 	if ( is_singular( 'post' ) ) {
 		return OEC_CF_MONTH;
 	}
+	if ( $con_fechas ) {
+		return oec_cf_day();
+	}
+	return is_page() ? OEC_CF_MONTH : OEC_CF_DAY; // categorías, etiquetas, autores y el resto: 1 día
+}
+
+/**
+ * Home, listados y fichas: dicen "inscripción abierta / cerrada", "cierra
+ * hoy" o "quedan N días" según el día en que se armaron.
+ */
+function oec_cf_con_fechas(): bool {
 	if ( is_front_page() ) {
-		return OEC_CF_DAY;
+		return true;
 	}
-	if ( is_page() ) {
-		$page   = get_queried_object();
-		$parent = $page instanceof WP_Post && $page->post_parent ? get_post( $page->post_parent ) : null;
-		$slugs  = array_filter( [ $page->post_name ?? '', $parent->post_name ?? '' ] );
-		return array_intersect( $slugs, OEC_CF_LISTADOS ) ? OEC_CF_DAY : OEC_CF_MONTH;
+	if ( ! is_page() ) {
+		return false;
 	}
-	return OEC_CF_DAY; // categorías, etiquetas, autores y el resto
+	$page   = get_queried_object();
+	$parent = $page instanceof WP_Post && $page->post_parent ? get_post( $page->post_parent ) : null;
+	return (bool) array_intersect( array_filter( [ $page->post_name ?? '', $parent->post_name ?? '' ] ), OEC_CF_LISTADOS );
+}
+
+/**
+ * Un día, pero nunca más allá de la medianoche del sitio: una inscripción
+ * "hasta el 13" cierra al terminar el 13, y la página guardada ese día no
+ * puede seguir mostrándola abierta el 14.
+ */
+function oec_cf_day(): int {
+	$medianoche = ( new DateTimeImmutable( 'tomorrow', wp_timezone() ) )->getTimestamp();
+	return max( 60, min( OEC_CF_DAY, $medianoche - time() ) );
 }
 
 /** Cache-Control de las páginas públicas (lo llama inc/performance.php). */
@@ -64,7 +85,9 @@ function oec_cf_cache_control(): string {
 		return 'public, max-age=60';
 	}
 	$ttl = oec_cf_ttl();
-	return sprintf( 'public, max-age=300, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=604800', $ttl, min( $ttl, OEC_CF_DAY ) );
+	// Las que vencen a medianoche no se sirven vencidas mientras se regeneran.
+	$swr = oec_cf_con_fechas() ? 0 : min( $ttl, OEC_CF_DAY );
+	return sprintf( 'public, max-age=300, s-maxage=%d, stale-while-revalidate=%d, stale-if-error=604800', $ttl, $swr );
 }
 
 /* ── 2. API de Cloudflare ────────────────────────────────────── */

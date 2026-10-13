@@ -484,13 +484,17 @@ function oec_nl_training_html( array $t ): string {
 	// Cierre de inscripciones (o inicio) si todavía no pasó.
 	$date_label = '';
 	$date_value = '';
-	foreach ( [ 'enrollment_end' => 'Cierre de inscripciones', 'start' => 'Inicio' ] as $key => $label ) {
-		$ts = ! empty( $t[ $key ] ) ? strtotime( (string) $t[ $key ] ) : 0;
-		if ( $ts && $ts > time() ) {
-			$date_label = $label;
-			$date_value = wp_date( 'j \d\e F', $ts );
-			break;
-		}
+	// El cierre llega del listado de la API como día de calendario a medianoche
+	// UTC ("2026-10-13T00:00:00+00:00" = el 13): leído como instante daba el 12
+	// en Argentina. La inscripción sigue abierta hasta terminar ese día.
+	$cierre = substr( (string) ( $t['enrollment_end'] ?? '' ), 0, 10 );
+	$inicio = ! empty( $t['start'] ) ? strtotime( (string) $t['start'] ) : 0;
+	if ( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $cierre ) && $cierre >= current_time( 'Y-m-d' ) ) {
+		$date_label = 'Cierre de inscripciones';
+		$date_value = wp_date( 'j \d\e F', strtotime( $cierre . ' 12:00:00' ), new DateTimeZone( 'UTC' ) );
+	} elseif ( $inicio && $inicio > time() ) {
+		$date_label = 'Inicio';
+		$date_value = wp_date( 'j \d\e F', $inicio );
 	}
 
 	$org = (string) ( $t['organization']['name'] ?? '' );

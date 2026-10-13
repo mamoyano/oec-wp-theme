@@ -768,6 +768,7 @@ class OEC_AI_Catalog {
 		self::merge_history( array_merge( $index, $closed_index ) );
 		self::save_organizations( $organizations );
 		self::save_listing( $open_rows, $closed_rows, $carry );
+		self::purge_changed_fichas( $open_rows );
 
 		// Por fuente: abiertas, cerradas y comunidades (para el admin).
 		$sources = array_fill_keys( $job['sources'], [ 'open' => 0, 'closed' => 0, 'communities' => [] ] );
@@ -810,6 +811,43 @@ class OEC_AI_Catalog {
 		] );
 
 		do_action( 'oec_ai_catalog_synced' ); // sitemap y llms.txt se regeneran (inc/sitemap.php)
+	}
+
+	/**
+	 * Fichas con fechas viejas. El plugin guarda un día los datos de cada
+	 * ficha y Cloudflare la página: si en el campus extienden la inscripción,
+	 * el listado ya muestra la fecha nueva y la ficha sigue "cerrada". Las
+	 * abiertas cuya copia del plugin tiene otras fechas que el listado de la
+	 * API se borran (datos y página), en cada sitio de la red.
+	 */
+	private static function purge_changed_fichas( array $rows ): void {
+		if ( ! function_exists( 'oec_cf_purge_formacion_data' ) ) {
+			return;
+		}
+		$sites = is_multisite() ? get_sites( [ 'fields' => 'ids' ] ) : [ get_current_blog_id() ];
+		foreach ( $sites as $blog_id ) {
+			is_multisite() && switch_to_blog( (int) $blog_id );
+			$urls = [];
+			foreach ( $rows as $r ) {
+				$id     = (string) ( $r['id'] ?? '' );
+				$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
+				$d      = is_array( $cached ) ? ( $cached['data'] ?? null ) : null;
+				if ( ! is_array( $d ) || (int) ( $d['edition_number'] ?? 0 ) !== (int) ( $r['edition_number'] ?? 0 ) ) {
+					continue; // sin copia, o de otra edición (esa ya se vuelve a pedir sola)
+				}
+				foreach ( [ 'start', 'end', 'enrollment_end' ] as $k ) {
+					if ( ! empty( $r[ $k ] ) && substr( (string) $r[ $k ], 0, 10 ) !== substr( (string) ( $d[ $k ] ?? '' ), 0, 10 ) ) {
+						oec_cf_purge_formacion_data( $id );
+						$url    = home_url( '/formacion/' . oec_formation_slug( $r ) );
+						$urls[] = $url;
+						$urls[] = $url . '/';
+						break;
+					}
+				}
+			}
+			oec_cf_queue( $urls );
+			is_multisite() && restore_current_blog();
+		}
 	}
 
 	private static function abort( array $job, string $error ): array {

@@ -791,7 +791,7 @@ class OEC_AI_Chat {
 		if ( ! is_array( $data ) ) {
 			return null;
 		}
-		$today = gmdate( 'Y-m-d' );
+		$today = current_time( 'Y-m-d' ); // el cupón vale hasta terminar su día, en la hora del sitio
 		$out   = [];
 		foreach ( $data as $c ) {
 			if ( (int) ( $c['percentage'] ?? 0 ) > 0 && (int) ( $c['points_value'] ?? 0 ) > 0 && (string) ( $c['expiration'] ?? '' ) >= $today ) {
