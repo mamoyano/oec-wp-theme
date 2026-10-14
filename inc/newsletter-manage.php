@@ -99,7 +99,7 @@ function oec_nl_manage_lists(): array {
 		$e     = isset( $especiales[ $name ] ) ? ( $landings[ $especiales[ $name ]['tematica'] ] ?? null ) : null;
 		$out[] = [
 			'name'   => $name,
-			'label'  => OEC_NL_GENERAL_LIST === $name ? __( 'Newsletter semanal de G-SE', 'oec-theme' ) : oec_nl_list_label( $name ),
+			'label'  => OEC_NL_GENERAL_LIST === $name ? sprintf( __( 'Newsletter semanal de %s', 'oec-theme' ), OEC_NL_BRAND ) : oec_nl_list_label( $name ),
 			'desc'   => OEC_NL_GENERAL_LIST === $name
 				? __( 'Lo más importante de cada semana: artículos y formaciones de todas las temáticas.', 'oec-theme' )
 				: (string) ( $e['desc'] ?? '' ),

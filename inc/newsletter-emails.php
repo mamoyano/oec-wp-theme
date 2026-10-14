@@ -141,7 +141,7 @@ u+#body a{color:inherit;text-decoration:none}
 
 	<tr><td class="nl-px" bgcolor="<?php echo esc_attr( $head ); ?>" style="background:<?php echo esc_attr( $head ); ?>;border-radius:16px 16px 0 0;padding:26px 32px 30px;">
 		<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-			<td valign="middle"><a href="<?php echo esc_url( oec_config_url( '/?utm_source=mailing&utm_medium=newsletter' ) ); ?>" target="_blank"><img src="<?php echo esc_url( OEC_NL_LOGO ); ?>" width="91" height="40" alt="<?php echo esc_attr( OEC_NL_BRAND ); ?>" style="display:block;width:91px;height:40px;"></a></td>
+			<td valign="middle"><a href="<?php echo esc_url( oec_config_url( '/?utm_source=mailing&utm_medium=newsletter' ) ); ?>" target="_blank"<?php echo OEC_NL_LOGO ? '' : ' style="font-family:' . esc_attr( OEC_NL_FONT ) . ';font-size:20px;font-weight:800;color:#ffffff;text-decoration:none;"'; ?>><?php if ( OEC_NL_LOGO ) : ?><img src="<?php echo esc_url( OEC_NL_LOGO ); ?>" height="40" alt="<?php echo esc_attr( OEC_NL_BRAND ); ?>" style="display:block;height:40px;width:auto;max-width:200px;"><?php else : echo esc_html( OEC_NL_BRAND ); endif; ?></a></td>
 			<?php if ( $a['label'] ) : ?>
 			<td valign="middle" align="right" style="font-family:<?php echo esc_attr( $f ); ?>;">
 				<span style="display:block;font-size:11px;line-height:15px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:<?php echo esc_attr( $lcolor ); ?>;"><?php echo esc_html( $a['label'] ); ?></span>
@@ -190,7 +190,7 @@ function oec_nl_email_footer( bool $subscribed ): string {
 	$icon  = 'https://d2u6lzrmbvw8bs.cloudfront.net/assets/social-icons/%1$s/%1$s-round-solid-color.png';
 
 	$socials = '';
-	foreach ( [ 'facebook' => OEC_NL_FACEBOOK, 'instagram' => OEC_NL_INSTAGRAM, 'whatsapp' => OEC_NL_WHATSAPP ] as $net => $url ) {
+	foreach ( array_filter( [ 'facebook' => OEC_NL_FACEBOOK, 'instagram' => OEC_NL_INSTAGRAM, 'whatsapp' => OEC_NL_WHATSAPP ] ) as $net => $url ) {
 		$socials .= '<td style="padding:0 8px;"><a href="' . esc_url( $url ) . '" target="_blank"><img src="' . esc_url( sprintf( $icon, $net ) ) . '" width="32" height="32" alt="' . esc_attr( ucfirst( $net ) ) . '" style="display:block;width:32px;height:32px;"></a></td>';
 	}
 
@@ -325,10 +325,11 @@ function oec_nl_render_confirm_email( string $first, string $url, array $lists =
 			. '</td></tr>';
 	};
 
-	$socials = '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
-		. '<td style="padding:4px 12px 0 0;"><a href="' . esc_url( OEC_NL_FACEBOOK ) . '" target="_blank"><img src="' . esc_url( sprintf( $icon, 'facebook' ) ) . '" width="40" height="40" alt="Facebook" style="display:block;width:40px;height:40px;"></a></td>'
-		. '<td style="padding:4px 0 0;"><a href="' . esc_url( OEC_NL_INSTAGRAM ) . '" target="_blank"><img src="' . esc_url( sprintf( $icon, 'instagram' ) ) . '" width="40" height="40" alt="Instagram" style="display:block;width:40px;height:40px;"></a></td>'
-		. '</tr></table>';
+	$socials = '';
+	foreach ( array_filter( [ 'facebook' => OEC_NL_FACEBOOK, 'instagram' => OEC_NL_INSTAGRAM ] ) as $net => $url ) {
+		$socials .= '<td style="padding:4px 12px 0 0;"><a href="' . esc_url( $url ) . '" target="_blank"><img src="' . esc_url( sprintf( $icon, $net ) ) . '" width="40" height="40" alt="' . esc_attr( ucfirst( $net ) ) . '" style="display:block;width:40px;height:40px;"></a></td>';
+	}
+	$socials = $socials ? '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>' . $socials . '</tr></table>' : '';
 
 	$weekly = $topic
 		? 'Así vas a recibir todos los ' . esc_html( oec_nl_weekday_plural() ) . ' lo nuevo en <strong style="color:' . esc_attr( $c['text'] ) . ';">' . esc_html( $topic['title'] ) . '</strong>: artículos, blogs y formaciones seleccionadas de la temática.'

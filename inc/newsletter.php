@@ -31,28 +31,74 @@ defined( 'ABSPATH' ) || exit;
    keys, listas, estado y último envío (oec_config_get_option()).
    ============================================================ */
 
-/* ── Datos fijos de G-SE ────────────────────────────────────── */
-// Lista general del newsletter semanal (nombre exacto en Elastic Email).
-const OEC_NL_GENERAL_LIST = 'G-SE - General';
+/* ── Marca del sitio ───────────────────────────────────────────
+   Cada comunidad (g-se.com, voley.org, fisio.one…) es una app aparte con
+   su propia lista general, remitente y referencia de créditos. En G-SE
+   quedan los valores de siempre; en las demás salen del dominio de la red
+   (sin "www." ni "nuevo.", así no cambian el día del pase) y de los ajustes
+   del tema. Cualquiera se puede fijar en el wp-config de la app con la
+   constante del mismo nombre.
+   OJO: la lista general y la referencia de créditos no se pueden cambiar
+   con suscriptores adentro (quedarían en la lista vieja / volverían a
+   cobrar los 50 créditos). */
+function oec_nl_site_brand(): array {
+	$host  = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
+	$label = strtok( $host, '.' ) ?: 'oec'; // "voley", "fisio", "g-se"
+	// El sitio de pruebas (Local) es una copia de G-SE.
+	if ( in_array( $host, [ 'g-se.com', 'oec-test.local' ], true ) ) {
+		return [
+			'general_list'  => 'G-SE - General',
+			'from'          => 'Grupo Sobre Entrenamiento <newsletter@g-se.com>',
+			'brand'         => 'Grupo Sobre Entrenamiento',
+			'logo'          => OEC_THEME_URI . '/assets/img/email-logo.png',
+			'facebook'      => 'https://www.facebook.com/gsesocial',
+			'instagram'     => 'https://www.instagram.com/gsesocial/',
+			'address'       => 'G-SE, Av. Colón 4933, Córdoba, Córdoba, 5000, Argentina',
+			'ref_subscribe' => 'newsletter-general-g-se',
+			'ref_weekly'    => 'newsletter-semanal-',
+		];
+	}
+	$opts  = oec_config_theme_options();
+	$brand = trim( (string) get_blog_option( oec_config_blog_id(), 'blogname' ) ) ?: ucfirst( $label );
+	// Logo del tema si es PNG/JPG/GIF (Outlook no muestra WebP).
+	$logo = preg_match( '/\.(png|jpe?g|gif)$/i', (string) $opts['logo_url'] ) ? $opts['logo_url'] : '';
+	return [
+		'general_list'  => ucfirst( $label ) . ' - General',
+		'from'          => $brand . ' <newsletter@' . $host . '>',
+		'brand'         => $brand,
+		'logo'          => $logo,
+		'facebook'      => (string) $opts['social_facebook'],
+		'instagram'     => (string) $opts['social_instagram'],
+		'address'       => $brand . ', Av. Colón 4933, Córdoba, Córdoba, 5000, Argentina',
+		'ref_subscribe' => 'newsletter-general-' . $label,
+		'ref_weekly'    => 'newsletter-semanal-' . $label . '-',
+	];
+}
+
+$oec_nl_brand = oec_nl_site_brand();
+defined( 'OEC_NL_GENERAL_LIST' ) || define( 'OEC_NL_GENERAL_LIST', $oec_nl_brand['general_list'] );
 // Lista para probar envíos desde el admin ("Solo a la lista Prueba").
-const OEC_NL_TEST_LIST    = 'Prueba';
-const OEC_NL_FROM         = 'Grupo Sobre Entrenamiento <newsletter@g-se.com>';
-const OEC_NL_BRAND        = 'Grupo Sobre Entrenamiento';
-// PNG dentro del tema: el logo del sitio es WebP (Outlook no lo muestra) y el
-// PNG viejo de uploads/2025 desapareció con la migración del sitio.
-const OEC_NL_LOGO         = OEC_THEME_URI . '/assets/img/email-logo.png';
-const OEC_NL_LOGO_LEGACY  = 'https://g-se.com/wp-content/uploads/2025/01/g-se-2.png';
-const OEC_NL_FACEBOOK     = 'https://www.facebook.com/gsesocial';
-const OEC_NL_INSTAGRAM    = 'https://www.instagram.com/gsesocial/';
-const OEC_NL_WHATSAPP     = 'https://api.whatsapp.com/send?phone=5493512584960&text=Hola%2C+quiero+informaci%C3%B3n+%28o+tengo+consultas%29+%2Asobre+formaciones%2A+que+aqu%C3%AD+se+ofrecen.%0D%0A_%28Entiendo+que+no+pueden+responderme+otro+tipo+de+consultas%29_';
-const OEC_NL_REDIRECTOR   = 'https://links.onlineeducation.center/srdt';
-const OEC_NL_ADDRESS      = 'G-SE, Av. Colón 4933, Córdoba, Córdoba, 5000, Argentina';
+const OEC_NL_TEST_LIST = 'Prueba';
+defined( 'OEC_NL_FROM' ) || define( 'OEC_NL_FROM', $oec_nl_brand['from'] );
+defined( 'OEC_NL_BRAND' ) || define( 'OEC_NL_BRAND', $oec_nl_brand['brand'] );
+// PNG: el logo del sitio suele ser WebP (Outlook no lo muestra). Vacío = el
+// email muestra el nombre de la marca en texto.
+defined( 'OEC_NL_LOGO' ) || define( 'OEC_NL_LOGO', $oec_nl_brand['logo'] );
+const OEC_NL_LOGO_LEGACY = 'https://g-se.com/wp-content/uploads/2025/01/g-se-2.png';
+defined( 'OEC_NL_FACEBOOK' ) || define( 'OEC_NL_FACEBOOK', $oec_nl_brand['facebook'] );
+defined( 'OEC_NL_INSTAGRAM' ) || define( 'OEC_NL_INSTAGRAM', $oec_nl_brand['instagram'] );
+const OEC_NL_WHATSAPP   = 'https://api.whatsapp.com/send?phone=5493512584960&text=Hola%2C+quiero+informaci%C3%B3n+%28o+tengo+consultas%29+%2Asobre+formaciones%2A+que+aqu%C3%AD+se+ofrecen.%0D%0A_%28Entiendo+que+no+pueden+responderme+otro+tipo+de+consultas%29_';
+const OEC_NL_REDIRECTOR = 'https://links.onlineeducation.center/srdt';
+defined( 'OEC_NL_ADDRESS' ) || define( 'OEC_NL_ADDRESS', $oec_nl_brand['address'] );
+defined( 'OEC_NL_REF_SUBSCRIBE' ) || define( 'OEC_NL_REF_SUBSCRIBE', $oec_nl_brand['ref_subscribe'] );
+// Créditos semanales: + semana ISO, ej. newsletter-semanal-2026-W39 (G-SE)
+// o newsletter-semanal-voley-2026-W39 (una vez por semana en cada comunidad).
+defined( 'OEC_NL_REF_WEEKLY' ) || define( 'OEC_NL_REF_WEEKLY', $oec_nl_brand['ref_weekly'] );
+unset( $oec_nl_brand );
 const OEC_NL_OAS_API      = 'https://oas-api.onlineeducation.center/api-oas/v1/trainings';
 
 const OEC_NL_SUBSCRIBE_CREDITS = 50;
 const OEC_NL_WEEKLY_CREDITS    = 20;
-const OEC_NL_REF_SUBSCRIBE     = 'newsletter-general-g-se';
-const OEC_NL_REF_WEEKLY        = 'newsletter-semanal-'; // + semana ISO, ej. 2026-W39
 const OEC_NL_MAX_POSTS         = 10;
 const OEC_NL_MAX_TRAININGS     = 7;
 const OEC_NL_CLAIM_DAYS        = 14;
@@ -297,6 +343,35 @@ function oec_nl_ensure_especiales_lists() {
 	return $done;
 }
 
+/**
+ * Crea la lista general en Elastic Email si todavía no existe (la primera
+ * vez en cada comunidad: "Voley - General"…). G-SE ya la tiene.
+ *
+ * @return bool|WP_Error true si la creó.
+ */
+function oec_nl_ensure_general_list() {
+	if ( get_transient( 'oec_nl_general_ok' ) === OEC_NL_GENERAL_LIST ) {
+		return false;
+	}
+	$remote = oec_nl_api( 'GET', '/lists' );
+	if ( is_wp_error( $remote ) ) {
+		return $remote;
+	}
+	$norm    = fn( $n ) => mb_strtolower( class_exists( 'Normalizer' ) ? (string) Normalizer::normalize( $n ) : $n );
+	$created = false;
+	if ( ! in_array( $norm( OEC_NL_GENERAL_LIST ), array_map( $norm, array_column( $remote, 'ListName' ) ), true ) ) {
+		$res = oec_nl_api( 'POST', '/lists', [ 'ListName' => OEC_NL_GENERAL_LIST, 'AllowUnsubscribe' => true ] );
+		if ( is_wp_error( $res ) ) {
+			oec_nl_log( 'error', sprintf( 'No se pudo crear la lista general %s: %s', OEC_NL_GENERAL_LIST, $res->get_error_message() ) );
+			return $res;
+		}
+		oec_nl_log( 'success', sprintf( 'Lista general creada en Elastic Email: %s', OEC_NL_GENERAL_LIST ) );
+		$created = true;
+	}
+	set_transient( 'oec_nl_general_ok', OEC_NL_GENERAL_LIST, WEEK_IN_SECONDS );
+	return $created;
+}
+
 // Se revisa al entrar al admin del sitio de configuración (una vez por día,
 // o apenas cambia la lista de landings) y antes de cada envío semanal.
 add_action( 'admin_init', function () {
@@ -307,7 +382,7 @@ add_action( 'admin_init', function () {
 	if ( get_transient( 'oec_nl_especiales_checked' ) === $sig ) {
 		return;
 	}
-	if ( ! is_wp_error( oec_nl_ensure_especiales_lists() ) ) {
+	if ( ! is_wp_error( oec_nl_ensure_general_list() ) && ! is_wp_error( oec_nl_ensure_especiales_lists() ) ) {
 		set_transient( 'oec_nl_especiales_checked', $sig, DAY_IN_SECONDS );
 	}
 } );

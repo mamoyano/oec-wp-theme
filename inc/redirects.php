@@ -22,6 +22,9 @@ defined( 'ABSPATH' ) || exit;
    - /{página}              → /es/{página} (/links, /formaciones, /especiales/…)
    - /{slug-de-post}        → /es/{slug} (WPML servía español sin prefijo)
    - /u/{nombre}-u-{id}     → autor en /es, o búsqueda por su nombre
+   - Comunidades (voley.org…, sitios viejos sin migrar el contenido):
+     /capacitaciones → /es/formaciones, /publicaciones → /es/articulos y
+     /publicacion/… (posts, autores, categorías) → 410 Gone
    (los /wp-content/uploads/… viejos los resuelve el .htaccess del servidor)
 
    En /en (sin contenido por ahora; como en g-se.com, todo va a /es):
@@ -249,6 +252,17 @@ function oec_redirect_is_gone( string $slug ): bool {
 	return isset( $gone[ $slug ] );
 }
 
+/** Secciones de los sitios viejos de las comunidades → página de /es. */
+const OEC_REDIRECT_LEGACY_PAGES = [
+	'capacitaciones' => 'formaciones',
+	'publicaciones'  => 'articulos',
+];
+
+/** Contenido de los sitios viejos de las comunidades que no se migró: 410. */
+function oec_redirect_root_is_gone( string $rel ): bool {
+	return (bool) preg_match( '#^publicacion(/|$)#', $rel );
+}
+
 /** Destino para una ruta de la raíz de la red (relativa, sin barras de borde). */
 function oec_redirect_root( string $rel ): ?string {
 	$es = get_sites( [ 'path' => OEC_REDIRECT_ES_PATH, 'number' => 1, 'fields' => 'ids' ] )[0] ?? 0;
@@ -265,6 +279,8 @@ function oec_redirect_root( string $rel ): ?string {
 		$target = ( $user && count_user_posts( $user->ID, 'post', true ) )
 			? get_author_posts_url( $user->ID )
 			: oec_articulos_url( [ 'q' => str_replace( '-', ' ', $name ) ] );
+	} elseif ( isset( OEC_REDIRECT_LEGACY_PAGES[ $rel ] ) && ( $page = get_page_by_path( OEC_REDIRECT_LEGACY_PAGES[ $rel ] ) ) && 'publish' === $page->post_status ) {
+		$target = get_permalink( $page );
 	} elseif ( '' !== $rel && ( $page = get_page_by_path( $rel ) ) && 'publish' === $page->post_status ) {
 		// Página de /es pedida sin el prefijo de idioma: g-se.com/links,
 		// /formaciones, /especiales/futbol… (con sus parámetros, si los trae).
@@ -315,7 +331,7 @@ add_action( 'template_redirect', function (): void {
 		wp_redirect( $target, 301, 'OEC' );
 		exit;
 	}
-	if ( $slug && oec_redirect_is_gone( $slug ) ) {
+	if ( ( $slug && oec_redirect_is_gone( $slug ) ) || ( is_main_site() && oec_redirect_root_is_gone( $rel ) ) ) {
 		// 410: "eliminado a propósito". Se muestra la misma página de 404.
 		status_header( 410 );
 		nocache_headers();
