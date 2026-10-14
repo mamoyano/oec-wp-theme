@@ -59,6 +59,35 @@ function oec_vimeo_norm( string $s ): string {
 	return sanitize_title( remove_accents( $s ) );
 }
 
+/**
+ * Nombres con los que puede venir la categoría. La API de Vimeo da los
+ * nombres en inglés aunque la web se vea en castellano: "Educativo" llega
+ * como "Educational". Se aceptan el nombre cargado y su equivalente.
+ */
+function oec_vimeo_cat_alias( string $categoria ): array {
+	$es_en = [
+		'educativo'     => [ 'educational', 'education' ],
+		'educacion'     => [ 'educational', 'education' ],
+		'deportes'      => [ 'sports' ],
+		'documental'    => [ 'documentary' ],
+		'instructivos'  => [ 'instructionals' ],
+		'charlas'       => [ 'talks' ],
+		'periodismo'    => [ 'journalism' ],
+		'comida'        => [ 'food' ],
+		'musica'        => [ 'music' ],
+		'animacion'     => [ 'animation' ],
+		'personal'      => [ 'personal' ],
+	];
+	$c = oec_vimeo_norm( $categoria );
+	$t = $es_en[ $c ] ?? [];
+	foreach ( $es_en as $es => $en ) {
+		if ( in_array( $c, $en, true ) ) {
+			$t[] = $es; // también al revés: "Educational" → "educativo"
+		}
+	}
+	return array_values( array_unique( array_merge( [ $c ], $t ) ) );
+}
+
 /*
  * La cuenta tiene miles de videos y Vimeo da 100 por pedido: recorrerla
  * entera en una sola carga pasaba el límite del servidor (error 500 por
@@ -103,7 +132,7 @@ function oec_vimeo_step() {
 	set_transient( 'oec_vimeo_lock', 1, OEC_VIMEO_STEP + 40 );
 
 	$cfg = oec_vimeo_settings();
-	$cat = oec_vimeo_norm( $cfg['categoria'] );
+	$cat = oec_vimeo_cat_alias( $cfg['categoria'] );
 	$t0  = microtime( true );
 	$err = null;
 	if ( '' === $cfg['token'] ) {
@@ -123,10 +152,10 @@ function oec_vimeo_step() {
 				$n                 = (string) ( $c['name'] ?? '' );
 				$job['cats'][ $n ] = ( $job['cats'][ $n ] ?? 0 ) + 1;
 			}
-			$es_cat = (bool) array_filter( (array) ( $v['categories'] ?? [] ), fn( $c ) => in_array( $cat, [
+			$es_cat = (bool) array_filter( (array) ( $v['categories'] ?? [] ), fn( $c ) => array_intersect( $cat, [
 				oec_vimeo_norm( (string) ( $c['name'] ?? '' ) ),
 				oec_vimeo_norm( basename( (string) ( $c['uri'] ?? '' ) ) ),
-			], true ) );
+			] ) );
 			$video = $es_cat ? oec_vimeo_video( $v ) : null;
 			if ( $video ) {
 				$job['videos'][] = $video;
