@@ -814,7 +814,8 @@ function oec_render_settings_page(): void {
 										<span style="color:#b45309;"><?php echo esc_html( sprintf( __( '%d sin link a un curso en la descripción (no muestran "Ver el curso completo").', 'oec-theme' ), $vs['sin_link'] ) ); ?></span><br>
 										<?php endif; ?>
 										<?php if ( ! $vs['n'] && $vs['cats'] ) : ?>
-										<span style="color:#b45309;"><?php esc_html_e( 'Ningún video coincide con la categoría. Categorías encontradas en la cuenta:', 'oec-theme' ); ?> <?php echo esc_html( implode( ', ', array_keys( $vs['cats'] ) ) ); ?></span><br>
+										<span style="color:#b45309;"><?php esc_html_e( 'Ningún video coincide con la categoría. Categorías encontradas en la cuenta:', 'oec-theme' ); ?> <?php echo esc_html( implode( ', ', array_map( fn( $c, $n ) => "$c ($n)", array_keys( $vs['cats'] ), $vs['cats'] ) ) ); ?>.
+										<?php if ( ! empty( $vs['buscada'] ) ) : ?><?php esc_html_e( 'Se buscó:', 'oec-theme' ); ?> <?php echo esc_html( implode( ', ', $vs['buscada'] ) ); ?>.<?php endif; ?></span><br>
 										<?php endif; ?>
 										<?php endif; ?>
 										<?php if ( ! empty( $vs['error'] ) ) : ?>

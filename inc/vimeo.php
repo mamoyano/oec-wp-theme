@@ -109,6 +109,7 @@ function oec_vimeo_job_start(): void {
 		'total'   => 0,
 		'cuenta'  => 0, // total de la cuenta según Vimeo (para el avance)
 		'started' => time(),
+		'buscada' => oec_vimeo_cat_alias( oec_vimeo_settings()['categoria'] ),
 	], false );
 	delete_transient( 'oec_vimeo_fail' );
 }
@@ -133,6 +134,12 @@ function oec_vimeo_step() {
 
 	$cfg = oec_vimeo_settings();
 	$cat = oec_vimeo_cat_alias( $cfg['categoria'] );
+	// Empezada con otra categoría u otra versión de la búsqueda: lo revisado
+	// no sirve, de cero (antes una recorrida a medias terminaba con la regla vieja).
+	if ( ( $job['buscada'] ?? null ) !== $cat ) {
+		oec_vimeo_job_start();
+		$job = get_option( OEC_VIMEO_JOB );
+	}
 	$t0  = microtime( true );
 	$err = null;
 	if ( '' === $cfg['token'] ) {
@@ -187,7 +194,7 @@ function oec_vimeo_step() {
 	arsort( $cats );
 	$videos = $job['videos'];
 	shuffle( $videos ); // el sorteo: dura hasta la próxima conexión
-	update_option( OEC_VIMEO_OPTION, [ 'time' => time(), 'videos' => $videos, 'total' => $job['total'], 'cats' => $cats, 'error' => '' ], false );
+	update_option( OEC_VIMEO_OPTION, [ 'time' => time(), 'videos' => $videos, 'total' => $job['total'], 'cats' => $cats, 'buscada' => $cat, 'error' => '' ], false );
 	delete_option( OEC_VIMEO_JOB );
 	return [ 'done' => true, 'total' => $job['total'], 'cuenta' => $job['total'], 'n' => count( $videos ) ];
 }
@@ -385,6 +392,7 @@ function oec_vimeo_status(): array {
 		'total'    => (int) ( $lib['total'] ?? 0 ),
 		'tags'     => $tags,
 		'cats'     => (array) ( $lib['cats'] ?? [] ),
+		'buscada'  => (array) ( $lib['buscada'] ?? [] ),
 		'sin_link' => count( array_filter( (array) $lib['videos'], fn( $v ) => '' === $v['more'] ) ),
 		'error'    => $fail ?: (string) ( $lib['error'] ?? '' ),
 		'job'      => $curso, // recorrida en curso (null si no hay)
