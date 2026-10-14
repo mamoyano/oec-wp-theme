@@ -133,6 +133,9 @@ function oec_render_clases_shortcode( $atts, $content = '' ): string {
 function oec_render_clases( array $clases, string $title ): string {
 	$total = array_sum( array_column( $clases, 'duration' ) );
 	$first = $clases[0];
+	// Botón "Ver el curso completo" solo si alguna clase tiene link aparte
+	// (lista a mano). Las de Vimeo lo llevan en la descripción.
+	$con_more = (bool) array_filter( array_column( $clases, 'more' ) );
 	$atts  = [ 'title' => $title ];
 
 	ob_start();
@@ -163,7 +166,9 @@ function oec_render_clases( array $clases, string $title ): string {
 					</button>
 					<div class="oec-clases__end" data-clases-end hidden>
 						<p class="oec-clases__end-title"><?php esc_html_e( '¿Te gustó la clase?', 'oec-theme' ); ?></p>
+						<?php if ( $con_more ) : ?>
 						<a class="btn oec-clases__end-cta" data-clases-more href="<?php echo esc_url( $first['more'] ); ?>"><?php esc_html_e( 'Ver el curso completo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+						<?php endif; ?>
 						<p class="oec-clases__end-next" data-clases-next></p>
 						<button type="button" class="oec-clases__end-cancel" data-clases-cancel><?php esc_html_e( 'Cancelar', 'oec-theme' ); ?></button>
 					</div>
@@ -171,7 +176,9 @@ function oec_render_clases( array $clases, string $title ): string {
 				<div class="oec-clases__info">
 					<h3 class="oec-clases__title" data-clases-title><?php echo esc_html( $first['title'] ); ?></h3>
 					<p class="oec-clases__desc" data-clases-desc><?php echo $first['desc_html'] ?? esc_html( $first['description'] ); // phpcs:ignore WordPress.Security.EscapeOutput -- armado escapado en oec_vimeo_desc_html() ?></p>
+<?php if ( $con_more ) : ?>
 					<a class="oec-cierres__more" data-clases-more href="<?php echo esc_url( $first['more'] ); ?>"<?php echo $first['more'] ? '' : ' hidden'; ?>><?php esc_html_e( 'Ver el curso completo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+					<?php endif; ?>
 				</div>
 			</div>
 
