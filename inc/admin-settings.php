@@ -162,7 +162,7 @@ function oec_sanitize_options( $raw ): array {
 		(array) ( $raw['oec_api_tokens'] ?? [] )
 	), fn( $t ) => '' !== $t && $t !== $clean['oec_api_token'] ) ) );
 	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
-	$clean['vimeo_token']     = sanitize_text_field( $raw['vimeo_token'] ?? '' );
+	$clean['vimeo_token']     = function_exists( 'oec_vimeo_limpiar_token' ) ? oec_vimeo_limpiar_token( sanitize_text_field( $raw['vimeo_token'] ?? '' ) ) : sanitize_text_field( $raw['vimeo_token'] ?? '' );
 	$clean['vimeo_category']  = sanitize_text_field( $raw['vimeo_category'] ?? '' ) ?: $defaults['vimeo_category'];
 	// Token o categoría nuevos: la próxima visita vuelve a traer los videos.
 	$prev = oec_get_options();
@@ -706,11 +706,15 @@ function oec_render_settings_page(): void {
 								</div>
 								<div class="oec-tracker-row__field">
 									<label for="oec-vimeo-token"><?php esc_html_e( 'Token', 'oec-theme' ); ?></label>
-									<input type="password" id="oec-vimeo-token"
+									<?php // type="text" a propósito: como password, Chrome lo autocompletaba con una contraseña guardada al guardar el formulario. ?>
+									<input type="text" id="oec-vimeo-token"
 									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_token]"
 									       value="<?php echo esc_attr( $opts['vimeo_token'] ); ?>"
 									       class="regular-text oec-tracker-input" data-tracker="vimeo_token"
-									       autocomplete="new-password" spellcheck="false">
+									       autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false">
+									<?php if ( function_exists( 'oec_vimeo_settings' ) && ( $vt = oec_vimeo_settings() ) && $vt['token'] ) : ?>
+									<span class="description" style="display:block;margin-top:.25rem;"><?php echo esc_html( sprintf( /* translators: 1: últimos 4, 2: sitio */ __( 'Token en uso: termina en …%1$s (de %2$s).', 'oec-theme' ), substr( $vt['token'], -4 ), $vt['origen'] ) ); ?></span>
+									<?php endif; ?>
 									<label for="oec-vimeo-cat" style="margin-top:.75rem;display:block;"><?php esc_html_e( 'Categoría de los videos', 'oec-theme' ); ?></label>
 									<input type="text" id="oec-vimeo-cat"
 									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_category]"

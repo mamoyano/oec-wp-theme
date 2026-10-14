@@ -36,14 +36,22 @@ const OEC_VIMEO_CRON   = 'oec_vimeo_refresh';
  * sitio quedaba "Activo" en su tarjeta pero no se usaba.
  */
 function oec_vimeo_settings(): array {
-	$o = oec_get_options();
-	if ( '' === trim( (string) ( $o['vimeo_token'] ?? '' ) ) && function_exists( 'oec_config_theme_options' ) ) {
-		$o = oec_config_theme_options();
+	$o      = oec_get_options();
+	$origen = 'este sitio';
+	if ( '' === oec_vimeo_limpiar_token( (string) ( $o['vimeo_token'] ?? '' ) ) && function_exists( 'oec_config_theme_options' ) && ! oec_is_config_site() ) {
+		$o      = oec_config_theme_options();
+		$origen = 'el sitio /es/';
 	}
 	return [
-		'token'     => trim( (string) ( $o['vimeo_token'] ?? '' ) ),
+		'token'     => oec_vimeo_limpiar_token( (string) ( $o['vimeo_token'] ?? '' ) ),
 		'categoria' => trim( (string) ( $o['vimeo_category'] ?? '' ) ) ?: 'Educativo',
+		'origen'    => $origen,
 	];
+}
+
+/** Sin espacios ni un "Bearer " pegado por error delante. */
+function oec_vimeo_limpiar_token( string $t ): string {
+	return (string) preg_replace( '/\s+/', '', (string) preg_replace( '/^\s*bearer\s+/i', '', $t ) );
 }
 
 /** "Educativo" / "educativo" / "Educativó" → "educativo" (para comparar). */
@@ -87,6 +95,10 @@ function oec_vimeo_fetch() {
 		$body = json_decode( (string) wp_remote_retrieve_body( $res ), true );
 		if ( 200 !== $code || ! is_array( $body ) ) {
 			$msg = is_array( $body ) ? ( $body['developer_message'] ?? $body['error'] ?? '' ) : '';
+			if ( 401 === $code ) {
+				/* translators: 1: últimos 4 caracteres, 2: de qué sitio sale el token */
+				$msg = sprintf( __( 'Vimeo rechazó el token que termina en …%1$s (cargado en %2$s). Compará esos 4 caracteres con el token de developer.vimeo.com: si no coinciden, el guardado se quedó con otro valor.', 'oec-theme' ), substr( $cfg['token'], -4 ), $cfg['origen'] ) . ' (' . $msg . ')';
+			}
 			return new WP_Error( 'oec_vimeo_http', sprintf( 'Vimeo (%d): %s', $code, $msg ?: __( 'respuesta inválida', 'oec-theme' ) ) );
 		}
 
