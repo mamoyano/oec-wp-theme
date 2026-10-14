@@ -690,7 +690,7 @@ function oec_render_settings_page(): void {
 					<div class="oec-card">
 						<div class="oec-card__header">
 							<h2><?php esc_html_e( 'Vimeo', 'oec-theme' ); ?></h2>
-							<p><?php esc_html_e( 'Las clases abiertas del home y de las landings salen de la cuenta de Vimeo: los videos de la categoría indicada, filtrados en cada landing por el tag de su temática (nutricion-deportiva, fuerza…). El link al curso se toma de la descripción del video. Se muestran hasta 7, al azar, en cada visita.', 'oec-theme' ); ?></p>
+							<p><?php esc_html_e( 'Las clases abiertas del home y de las landings salen de la cuenta de Vimeo: los videos de la categoría indicada, filtrados en cada landing por el tag de su temática (nutricion-deportiva, fuerza…). El link al curso se toma de la descripción del video. Cada vez que el tema se conecta a Vimeo (cada 6 horas o con "Actualizar ahora") se sortean de nuevo: se muestran hasta 7 y quedan fijos hasta la próxima conexión.', 'oec-theme' ); ?></p>
 						</div>
 						<div class="oec-card__body">
 							<div class="oec-tracker-row">
@@ -717,6 +717,12 @@ function oec_render_settings_page(): void {
 									       value="<?php echo esc_attr( $opts['vimeo_category'] ); ?>"
 									       class="regular-text" placeholder="Educativo">
 									<p class="description">
+										<?php if ( 'ok' === ( $_GET['oec_vimeo'] ?? '' ) && empty( $vs['error'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification ?>
+										<strong style="color:#1e7e34;"><?php esc_html_e( 'Conexión con Vimeo correcta: videos actualizados y sorteados.', 'oec-theme' ); ?></strong><br>
+										<?php endif; ?>
+										<?php if ( $opts['vimeo_token'] && empty( $vs['time'] ) && empty( $vs['error'] ) ) : ?>
+										<?php esc_html_e( 'Todavía no se trajo ningún video: tocá "Actualizar ahora".', 'oec-theme' ); ?><br>
+										<?php endif; ?>
 										<?php if ( ! empty( $vs['time'] ) ) : ?>
 										<span style="color:#1e7e34;font-weight:600;">✓
 										<?php
@@ -738,7 +744,7 @@ function oec_render_settings_page(): void {
 										<?php endif; ?>
 										<?php endif; ?>
 										<?php if ( ! empty( $vs['error'] ) ) : ?>
-										<span style="color:#b32d2e;"><?php echo esc_html( $vs['error'] ); ?></span><br>
+										<span style="color:#b32d2e;font-weight:600;"><?php esc_html_e( 'Error al conectar con Vimeo:', 'oec-theme' ); ?> <?php echo esc_html( $vs['error'] ); ?></span><br>
 										<?php endif; ?>
 										<?php if ( $opts['vimeo_token'] ) : ?>
 										<a class="button" style="margin-top:.5rem;" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=oec_vimeo_refresh' ), 'oec_vimeo_refresh' ) ); ?>"><?php esc_html_e( 'Actualizar ahora', 'oec-theme' ); ?></a>

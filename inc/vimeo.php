@@ -29,8 +29,17 @@ const OEC_VIMEO_TTL    = 6 * HOUR_IN_SECONDS;
 const OEC_VIMEO_OPTION = 'oec_vimeo_lib';
 const OEC_VIMEO_CRON   = 'oec_vimeo_refresh';
 
+/**
+ * Token y categoría: los del sitio actual (Tema OEC → Integraciones existe en
+ * cada sitio de la red) y, si ahí no se cargó token, los del sitio de
+ * configuración (/es/). Antes se leía solo /es/: un token cargado en otro
+ * sitio quedaba "Activo" en su tarjeta pero no se usaba.
+ */
 function oec_vimeo_settings(): array {
-	$o = function_exists( 'oec_config_theme_options' ) ? oec_config_theme_options() : oec_get_options();
+	$o = oec_get_options();
+	if ( '' === trim( (string) ( $o['vimeo_token'] ?? '' ) ) && function_exists( 'oec_config_theme_options' ) ) {
+		$o = oec_config_theme_options();
+	}
 	return [
 		'token'     => trim( (string) ( $o['vimeo_token'] ?? '' ) ),
 		'categoria' => trim( (string) ( $o['vimeo_category'] ?? '' ) ) ?: 'Educativo',
@@ -52,6 +61,9 @@ function oec_vimeo_fetch() {
 	$cfg = oec_vimeo_settings();
 	if ( '' === $cfg['token'] ) {
 		return new WP_Error( 'oec_vimeo_no_token', __( 'Falta el token de Vimeo.', 'oec-theme' ) );
+	}
+	if ( function_exists( 'set_time_limit' ) ) {
+		@set_time_limit( 300 ); // cuentas grandes: varias páginas de 100 videos
 	}
 	$fields = 'uri,name,description,link,duration,release_time,created_time,player_embed_url,pictures.base_link,tags.name,tags.canonical,categories.name,categories.uri';
 	$url    = 'https://api.vimeo.com/me/videos?per_page=100&sort=date&direction=desc&fields=' . rawurlencode( $fields );
@@ -230,16 +242,21 @@ add_action( 'admin_post_oec_vimeo_refresh', function () {
 	check_admin_referer( 'oec_vimeo_refresh' );
 	delete_transient( 'oec_vimeo_fail' );
 	$res = oec_vimeo_fetch();
-	$url = wp_get_referer() ?: admin_url();
+	if ( is_wp_error( $res ) ) {
+		// Que se vea en la tarjeta (antes el error se perdía).
+		set_transient( 'oec_vimeo_fail', $res->get_error_message(), 15 * MINUTE_IN_SECONDS );
+	}
+	$url = remove_query_arg( 'oec_vimeo', wp_get_referer() ?: admin_url( 'admin.php?page=oec-integraciones' ) );
 	wp_safe_redirect( add_query_arg( 'oec_vimeo', is_wp_error( $res ) ? 'error' : 'ok', $url ) );
 	exit;
 } );
 
 /** Resumen para el admin: cuántos videos, por tag, cuándo, error. */
 function oec_vimeo_status(): array {
-	$lib = get_option( OEC_VIMEO_OPTION );
+	$lib  = get_option( OEC_VIMEO_OPTION );
+	$fail = (string) get_transient( 'oec_vimeo_fail' );
 	if ( ! is_array( $lib ) ) {
-		return [ 'error' => (string) get_transient( 'oec_vimeo_fail' ) ];
+		return [ 'error' => $fail ];
 	}
 	$tags = [];
 	foreach ( (array) $lib['videos'] as $v ) {
@@ -255,6 +272,6 @@ function oec_vimeo_status(): array {
 		'tags'     => $tags,
 		'cats'     => (array) ( $lib['cats'] ?? [] ),
 		'sin_link' => count( array_filter( (array) $lib['videos'], fn( $v ) => '' === $v['more'] ) ),
-		'error'    => (string) ( $lib['error'] ?? '' ),
+		'error'    => $fail ?: (string) ( $lib['error'] ?? '' ),
 	];
 }
