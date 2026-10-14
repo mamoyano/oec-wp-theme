@@ -760,7 +760,41 @@ function oec_render_settings_page(): void {
 										<?php if ( 'ok' === ( $_GET['oec_vimeo'] ?? '' ) && empty( $vs['error'] ) ) : // phpcs:ignore WordPress.Security.NonceVerification ?>
 										<strong style="color:#1e7e34;"><?php esc_html_e( 'Conexión con Vimeo correcta: videos actualizados y sorteados.', 'oec-theme' ); ?></strong><br>
 										<?php endif; ?>
-										<?php if ( $opts['vimeo_token'] && empty( $vs['time'] ) && empty( $vs['error'] ) ) : ?>
+										<?php if ( ! empty( $vs['job'] ) ) : // recorrida en curso: la avanza este JS, paso a paso ?>
+										<span id="oec-vimeo-job" style="color:#2271b1;font-weight:600;"
+										      data-ajax="<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>"
+										      data-nonce="<?php echo esc_attr( wp_create_nonce( 'oec_vimeo_step' ) ); ?>">
+											<?php echo esc_html( sprintf( __( 'Trayendo videos de Vimeo… %1$d revisados, %2$d de la categoría.', 'oec-theme' ), $vs['job']['total'], $vs['job']['n'] ) ); ?>
+										</span><br>
+										<script>
+										( function () {
+											var el = document.getElementById( 'oec-vimeo-job' );
+											var fin = function ( r ) {
+												var u = new URL( location.href );
+												u.searchParams.set( 'oec_vimeo', r );
+												u.searchParams.delete( 'settings-updated' );
+												location.replace( u );
+											};
+											var paso = function () {
+												var fd = new FormData();
+												fd.append( 'action', 'oec_vimeo_step' );
+												fd.append( '_ajax_nonce', el.dataset.nonce );
+												fetch( el.dataset.ajax, { method: 'POST', body: fd, credentials: 'same-origin' } )
+													.then( function ( r ) { return r.json(); } )
+													.then( function ( j ) {
+														if ( ! j.success ) { return fin( 'error' ); }
+														var d = j.data;
+														if ( d.done ) { return fin( 'ok' ); }
+														el.textContent = 'Trayendo videos de Vimeo… ' + d.total + ( d.cuenta ? ' de ' + d.cuenta : '' ) + ' revisados, ' + d.n + ' de la categoría.';
+														setTimeout( paso, d.total ? 300 : 3000 );
+													} )
+													.catch( function () { setTimeout( paso, 5000 ); } ); // un corte: reintenta
+											};
+											paso();
+										} )();
+										</script>
+										<?php endif; ?>
+										<?php if ( $opts['vimeo_token'] && empty( $vs['time'] ) && empty( $vs['error'] ) && empty( $vs['job'] ) ) : ?>
 										<?php esc_html_e( 'Todavía no se trajo ningún video: tocá "Guardar y actualizar ahora".', 'oec-theme' ); ?><br>
 										<?php endif; ?>
 										<?php if ( ! empty( $vs['time'] ) ) : ?>

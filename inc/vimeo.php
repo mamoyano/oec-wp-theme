@@ -18,9 +18,9 @@ defined( 'ABSPATH' ) || exit;
      en ese orden ([oec-clases] max="7"): mismas clases y mismo orden para
      todos hasta la próxima conexión (y la página queda cacheada igual).
    - La biblioteca se guarda (opción oec_vimeo_lib) y se renueva cada
-     OEC_VIMEO_TTL en segundo plano (WP-Cron): las visitas nunca esperan a
-     Vimeo, salvo la primera de todas. Ajustes → Integraciones tiene
-     "Actualizar ahora".
+     OEC_VIMEO_TTL en segundo plano (WP-Cron, por pasos): las visitas nunca
+     esperan a Vimeo. Ajustes → Integraciones tiene "Guardar y actualizar
+     ahora", con el avance a la vista.
    - Sin token, o si Vimeo no respondió nunca, [oec-clases] sigue con la
      lista a mano de la página.
    ============================================================ */
@@ -59,76 +59,140 @@ function oec_vimeo_norm( string $s ): string {
 	return sanitize_title( remove_accents( $s ) );
 }
 
-/**
- * Trae TODOS los videos de la cuenta (paginado) y guarda los de la
- * categoría. Devuelve la biblioteca guardada o WP_Error.
- *
- * @return array|WP_Error
+/*
+ * La cuenta tiene miles de videos y Vimeo da 100 por pedido: recorrerla
+ * entera en una sola carga pasaba el límite del servidor (error 500 por
+ * timeout). Ahora se recorre por pasos de OEC_VIMEO_STEP segundos: el
+ * avance queda en la opción oec_vimeo_job y cada paso sigue desde ahí. Los
+ * pasos los da el admin (Integraciones, por AJAX, con barra de avance) o
+ * WP-Cron (uno tras otro) cuando se renueva solo.
  */
-function oec_vimeo_fetch() {
-	$cfg = oec_vimeo_settings();
-	if ( '' === $cfg['token'] ) {
-		return new WP_Error( 'oec_vimeo_no_token', __( 'Falta el token de Vimeo.', 'oec-theme' ) );
-	}
-	if ( function_exists( 'set_time_limit' ) ) {
-		@set_time_limit( 300 ); // cuentas grandes: varias páginas de 100 videos
-	}
+const OEC_VIMEO_JOB  = 'oec_vimeo_job';
+const OEC_VIMEO_STEP = 20; // segundos por paso: muy por debajo de cualquier timeout
+
+/** Empieza una recorrida nueva (descarta la que hubiera a medias). */
+function oec_vimeo_job_start(): void {
 	$fields = 'uri,name,description,link,duration,release_time,created_time,player_embed_url,pictures.base_link,tags.name,tags.canonical,categories.name,categories.uri';
-	$url    = 'https://api.vimeo.com/me/videos?per_page=100&sort=date&direction=desc&fields=' . rawurlencode( $fields );
-	$cat    = oec_vimeo_norm( $cfg['categoria'] );
-	$videos = [];
-	$cats   = []; // categorías vistas en la cuenta (diagnóstico en el admin)
-	$total  = 0;
+	update_option( OEC_VIMEO_JOB, [
+		'url'     => 'https://api.vimeo.com/me/videos?per_page=100&sort=date&direction=desc&fields=' . rawurlencode( $fields ),
+		'videos'  => [],
+		'cats'    => [],
+		'total'   => 0,
+		'cuenta'  => 0, // total de la cuenta según Vimeo (para el avance)
+		'started' => time(),
+	], false );
+	delete_transient( 'oec_vimeo_fail' );
+}
 
-	for ( $page = 0; $url && $page < 60; $page++ ) {
-		$res = wp_remote_get( $url, [
-			'timeout' => 20,
-			'headers' => [
-				'Authorization' => 'bearer ' . $cfg['token'],
-				'Accept'        => 'application/vnd.vimeo.*+json;version=3.4',
-			],
-		] );
-		if ( is_wp_error( $res ) ) {
-			return $res;
-		}
-		$code = (int) wp_remote_retrieve_response_code( $res );
-		$body = json_decode( (string) wp_remote_retrieve_body( $res ), true );
-		if ( 200 !== $code || ! is_array( $body ) ) {
-			$msg = is_array( $body ) ? ( $body['developer_message'] ?? $body['error'] ?? '' ) : '';
-			if ( 401 === $code ) {
-				/* translators: 1: últimos 4 caracteres, 2: de qué sitio sale el token */
-				$msg = sprintf( __( 'Vimeo rechazó el token que termina en …%1$s (cargado en %2$s). Compará esos 4 caracteres con el token de developer.vimeo.com: si no coinciden, el guardado se quedó con otro valor.', 'oec-theme' ), substr( $cfg['token'], -4 ), $cfg['origen'] ) . ' (' . $msg . ')';
-			}
-			return new WP_Error( 'oec_vimeo_http', sprintf( 'Vimeo (%d): %s', $code, $msg ?: __( 'respuesta inválida', 'oec-theme' ) ) );
-		}
+/**
+ * Un paso de la recorrida: pide páginas hasta gastar OEC_VIMEO_STEP
+ * segundos. Al terminar, sortea y guarda la biblioteca.
+ *
+ * @return array|WP_Error ['done' => bool, 'total' => revisados, 'cuenta' => de la cuenta, 'n' => de la categoría]
+ */
+function oec_vimeo_step() {
+	$job = get_option( OEC_VIMEO_JOB );
+	if ( ! is_array( $job ) ) {
+		$lib = get_option( OEC_VIMEO_OPTION );
+		return [ 'done' => true, 'total' => (int) ( $lib['total'] ?? 0 ), 'cuenta' => (int) ( $lib['total'] ?? 0 ), 'n' => count( (array) ( $lib['videos'] ?? [] ) ) ];
+	}
+	// Un paso a la vez (el admin y el cron podrían coincidir).
+	if ( get_transient( 'oec_vimeo_lock' ) ) {
+		return [ 'done' => false, 'total' => (int) $job['total'], 'cuenta' => (int) $job['cuenta'], 'n' => count( $job['videos'] ) ];
+	}
+	set_transient( 'oec_vimeo_lock', 1, OEC_VIMEO_STEP + 40 );
 
+	$cfg = oec_vimeo_settings();
+	$cat = oec_vimeo_norm( $cfg['categoria'] );
+	$t0  = microtime( true );
+	$err = null;
+	if ( '' === $cfg['token'] ) {
+		$err = new WP_Error( 'oec_vimeo_no_token', __( 'Falta el token de Vimeo.', 'oec-theme' ) );
+	}
+
+	while ( ! $err && $job['url'] && microtime( true ) - $t0 < OEC_VIMEO_STEP ) {
+		$body = oec_vimeo_get( $job['url'], $cfg );
+		if ( is_wp_error( $body ) ) {
+			$err = $body;
+			break;
+		}
+		$job['cuenta'] = (int) ( $body['total'] ?? $job['cuenta'] );
 		foreach ( (array) ( $body['data'] ?? [] ) as $v ) {
-			++$total;
-			$v_cats = array_map( fn( $c ) => (string) ( $c['name'] ?? '' ), (array) ( $v['categories'] ?? [] ) );
-			foreach ( $v_cats as $c ) {
-				$cats[ $c ] = ( $cats[ $c ] ?? 0 ) + 1;
+			++$job['total'];
+			foreach ( (array) ( $v['categories'] ?? [] ) as $c ) {
+				$n                 = (string) ( $c['name'] ?? '' );
+				$job['cats'][ $n ] = ( $job['cats'][ $n ] ?? 0 ) + 1;
 			}
 			$es_cat = (bool) array_filter( (array) ( $v['categories'] ?? [] ), fn( $c ) => in_array( $cat, [
 				oec_vimeo_norm( (string) ( $c['name'] ?? '' ) ),
 				oec_vimeo_norm( basename( (string) ( $c['uri'] ?? '' ) ) ),
 			], true ) );
-			if ( ! $es_cat ) {
-				continue;
-			}
-			$video = oec_vimeo_video( $v );
+			$video = $es_cat ? oec_vimeo_video( $v ) : null;
 			if ( $video ) {
-				$videos[] = $video;
+				$job['videos'][] = $video;
 			}
 		}
-		$next = $body['paging']['next'] ?? '';
-		$url  = $next ? 'https://api.vimeo.com' . $next : '';
+		$next       = $body['paging']['next'] ?? '';
+		$job['url'] = $next ? 'https://api.vimeo.com' . $next : '';
+	}
+	delete_transient( 'oec_vimeo_lock' );
+
+	if ( $err ) {
+		// Se queda con la biblioteca anterior; el error se ve en Integraciones.
+		delete_option( OEC_VIMEO_JOB );
+		set_transient( 'oec_vimeo_fail', $err->get_error_message(), 15 * MINUTE_IN_SECONDS );
+		$lib = get_option( OEC_VIMEO_OPTION );
+		if ( is_array( $lib ) ) {
+			$lib['error'] = $err->get_error_message();
+			$lib['time']  = time(); // no reintentar en cada visita
+			update_option( OEC_VIMEO_OPTION, $lib, false );
+		}
+		return $err;
+	}
+	if ( $job['url'] ) {
+		update_option( OEC_VIMEO_JOB, $job, false );
+		return [ 'done' => false, 'total' => $job['total'], 'cuenta' => $job['cuenta'], 'n' => count( $job['videos'] ) ];
 	}
 
+	$cats = $job['cats'];
 	arsort( $cats );
+	$videos = $job['videos'];
 	shuffle( $videos ); // el sorteo: dura hasta la próxima conexión
-	$lib = [ 'time' => time(), 'videos' => $videos, 'total' => $total, 'cats' => $cats, 'error' => '' ];
-	update_option( OEC_VIMEO_OPTION, $lib, false );
-	return $lib;
+	update_option( OEC_VIMEO_OPTION, [ 'time' => time(), 'videos' => $videos, 'total' => $job['total'], 'cats' => $cats, 'error' => '' ], false );
+	delete_option( OEC_VIMEO_JOB );
+	return [ 'done' => true, 'total' => $job['total'], 'cuenta' => $job['total'], 'n' => count( $videos ) ];
+}
+
+/** Una página de la API. @return array|WP_Error */
+function oec_vimeo_get( string $url, array $cfg ) {
+	$res = wp_remote_get( $url, [
+		'timeout' => 15,
+		'headers' => [
+			'Authorization' => 'bearer ' . $cfg['token'],
+			'Accept'        => 'application/vnd.vimeo.*+json;version=3.4',
+		],
+	] );
+	if ( is_wp_error( $res ) ) {
+		return $res;
+	}
+	$code = (int) wp_remote_retrieve_response_code( $res );
+	$body = json_decode( (string) wp_remote_retrieve_body( $res ), true );
+	if ( 200 === $code && is_array( $body ) ) {
+		return $body;
+	}
+	$msg = is_array( $body ) ? ( $body['developer_message'] ?? $body['error'] ?? '' ) : '';
+	if ( 401 === $code ) {
+		/* translators: 1: últimos 4 caracteres, 2: de qué sitio sale el token */
+		$msg = sprintf( __( 'Vimeo rechazó el token que termina en …%1$s (cargado en %2$s). Compará esos 4 caracteres con el token de developer.vimeo.com: si no coinciden, el guardado se quedó con otro valor.', 'oec-theme' ), substr( $cfg['token'], -4 ), $cfg['origen'] ) . ' (' . $msg . ')';
+	}
+	return new WP_Error( 'oec_vimeo_http', sprintf( 'Vimeo (%d): %s', $code, $msg ?: __( 'respuesta inválida', 'oec-theme' ) ) );
+}
+
+/** Que WP-Cron siga la recorrida (o la empiece) en segundo plano. */
+function oec_vimeo_schedule(): void {
+	if ( ! wp_next_scheduled( OEC_VIMEO_CRON ) ) {
+		wp_schedule_single_event( time(), OEC_VIMEO_CRON );
+	}
 }
 
 /** Un video de la API → lo que usa [oec-clases]. null si no se puede embeber. */
@@ -185,39 +249,32 @@ function oec_vimeo_video( array $v ): ?array {
 }
 
 /**
- * Biblioteca guardada; si venció, pide renovarla en segundo plano. La
- * primera vez (nunca se trajo) la trae en el momento.
+ * Biblioteca guardada. Si nunca se trajo o venció, la recorrida se hace en
+ * segundo plano (WP-Cron): la visita nunca espera a Vimeo. Mientras no
+ * haya biblioteca, [oec-clases] usa la lista a mano.
  */
 function oec_vimeo_library(): array {
 	if ( '' === oec_vimeo_settings()['token'] ) {
 		return [];
 	}
 	$lib = get_option( OEC_VIMEO_OPTION );
-	if ( ! is_array( $lib ) ) {
-		if ( get_transient( 'oec_vimeo_fail' ) ) {
-			return []; // falló hace poco: no reintentar en cada visita
-		}
-		$lib = oec_vimeo_fetch();
-		if ( is_wp_error( $lib ) ) {
-			set_transient( 'oec_vimeo_fail', $lib->get_error_message(), 15 * MINUTE_IN_SECONDS );
-			return [];
-		}
-	} elseif ( time() - (int) $lib['time'] > OEC_VIMEO_TTL && ! wp_next_scheduled( OEC_VIMEO_CRON ) ) {
-		wp_schedule_single_event( time(), OEC_VIMEO_CRON );
+	$job = get_option( OEC_VIMEO_JOB );
+	if ( is_array( $job ) ) {
+		oec_vimeo_schedule(); // hay una a medias: que siga
+	} elseif ( ! is_array( $lib ) ? ! get_transient( 'oec_vimeo_fail' ) : time() - (int) $lib['time'] > OEC_VIMEO_TTL ) {
+		oec_vimeo_job_start();
+		oec_vimeo_schedule();
 	}
-	return (array) ( $lib['videos'] ?? [] );
+	return is_array( $lib ) ? (array) ( $lib['videos'] ?? [] ) : [];
 }
 
 add_action( OEC_VIMEO_CRON, function () {
-	$res = oec_vimeo_fetch();
-	if ( is_wp_error( $res ) ) {
-		// Se queda con lo que había; el error se ve en Ajustes → Integraciones.
-		$lib = get_option( OEC_VIMEO_OPTION );
-		if ( is_array( $lib ) ) {
-			$lib['error'] = $res->get_error_message();
-			$lib['time']  = time(); // no reintentar en cada visita
-			update_option( OEC_VIMEO_OPTION, $lib, false );
-		}
+	if ( ! is_array( get_option( OEC_VIMEO_JOB ) ) ) {
+		return;
+	}
+	$res = oec_vimeo_step();
+	if ( ! is_wp_error( $res ) && ! $res['done'] ) {
+		wp_schedule_single_event( time(), OEC_VIMEO_CRON ); // el paso siguiente
 	}
 } );
 
@@ -246,40 +303,45 @@ function oec_vimeo_tematica_actual(): string {
 	return '';
 }
 
-/* ── Ajustes → Integraciones: "Actualizar ahora" ── */
+/* ── Ajustes → Integraciones: "Guardar y actualizar ahora" ──
+   Empieza la recorrida y vuelve a la tarjeta, que la avanza por AJAX
+   (oec_vimeo_step) mostrando cuántos videos lleva. */
+function oec_vimeo_refrescar_tras_guardar( $location ) {
+	remove_filter( 'wp_redirect', 'oec_vimeo_refrescar_tras_guardar' );
+	oec_vimeo_job_start();
+	oec_vimeo_schedule(); // por si se cierra la pestaña: el cron la termina
+	return remove_query_arg( 'oec_vimeo', $location );
+}
+
 add_action( 'admin_post_oec_vimeo_refresh', function () {
 	if ( ! current_user_can( 'manage_options' ) ) {
 		wp_die( esc_html__( 'Sin permisos.', 'oec-theme' ) );
 	}
 	check_admin_referer( 'oec_vimeo_refresh' );
-	delete_transient( 'oec_vimeo_fail' );
-	$res = oec_vimeo_fetch();
-	if ( is_wp_error( $res ) ) {
-		// Que se vea en la tarjeta (antes el error se perdía).
-		set_transient( 'oec_vimeo_fail', $res->get_error_message(), 15 * MINUTE_IN_SECONDS );
-	}
-	$url = remove_query_arg( 'oec_vimeo', wp_get_referer() ?: admin_url( 'admin.php?page=oec-integraciones' ) );
-	wp_safe_redirect( add_query_arg( 'oec_vimeo', is_wp_error( $res ) ? 'error' : 'ok', $url ) );
+	wp_safe_redirect( oec_vimeo_refrescar_tras_guardar( wp_get_referer() ?: admin_url( 'admin.php?page=oec-integraciones' ) ) );
 	exit;
 } );
 
-/** Tras guardar Integraciones con "Guardar y actualizar ahora". */
-function oec_vimeo_refrescar_tras_guardar( $location ) {
-	remove_filter( 'wp_redirect', 'oec_vimeo_refrescar_tras_guardar' );
-	delete_transient( 'oec_vimeo_fail' );
-	$res = oec_vimeo_fetch();
-	if ( is_wp_error( $res ) ) {
-		set_transient( 'oec_vimeo_fail', $res->get_error_message(), 15 * MINUTE_IN_SECONDS );
+add_action( 'wp_ajax_oec_vimeo_step', function () {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => __( 'Sin permisos.', 'oec-theme' ) ], 403 );
 	}
-	return add_query_arg( 'oec_vimeo', is_wp_error( $res ) ? 'error' : 'ok', remove_query_arg( 'oec_vimeo', $location ) );
-}
+	check_ajax_referer( 'oec_vimeo_step' );
+	$res = oec_vimeo_step();
+	if ( is_wp_error( $res ) ) {
+		wp_send_json_error( [ 'message' => $res->get_error_message() ] );
+	}
+	wp_send_json_success( $res );
+} );
 
 /** Resumen para el admin: cuántos videos, por tag, cuándo, error. */
 function oec_vimeo_status(): array {
 	$lib  = get_option( OEC_VIMEO_OPTION );
 	$fail = (string) get_transient( 'oec_vimeo_fail' );
+	$job  = get_option( OEC_VIMEO_JOB );
+	$curso = is_array( $job ) ? [ 'total' => (int) $job['total'], 'cuenta' => (int) $job['cuenta'], 'n' => count( $job['videos'] ) ] : null;
 	if ( ! is_array( $lib ) ) {
-		return [ 'error' => $fail ];
+		return [ 'error' => $fail, 'job' => $curso ];
 	}
 	$tags = [];
 	foreach ( (array) $lib['videos'] as $v ) {
@@ -296,5 +358,6 @@ function oec_vimeo_status(): array {
 		'cats'     => (array) ( $lib['cats'] ?? [] ),
 		'sin_link' => count( array_filter( (array) $lib['videos'], fn( $v ) => '' === $v['more'] ) ),
 		'error'    => $fail ?: (string) ( $lib['error'] ?? '' ),
+		'job'      => $curso, // recorrida en curso (null si no hay)
 	];
 }
