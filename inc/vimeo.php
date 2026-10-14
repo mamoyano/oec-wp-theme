@@ -263,6 +263,17 @@ add_action( 'admin_post_oec_vimeo_refresh', function () {
 	exit;
 } );
 
+/** Tras guardar Integraciones con "Guardar y actualizar ahora". */
+function oec_vimeo_refrescar_tras_guardar( $location ) {
+	remove_filter( 'wp_redirect', 'oec_vimeo_refrescar_tras_guardar' );
+	delete_transient( 'oec_vimeo_fail' );
+	$res = oec_vimeo_fetch();
+	if ( is_wp_error( $res ) ) {
+		set_transient( 'oec_vimeo_fail', $res->get_error_message(), 15 * MINUTE_IN_SECONDS );
+	}
+	return add_query_arg( 'oec_vimeo', is_wp_error( $res ) ? 'error' : 'ok', remove_query_arg( 'oec_vimeo', $location ) );
+}
+
 /** Resumen para el admin: cuántos videos, por tag, cuándo, error. */
 function oec_vimeo_status(): array {
 	$lib  = get_option( OEC_VIMEO_OPTION );

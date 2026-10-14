@@ -186,6 +186,11 @@ function oec_sanitize_options( $raw ): array {
 		delete_option( 'oec_vimeo_lib' );
 		delete_transient( 'oec_vimeo_fail' );
 	}
+	// "Guardar y actualizar ahora": se conecta a Vimeo después de guardar,
+	// en la redirección de options.php (ya con el token nuevo).
+	if ( ! empty( $raw['vimeo_refrescar'] ) && function_exists( 'oec_vimeo_refrescar_tras_guardar' ) ) {
+		add_filter( 'wp_redirect', 'oec_vimeo_refrescar_tras_guardar' );
+	}
 	$time                       = (string) ( $raw['catalog_sync_time'] ?? '' );
 	$clean['catalog_sync_time'] = preg_match( '/^([01]\d|2[0-3]):[0-5]\d$/', $time ) ? $time : $defaults['catalog_sync_time'];
 
@@ -708,7 +713,7 @@ function oec_render_settings_page(): void {
 					<div class="oec-card">
 						<div class="oec-card__header">
 							<h2><?php esc_html_e( 'Vimeo', 'oec-theme' ); ?></h2>
-							<p><?php esc_html_e( 'Las clases abiertas del home y de las landings salen de la cuenta de Vimeo: los videos de la categoría indicada, filtrados en cada landing por el tag de su temática (nutricion-deportiva, fuerza…). El link al curso se toma de la descripción del video. Cada vez que el tema se conecta a Vimeo (cada 6 horas o con "Actualizar ahora") se sortean de nuevo: se muestran hasta 7 y quedan fijos hasta la próxima conexión.', 'oec-theme' ); ?></p>
+							<p><?php esc_html_e( 'Las clases abiertas del home y de las landings salen de la cuenta de Vimeo: los videos de la categoría indicada, filtrados en cada landing por el tag de su temática (nutricion-deportiva, fuerza…). El link al curso se toma de la descripción del video. Cada vez que el tema se conecta a Vimeo (cada 6 horas o con "Guardar y actualizar ahora") se sortean de nuevo: se muestran hasta 7 y quedan fijos hasta la próxima conexión.', 'oec-theme' ); ?></p>
 						</div>
 						<div class="oec-card__body">
 							<div class="oec-tracker-row">
@@ -756,7 +761,7 @@ function oec_render_settings_page(): void {
 										<strong style="color:#1e7e34;"><?php esc_html_e( 'Conexión con Vimeo correcta: videos actualizados y sorteados.', 'oec-theme' ); ?></strong><br>
 										<?php endif; ?>
 										<?php if ( $opts['vimeo_token'] && empty( $vs['time'] ) && empty( $vs['error'] ) ) : ?>
-										<?php esc_html_e( 'Todavía no se trajo ningún video: tocá "Actualizar ahora".', 'oec-theme' ); ?><br>
+										<?php esc_html_e( 'Todavía no se trajo ningún video: tocá "Guardar y actualizar ahora".', 'oec-theme' ); ?><br>
 										<?php endif; ?>
 										<?php if ( ! empty( $vs['time'] ) ) : ?>
 										<span style="color:#1e7e34;font-weight:600;">✓
@@ -781,9 +786,8 @@ function oec_render_settings_page(): void {
 										<?php if ( ! empty( $vs['error'] ) ) : ?>
 										<span style="color:#b32d2e;font-weight:600;"><?php esc_html_e( 'Error al conectar con Vimeo:', 'oec-theme' ); ?> <?php echo esc_html( $vs['error'] ); ?></span><br>
 										<?php endif; ?>
-										<?php if ( $opts['vimeo_token'] ) : ?>
-										<a class="button" style="margin-top:.5rem;" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=oec_vimeo_refresh' ), 'oec_vimeo_refresh' ) ); ?>"><?php esc_html_e( 'Actualizar ahora', 'oec-theme' ); ?></a>
-										<?php endif; ?>
+										<?php // Botón del formulario (no link): guarda lo que se haya pegado y recién después se conecta. ?>
+										<button type="submit" class="button" style="margin-top:.5rem;" name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_refrescar]" value="1"><?php esc_html_e( 'Guardar y actualizar ahora', 'oec-theme' ); ?></button>
 									</p>
 								</div>
 							</div>
