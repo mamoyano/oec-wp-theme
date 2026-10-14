@@ -51,7 +51,8 @@ $tematicas = array_filter(
 				<span class="single-author">
 					<i class="bi bi-person" aria-hidden="true"></i>
 					<?php esc_html_e( 'Por', 'oec-theme' ); ?>
-					<a href="<?php echo esc_url( oec_articulos_url( [ 'autor' => get_the_author_meta( 'ID' ) ] ) ); ?>">
+					<?php // Si el autor es docente del catálogo, su perfil (inc/autores-docentes.php); si no, sus artículos. ?>
+					<a href="<?php echo esc_url( oec_author_profile_url( (int) get_the_author_meta( 'ID' ) ) ?: oec_articulos_url( [ 'autor' => get_the_author_meta( 'ID' ) ] ) ); ?>">
 						<?php echo esc_html( get_the_author() ); ?>
 					</a>
 				</span>

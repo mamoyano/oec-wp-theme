@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.163' );
+define( 'OEC_THEME_VERSION', '1.0.164' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -446,6 +446,7 @@ require OEC_THEME_DIR . '/inc/ai-catalog.php';
 require OEC_THEME_DIR . '/inc/organizations.php';
 require OEC_THEME_DIR . '/inc/tematica-landing.php';
 require OEC_THEME_DIR . '/inc/docentes.php';
+require OEC_THEME_DIR . '/inc/autores-docentes.php';
 require OEC_THEME_DIR . '/inc/opiniones.php';
 require OEC_THEME_DIR . '/inc/vimeo.php';
 require OEC_THEME_DIR . '/inc/clases.php';

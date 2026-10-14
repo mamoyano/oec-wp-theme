@@ -393,8 +393,8 @@ add_action( 'wp_head', function () {
 	$url = oec_docente_url( $d['slug'] );
 
 	$person = array_filter( [
-		'@context'    => 'https://schema.org',
 		'@type'       => 'Person',
+		'@id'         => oec_docente_person_id( $d['slug'] ),
 		'name'        => $d['name'],
 		'url'         => $url,
 		'image'       => $img,
@@ -403,7 +403,16 @@ add_action( 'wp_head', function () {
 		'knowsAbout'  => array_values( array_intersect_key( OEC_DOCENTE_TEMATICAS, array_flip( $d['tags'] ) ) ) ?: null,
 		'worksFor'    => [ '@id' => home_url( '/' ) . '#organization' ],
 	] );
-	echo '<script type="application/ld+json">' . wp_json_encode( $person, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . "</script>\n";
+	// ProfilePage: el tipo que Google usa para páginas de perfil de una persona. El mismo @id
+	// del Person que llevan sus artículos (inc/autores-docentes.php) une las dos cosas.
+	$page = [
+		'@context'   => 'https://schema.org',
+		'@type'      => 'ProfilePage',
+		'@id'        => $url,
+		'url'        => $url,
+		'mainEntity' => $person,
+	];
+	echo '<script type="application/ld+json">' . wp_json_encode( $page, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . "</script>\n";
 	oec_docentes_breadcrumb_jsonld( [ $d['name'], $url ] );
 }, 5 );
 

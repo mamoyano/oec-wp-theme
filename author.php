@@ -53,6 +53,11 @@ get_header();
 		<?php endif; ?>
 
 		<?php if ( $author instanceof WP_User ) : ?>
+		<?php if ( $oec_author_doc = oec_author_profile_url( $author->ID ) ) : ?>
+		<a href="<?php echo esc_url( $oec_author_doc ); ?>" class="btn btn-primary btn-sm">
+			<?php esc_html_e( 'Ver su perfil de docente', 'oec-theme' ); ?>
+		</a>
+		<?php endif; ?>
 		<a href="<?php echo esc_url( oec_articulos_url( [ 'autor' => $author->ID ] ) ); ?>"
 		   class="btn btn-ghost btn-sm">
 			<?php esc_html_e( 'Ver con más filtros', 'oec-theme' ); ?>

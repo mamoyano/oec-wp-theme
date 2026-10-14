@@ -178,7 +178,7 @@ function oec_seo_organization_node(): array {
  * "Autores Varios" apuntan a la organización del sitio; el resto, Person.
  * Filtro 'oec_seo_author_type' (user_id, nombre) → 'person' | 'organization' | 'site'.
  */
-function oec_seo_author_node( int $user_id ): array {
+function oec_seo_author_node( int $user_id, bool $with_docente = true ): array {
 	$name = (string) get_the_author_meta( 'display_name', $user_id );
 	$url  = get_author_posts_url( $user_id );
 	$type = 'person';
@@ -191,6 +191,16 @@ function oec_seo_author_node( int $user_id ): array {
 
 	if ( 'site' === $type ) {
 		return [ '@id' => home_url( '/' ) . '#organization' ];
+	}
+	// Persona que además es docente del catálogo: su perfil (inc/autores-docentes.php),
+	// con el mismo @id que el Person de esa página.
+	if ( 'person' === $type && $with_docente && function_exists( 'oec_author_docente' ) && ( $d = oec_author_docente( $user_id ) ) ) {
+		return [
+			'@type' => 'Person',
+			'@id'   => oec_docente_person_id( $d['slug'] ),
+			'name'  => $name,
+			'url'   => oec_docente_url( $d['slug'] ),
+		];
 	}
 	return [
 		'@type' => 'organization' === $type ? 'Organization' : 'Person',

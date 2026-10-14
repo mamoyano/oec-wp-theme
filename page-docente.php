@@ -167,6 +167,29 @@ get_header();
 		</section>
 		<?php endif; ?>
 
+		<?php
+		// Sus artículos, si además es autor (inc/autores-docentes.php).
+		$oec_doc_arts = oec_docente_articles( $oec_docente );
+		if ( $oec_doc_arts ) :
+			[ $oec_doc_q, $oec_doc_all ] = $oec_doc_arts;
+			?>
+		<section class="docente-section" id="docente-articulos">
+			<h2 class="docente-section__title"><?php echo esc_html( sprintf( __( 'Artículos de %s', 'oec-theme' ), $oec_docente['name'] ) ); ?></h2>
+			<div class="art-grid">
+				<?php while ( $oec_doc_q->have_posts() ) : $oec_doc_q->the_post(); ?>
+					<?php get_template_part( 'template-parts/content', 'card' ); ?>
+				<?php endwhile; wp_reset_postdata(); ?>
+			</div>
+			<?php if ( $oec_doc_q->found_posts > $oec_doc_q->post_count ) : ?>
+			<p class="docente-past__more">
+				<a href="<?php echo esc_url( $oec_doc_all ); ?>" class="btn btn-ghost btn-sm">
+					<?php echo esc_html( sprintf( __( 'Ver sus %s artículos', 'oec-theme' ), number_format_i18n( $oec_doc_q->found_posts ) ) ); ?>
+				</a>
+			</p>
+			<?php endif; ?>
+		</section>
+		<?php endif; ?>
+
 		<?php if ( $oec_cerradas ) : ?>
 		<section class="docente-section">
 			<h2 class="docente-section__title"><?php esc_html_e( 'Formaciones que dictó', 'oec-theme' ); ?></h2>
