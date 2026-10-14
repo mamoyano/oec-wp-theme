@@ -162,10 +162,26 @@ function oec_sanitize_options( $raw ): array {
 		(array) ( $raw['oec_api_tokens'] ?? [] )
 	), fn( $t ) => '' !== $t && $t !== $clean['oec_api_token'] ) ) );
 	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
-	$clean['vimeo_token']     = function_exists( 'oec_vimeo_limpiar_token' ) ? oec_vimeo_limpiar_token( sanitize_text_field( $raw['vimeo_token'] ?? '' ) ) : sanitize_text_field( $raw['vimeo_token'] ?? '' );
+	// Token de Vimeo: campo de "solo escritura" (vimeo_token_nuevo, siempre
+	// vacío en el formulario). Si viene algo, reemplaza; si no, queda el
+	// guardado. Antes el campo mostraba el token y el navegador lo
+	// autocompletaba con uno viejo guardado como contraseña, que se volvía a
+	// guardar encima del nuevo. "vimeo_token" solo llega como hidden desde
+	// las otras secciones, con el valor actual.
+	$prev   = oec_get_options();
+	$limpia = fn( $t ) => function_exists( 'oec_vimeo_limpiar_token' ) ? oec_vimeo_limpiar_token( sanitize_text_field( (string) $t ) ) : sanitize_text_field( (string) $t );
+	$nuevo  = $limpia( $raw['vimeo_token_nuevo'] ?? '' );
+	if ( ! empty( $raw['vimeo_token_quitar'] ) ) {
+		$clean['vimeo_token'] = '';
+	} elseif ( '' !== $nuevo ) {
+		$clean['vimeo_token'] = $nuevo;
+	} elseif ( isset( $raw['vimeo_token'] ) ) {
+		$clean['vimeo_token'] = $limpia( $raw['vimeo_token'] );
+	} else {
+		$clean['vimeo_token'] = (string) ( $prev['vimeo_token'] ?? '' );
+	}
 	$clean['vimeo_category']  = sanitize_text_field( $raw['vimeo_category'] ?? '' ) ?: $defaults['vimeo_category'];
 	// Token o categoría nuevos: la próxima visita vuelve a traer los videos.
-	$prev = oec_get_options();
 	if ( $clean['vimeo_token'] !== ( $prev['vimeo_token'] ?? '' ) || $clean['vimeo_category'] !== ( $prev['vimeo_category'] ?? '' ) ) {
 		delete_option( 'oec_vimeo_lib' );
 		delete_transient( 'oec_vimeo_fail' );
@@ -248,7 +264,9 @@ function oec_admin_section_keys(): array {
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
 		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp' ],
 		'revisor'         => [ 'reviewer_mode', 'reviewer_time', 'reviewer_email' ],
-		'integraciones'   => [ 'credits_api_key', 'vimeo_token', 'vimeo_category', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		// vimeo_token no va acá: en Integraciones se carga por vimeo_token_nuevo
+		// (ver oec_sanitize_options) y viaja como hidden desde las demás secciones.
+		'integraciones'   => [ 'credits_api_key', 'vimeo_category', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
 		'conversaciones'  => [],
 	];
@@ -701,20 +719,33 @@ function oec_render_settings_page(): void {
 										<p><?php esc_html_e( 'developer.vimeo.com → My Apps → tu app → Generate access token (Authenticated, permisos Public y Private).', 'oec-theme' ); ?></p>
 									</div>
 									<div class="oec-tracker-status">
-										<?php oec_tracker_badge( $opts['vimeo_token'] ); ?>
+										<?php oec_tracker_badge( function_exists( 'oec_vimeo_settings' ) ? oec_vimeo_settings()['token'] : $opts['vimeo_token'] ); ?>
 									</div>
 								</div>
 								<div class="oec-tracker-row__field">
 									<label for="oec-vimeo-token"><?php esc_html_e( 'Token', 'oec-theme' ); ?></label>
-									<?php // type="text" a propósito: como password, Chrome lo autocompletaba con una contraseña guardada al guardar el formulario. ?>
+									<?php
+									// Solo escritura: siempre vacío (el navegador no tiene nada que
+									// autocompletar ni reenviar). Lo guardado se ve abajo, por los
+									// últimos 4 caracteres que calcula el servidor.
+									$vt = function_exists( 'oec_vimeo_settings' ) ? oec_vimeo_settings() : [ 'token' => $opts['vimeo_token'], 'origen' => '' ];
+									?>
 									<input type="text" id="oec-vimeo-token"
-									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_token]"
-									       value="<?php echo esc_attr( $opts['vimeo_token'] ); ?>"
-									       class="regular-text oec-tracker-input" data-tracker="vimeo_token"
-									       autocomplete="off" data-1p-ignore data-lpignore="true" spellcheck="false">
-									<?php if ( function_exists( 'oec_vimeo_settings' ) && ( $vt = oec_vimeo_settings() ) && $vt['token'] ) : ?>
-									<span class="description" style="display:block;margin-top:.25rem;"><?php echo esc_html( sprintf( /* translators: 1: últimos 4, 2: sitio */ __( 'Token en uso: termina en …%1$s (de %2$s).', 'oec-theme' ), substr( $vt['token'], -4 ), $vt['origen'] ) ); ?></span>
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_token_nuevo]"
+									       value=""
+									       class="regular-text"
+									       placeholder="<?php echo esc_attr( $opts['vimeo_token'] ? __( 'Pegá un token nuevo para reemplazar el guardado', 'oec-theme' ) : __( 'Pegá acá el token', 'oec-theme' ) ); ?>"
+									       autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" spellcheck="false">
+									<span class="description" style="display:block;margin-top:.35rem;">
+									<?php if ( $vt['token'] ) : ?>
+										<strong><?php echo esc_html( sprintf( /* translators: 1: últimos 4, 2: sitio */ __( 'Guardado: termina en …%1$s (de %2$s).', 'oec-theme' ), substr( $vt['token'], -4 ), $vt['origen'] ) ); ?></strong>
+										<?php if ( $opts['vimeo_token'] ) : ?>
+										<label style="margin-left:.75rem;"><input type="checkbox" name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_token_quitar]" value="1"> <?php esc_html_e( 'Quitar el token', 'oec-theme' ); ?></label>
+										<?php endif; ?>
+									<?php else : ?>
+										<?php esc_html_e( 'Sin token guardado.', 'oec-theme' ); ?>
 									<?php endif; ?>
+									</span>
 									<label for="oec-vimeo-cat" style="margin-top:.75rem;display:block;"><?php esc_html_e( 'Categoría de los videos', 'oec-theme' ); ?></label>
 									<input type="text" id="oec-vimeo-cat"
 									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_category]"
