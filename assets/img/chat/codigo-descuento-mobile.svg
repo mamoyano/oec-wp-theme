@@ -1,38 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 520" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 540" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif">
   <title>Dónde se carga el código de descuento en el checkout (celular)</title>
-  <rect width="400" height="520" rx="14" fill="#f8fafc"/>
+  <rect width="400" height="540" rx="14" fill="#f8fafc"/>
   <!-- Paso 1 -->
   <circle cx="30" cy="32" r="13" fill="#f97316"/><text x="30" y="37" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">1</text>
-  <text x="52" y="29" font-size="13.5" font-weight="700" fill="#0f172a">Abajo de la pantalla, tocá la flecha</text>
-  <text x="52" y="46" font-size="13.5" font-weight="700" fill="#0f172a">que está junto al «Total»</text>
+  <text x="52" y="29" font-size="13.5" font-weight="700" fill="#0f172a">Abajo de la pantalla, tocá</text>
+  <text x="52" y="46" font-size="13.5" font-weight="700" fill="#0f172a">el botón «Agregar código»</text>
   <g opacity=".5">
-    <rect x="16" y="62" width="368" height="74" fill="#fff" stroke="#e2e8f0"/>
-    <text x="34" y="88" font-size="13" font-weight="700" fill="#0f172a">Tus datos</text>
-    <rect x="34" y="100" width="332" height="28" rx="8" fill="#fff" stroke="#e2e8f0"/>
-    <text x="46" y="119" font-size="11" fill="#94a3b8">Tu nombre</text>
+    <rect x="16" y="62" width="368" height="70" fill="#fff" stroke="#e2e8f0"/>
+    <rect x="34" y="78" width="332" height="38" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+    <circle cx="54" cy="97" r="7" fill="#fff" stroke="#2563eb" stroke-width="4"/>
+    <text x="70" y="101" font-size="12" fill="#1e3a8a">Formación completa</text>
   </g>
-  <rect x="16" y="136" width="368" height="58" fill="#fff" stroke="#e2e8f0"/>
-  <text x="34" y="171" font-size="14" fill="#0f172a">Total</text>
-  <text x="318" y="173" font-size="18" font-weight="800" text-anchor="end" fill="#0f172a">$ 000.000</text>
-  <circle cx="350" cy="165" r="19" fill="none" stroke="#f97316" stroke-width="3"/>
-  <path d="M341 170 L350 160 L359 170" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M350 232 V200" stroke="#f97316" stroke-width="4" stroke-linecap="round"/>
-  <path d="M340 204 L350 189 L360 204 Z" fill="#f97316"/>
+  <rect x="16" y="132" width="368" height="76" fill="#fff" stroke="#e2e8f0"/>
+  <text x="34" y="156" font-size="12" fill="#475569">Total</text>
+  <text x="70" y="156" font-size="12" font-weight="600" fill="#2563eb">Ver detalle ⌃</text>
+  <text x="34" y="188" font-size="20" font-weight="800" fill="#0f172a">$ 000.000</text>
+  <rect x="214" y="151" width="156" height="40" rx="20" fill="#eff6ff" stroke="#f97316" stroke-width="3"/>
+  <path d="M228 171 l8-8 h8 v8 l-8 8 z" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="239" cy="168" r="1.6" fill="#2563eb"/>
+  <text x="252" y="176" font-size="13.5" font-weight="700" fill="#1d4ed8">Agregar código</text>
+  <path d="M297 248 V214" stroke="#f97316" stroke-width="4" stroke-linecap="round"/>
+  <path d="M287 218 L297 203 L307 218 Z" fill="#f97316"/>
   <!-- Paso 2 -->
-  <circle cx="30" cy="262" r="13" fill="#f97316"/><text x="30" y="267" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">2</text>
-  <text x="52" y="259" font-size="13.5" font-weight="700" fill="#0f172a">Se abre el «Resumen de compra»:</text>
-  <text x="52" y="276" font-size="13.5" font-weight="700" fill="#0f172a">escribí tu código y tocá «Aplicar»</text>
-  <rect x="16" y="292" width="368" height="212" rx="12" fill="#fff" stroke="#e2e8f0"/>
-  <text x="34" y="322" font-size="14" font-weight="700" fill="#0f172a">Resumen de compra</text>
-  <text x="34" y="350" font-size="12.5" fill="#475569">Subtotal</text>
-  <text x="366" y="350" font-size="12.5" text-anchor="end" fill="#0f172a">$ 000.000</text>
-  <text x="34" y="380" font-size="13" font-weight="600" fill="#0f172a">Código de descuento</text>
-  <rect x="34" y="392" width="238" height="38" rx="9" fill="#fff" stroke="#f97316" stroke-width="3"/>
-  <text x="48" y="416" font-size="12.5" fill="#94a3b8">Código de descuento</text>
-  <rect x="282" y="392" width="84" height="38" rx="9" fill="#0f172a"/>
-  <text x="324" y="416" font-size="13" font-weight="700" text-anchor="middle" fill="#fff">Aplicar</text>
-  <line x1="16" y1="448" x2="384" y2="448" stroke="#eef2f7"/>
-  <text x="34" y="482" font-size="14" fill="#0f172a">Total</text>
-  <text x="318" y="484" font-size="18" font-weight="800" text-anchor="end" fill="#0f172a">$ 000.000</text>
-  <path d="M341 474 L350 484 L359 474" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="30" cy="282" r="13" fill="#f97316"/><text x="30" y="287" text-anchor="middle" font-size="14" font-weight="800" fill="#fff">2</text>
+  <text x="52" y="279" font-size="13.5" font-weight="700" fill="#0f172a">Te lleva al campo del código:</text>
+  <text x="52" y="296" font-size="13.5" font-weight="700" fill="#0f172a">pegalo y tocá «Aplicar»</text>
+  <rect x="16" y="312" width="368" height="148" rx="12" fill="#fff" stroke="#e2e8f0"/>
+  <circle cx="50" cy="346" r="16" fill="#eff6ff"/>
+  <path d="M43 346 l7-7 h7 v7 l-7 7 z" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="53" cy="343" r="1.5" fill="#2563eb"/>
+  <text x="76" y="351" font-size="13.5" font-weight="600" fill="#0f172a">¿Tienes un código de descuento?</text>
+  <path d="M350 350 L358 342 L366 350" fill="none" stroke="#64748b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="34" y="380" width="238" height="44" rx="10" fill="#fff" stroke="#f97316" stroke-width="3"/>
+  <text x="50" y="407" font-size="13" fill="#94a3b8">Código de descuento</text>
+  <rect x="282" y="380" width="84" height="44" rx="10" fill="#0f172a"/>
+  <text x="324" y="407" font-size="13.5" font-weight="700" text-anchor="middle" fill="#fff">Aplicar</text>
+  <g opacity=".5">
+    <text x="34" y="490" font-size="14" font-weight="700" fill="#0f172a">Tus datos</text>
+    <rect x="34" y="502" width="332" height="26" rx="8" fill="#fff" stroke="#e2e8f0"/>
+    <text x="46" y="519" font-size="11" fill="#94a3b8">Tu nombre</text>
+  </g>
 </svg>
