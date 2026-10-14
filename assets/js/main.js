@@ -517,7 +517,8 @@
       const it = items[i].dataset;
       items.forEach((b, j) => { if (j === i) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
       box.querySelector('[data-clases-title]').textContent = it.title;
-      box.querySelector('[data-clases-desc]').textContent = it.desc;
+      // data-desc es HTML armado y escapado en el servidor (con el link al curso).
+      box.querySelector('[data-clases-desc]').innerHTML = it.desc;
       box.querySelectorAll('[data-clases-more]').forEach((a) => { a.href = it.more; a.hidden = !it.more; });
       box.querySelector('[data-clases-dur]').textContent = it.dur;
       poster.style.backgroundImage = `url('${it.thumb}')`;

@@ -811,7 +811,21 @@ function oec_render_settings_page(): void {
 										<?php esc_html_e( 'Por tag:', 'oec-theme' ); ?> <?php echo esc_html( implode( ' · ', array_map( fn( $t, $n ) => "$t ($n)", array_keys( array_slice( $vs['tags'], 0, 12, true ) ), array_slice( $vs['tags'], 0, 12, true ) ) ) ); ?><br>
 										<?php endif; ?>
 										<?php if ( $vs['sin_link'] ) : ?>
-										<span style="color:#b45309;"><?php echo esc_html( sprintf( __( '%d sin link a un curso en la descripción (no muestran "Ver el curso completo").', 'oec-theme' ), $vs['sin_link'] ) ); ?></span><br>
+										<span style="color:#b45309;"><?php echo esc_html( sprintf( __( '%d sin curso reconocido en la descripción: se muestran sin link (el nombre del curso tiene que estar escrito igual que en el catálogo).', 'oec-theme' ), $vs['sin_link'] ) ); ?></span><br>
+										<?php endif; ?>
+										<?php if ( ! empty( $vs['lista'] ) ) : ?>
+										<details style="margin:.35rem 0;">
+											<summary style="cursor:pointer;"><?php esc_html_e( 'Ver los videos, con sus tags y su curso', 'oec-theme' ); ?></summary>
+											<ul style="margin:.4rem 0 0 1.2rem;list-style:disc;">
+												<?php foreach ( $vs['lista'] as $lv ) : ?>
+												<li>
+													<a href="<?php echo esc_url( $lv['url'] ); ?>" target="_blank" rel="noopener"><?php echo esc_html( $lv['title'] ); ?></a>
+													— <?php esc_html_e( 'tags:', 'oec-theme' ); ?> <?php echo $lv['tags'] ? esc_html( implode( ', ', $lv['tags'] ) ) : '<em>' . esc_html__( 'ninguno', 'oec-theme' ) . '</em>'; ?>
+													— <?php esc_html_e( 'curso:', 'oec-theme' ); ?> <?php echo $lv['curso'] ? esc_html( $lv['curso'] ) : '<em>' . esc_html__( 'no reconocido', 'oec-theme' ) . '</em>'; ?>
+												</li>
+												<?php endforeach; ?>
+											</ul>
+										</details>
 										<?php endif; ?>
 										<?php if ( ! $vs['n'] && $vs['cats'] ) : ?>
 										<span style="color:#b45309;"><?php esc_html_e( 'Ningún video coincide con la categoría. Categorías encontradas en la cuenta:', 'oec-theme' ); ?> <?php echo esc_html( implode( ', ', array_map( fn( $c, $n ) => "$c ($n)", array_keys( $vs['cats'] ), $vs['cats'] ) ) ); ?>.

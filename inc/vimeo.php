@@ -284,6 +284,66 @@ function oec_vimeo_video( array $v ): ?array {
 	];
 }
 
+/*
+ * El curso de la clase: en Vimeo la descripción nombra la formación con un
+ * enlace, pero la API da el texto sin el enlace. Se busca en la descripción
+ * el nombre de una formación del catálogo (abiertas y cerradas; gana el
+ * nombre más largo, a igualdad la abierta) y ese nombre queda como link a
+ * su ficha, igual que en Vimeo. Si la descripción trae una URL, sirve de
+ * respaldo. No hay botón aparte: el link está en el texto.
+ */
+function oec_vimeo_curso( string $texto ): ?array {
+	static $cat = null;
+	if ( null === $cat ) {
+		$cat = [];
+		$rows = class_exists( 'OEC_AI_Catalog' ) ? OEC_AI_Catalog::get_listing( true ) : [];
+		foreach ( $rows as $r ) { // abiertas primero (orden del listing)
+			$t = oec_vimeo_plano( (string) ( $r['title'] ?? '' ) );
+			if ( mb_strlen( $t ) >= 12 && ! isset( $cat[ $t ] ) ) {
+				$cat[ $t ] = $r;
+			}
+		}
+	}
+	$plano = oec_vimeo_plano( $texto );
+	$mejor = null;
+	foreach ( $cat as $t => $r ) {
+		$pos = mb_strpos( $plano, $t );
+		if ( false !== $pos && ( ! $mejor || mb_strlen( $t ) > $mejor['len'] ) ) {
+			$mejor = [ 'pos' => $pos, 'len' => mb_strlen( $t ), 'row' => $r ];
+		}
+	}
+	if ( ! $mejor ) {
+		return null;
+	}
+	return [
+		'pos'   => $mejor['pos'],
+		'len'   => $mejor['len'],
+		'title' => (string) $mejor['row']['title'],
+		'url'   => function_exists( 'oec_formation_url' ) ? oec_formation_url( $mejor['row'] ) : home_url( '/formacion/' . ( $mejor['row']['slug'] ?? '' ) ),
+	];
+}
+
+/** Minúsculas y sin tildes, con el mismo largo (para ubicar el nombre en el original). */
+function oec_vimeo_plano( string $s ): string {
+	return mb_strtolower( strtr( $s, [ 'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'Á' => 'a', 'É' => 'e', 'Í' => 'i', 'Ó' => 'o', 'Ú' => 'u', 'Ü' => 'u' ] ) );
+}
+
+/** Descripción en HTML: el nombre del curso enlazado a su ficha. */
+function oec_vimeo_desc_html( array $v ): string {
+	$texto = (string) $v['description'];
+	$c     = oec_vimeo_curso( $texto );
+	if ( $c ) {
+		return esc_html( mb_substr( $texto, 0, $c['pos'] ) )
+			. '<a href="' . esc_url( $c['url'] ) . '">' . esc_html( mb_substr( $texto, $c['pos'], $c['len'] ) ) . '</a>'
+			. esc_html( mb_substr( $texto, $c['pos'] + $c['len'] ) );
+	}
+	$html = esc_html( $texto );
+	if ( ! empty( $v['more'] ) ) { // sin nombre reconocido, pero con URL en la descripción
+		$html .= ' <a href="' . esc_url( $v['more'] ) . '">' . esc_html__( 'Ver el curso', 'oec-theme' ) . '</a>';
+	}
+	return $html;
+}
+
 /**
  * Biblioteca guardada. Si nunca se trajo o venció, la recorrida se hace en
  * segundo plano (WP-Cron): la visita nunca espera a Vimeo. Mientras no
@@ -393,7 +453,14 @@ function oec_vimeo_status(): array {
 		'tags'     => $tags,
 		'cats'     => (array) ( $lib['cats'] ?? [] ),
 		'buscada'  => (array) ( $lib['buscada'] ?? [] ),
-		'sin_link' => count( array_filter( (array) $lib['videos'], fn( $v ) => '' === $v['more'] ) ),
+		'sin_link' => count( array_filter( (array) $lib['videos'], fn( $v ) => '' === $v['more'] && ! oec_vimeo_curso( (string) $v['description'] ) ) ),
+		// Cada video con sus tags y su curso, para revisar desde el admin.
+		'lista'    => array_map( fn( $v ) => [
+			'title' => $v['title'],
+			'url'   => $v['url'],
+			'tags'  => $v['tags'],
+			'curso' => ( oec_vimeo_curso( (string) $v['description'] )['title'] ?? '' ) ?: $v['more'],
+		], array_slice( (array) $lib['videos'], 0, 60 ) ),
 		'error'    => $fail ?: (string) ( $lib['error'] ?? '' ),
 		'job'      => $curso, // recorrida en curso (null si no hay)
 	];

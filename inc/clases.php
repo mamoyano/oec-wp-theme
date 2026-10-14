@@ -93,6 +93,9 @@ function oec_render_clases_shortcode( $atts, $content = '' ): string {
 	$tem    = null === $atts['tematica'] ? ( function_exists( 'oec_vimeo_tematica_actual' ) ? oec_vimeo_tematica_actual() : '' ) : sanitize_title( $atts['tematica'] );
 	$clases = function_exists( 'oec_vimeo_videos' ) ? array_slice( oec_vimeo_videos( $tem ), 0, $max ) : [];
 	if ( $clases ) {
+		// El link al curso va en la descripción (el nombre del curso, como en
+		// Vimeo), no en un botón "Ver el curso completo".
+		$clases = array_map( fn( $c ) => [ 'desc_html' => oec_vimeo_desc_html( $c ), 'more' => '' ] + $c, $clases );
 		return oec_render_clases( $clases, $atts['title'] );
 	}
 
@@ -167,7 +170,7 @@ function oec_render_clases( array $clases, string $title ): string {
 				</div>
 				<div class="oec-clases__info">
 					<h3 class="oec-clases__title" data-clases-title><?php echo esc_html( $first['title'] ); ?></h3>
-					<p class="oec-clases__desc" data-clases-desc><?php echo esc_html( $first['description'] ); ?></p>
+					<p class="oec-clases__desc" data-clases-desc><?php echo $first['desc_html'] ?? esc_html( $first['description'] ); // phpcs:ignore WordPress.Security.EscapeOutput -- armado escapado en oec_vimeo_desc_html() ?></p>
 					<a class="oec-cierres__more" data-clases-more href="<?php echo esc_url( $first['more'] ); ?>"<?php echo $first['more'] ? '' : ' hidden'; ?>><?php esc_html_e( 'Ver el curso completo', 'oec-theme' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
 				</div>
 			</div>
@@ -179,7 +182,7 @@ function oec_render_clases( array $clases, string $title ): string {
 					        data-id="<?php echo (int) $c['id']; ?>"
 					        data-h="<?php echo esc_attr( $c['h'] ?? '' ); ?>"
 					        data-title="<?php echo esc_attr( $c['title'] ); ?>"
-					        data-desc="<?php echo esc_attr( $c['description'] ); ?>"
+					        data-desc="<?php echo esc_attr( $c['desc_html'] ?? esc_html( $c['description'] ) ); ?>"
 					        data-more="<?php echo esc_url( $c['more'] ); ?>"
 					        data-thumb="<?php echo esc_url( $c['thumb'] ); ?>"
 					        data-dur="<?php echo esc_attr( oec_duracion( $c['duration'] ) ); ?>"
