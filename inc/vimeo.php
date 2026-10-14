@@ -13,6 +13,10 @@ defined( 'ABSPATH' ) || exit;
    - El link al curso sale de la descripción del video: la primera URL que
      apunte a una ficha (/formacion/…), o si no la primera URL. En el texto
      que se muestra, las URLs se sacan.
+   - Al azar: cada vez que se conecta a Vimeo, el orden de todos los videos
+     se sortea y se guarda. Cada página muestra los primeros de su temática
+     en ese orden ([oec-clases] max="7"): mismas clases y mismo orden para
+     todos hasta la próxima conexión (y la página queda cacheada igual).
    - La biblioteca se guarda (opción oec_vimeo_lib) y se renueva cada
      OEC_VIMEO_TTL en segundo plano (WP-Cron): las visitas nunca esperan a
      Vimeo, salvo la primera de todas. Ajustes → Integraciones tiene
@@ -97,6 +101,7 @@ function oec_vimeo_fetch() {
 	}
 
 	arsort( $cats );
+	shuffle( $videos ); // el sorteo: dura hasta la próxima conexión
 	$lib = [ 'time' => time(), 'videos' => $videos, 'total' => $total, 'cats' => $cats, 'error' => '' ];
 	update_option( OEC_VIMEO_OPTION, $lib, false );
 	return $lib;
@@ -144,7 +149,8 @@ function oec_vimeo_video( array $v ): ?array {
 		'url'         => (string) ( $v['link'] ?? 'https://vimeo.com/' . $id ),
 		'thumb'       => $base ? $base . '-d_1280' : '',
 		'duration'    => (int) ( $v['duration'] ?? 0 ),
-		'date'        => substr( (string) ( $v['release_time'] ?? $v['created_time'] ?? '' ), 0, 10 ),
+		// Fecha y hora con zona (ISO 8601): va tal cual al uploadDate del JSON-LD.
+		'date'        => (string) ( $v['release_time'] ?? $v['created_time'] ?? '' ),
 		// Nombre del tag tal cual ("nutricion-deportiva"); el "canonical" de
 		// Vimeo puede venir sin guiones, por eso se compara sin ellos.
 		'tags'        => array_values( array_unique( array_filter( array_map(

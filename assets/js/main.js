@@ -506,22 +506,6 @@
     const endBox = box.querySelector('[data-clases-end]');
     const next   = box.querySelector('[data-clases-next]');
 
-    // Clases de Vimeo (inc/vimeo.php): vienen todas las de la temática y
-    // acá se eligen "max" al azar, en orden al azar, en cada visita.
-    const max = Number(box.dataset.max) || 0;
-    const lis = [...box.querySelectorAll('.oec-clases__list > li')];
-    if (max && lis.length > 1) {
-      const elegidas = mezclar(lis).slice(0, max);
-      lis.forEach((li) => { if (!elegidas.includes(li)) li.remove(); });
-      elegidas.forEach((li) => li.parentElement.appendChild(li));
-      // "7 clases completas, grabadas en vivo · 9 h 12 min para mirar gratis."
-      const seg = elegidas.reduce((t, li) => t + (Number(li.querySelector('[data-clase]').dataset.sec) || 0), 0);
-      const min = Math.round(seg / 60);
-      const dur = min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')} min` : `${Math.max(1, min)} min`;
-      const sub = box.querySelector('[data-clases-sub]');
-      if (sub) sub.textContent = `${elegidas.length} clases completas, grabadas en vivo · ${dur} para mirar gratis.`;
-    }
-
     const items  = [...box.querySelectorAll('[data-clase]')];
     if (!player || !items.length) return;
 
@@ -595,8 +579,6 @@
     igualar();
     window.addEventListener('resize', igualar);
 
-    // La primera del sorteo es la que muestra el reproductor.
-    if (max) pintar(0);
     poster.addEventListener('click', () => reproducir(actual));
     items.forEach((b, i) => b.addEventListener('click', () => reproducir(i)));
     box.querySelector('[data-clases-cancel]')?.addEventListener('click', cortarCuenta);

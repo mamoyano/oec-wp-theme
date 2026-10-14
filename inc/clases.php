@@ -18,11 +18,13 @@ defined( 'ABSPATH' ) || exit;
 
    Con el token de Vimeo (inc/vimeo.php) las clases salen solas de la
    cuenta — categoría "Educativo" —: en el home, todas; en una landing,
-   las del tag de su temática (la detecta sola, o tematica="…"). El
-   navegador elige "max" (7) al azar y en orden al azar en cada visita
-   (Cloudflare cachea la página: un sorteo en PHP sería igual para todos
-   durante horas). Sin token, o si no hay videos para esa temática, se usa
-   la lista cargada a mano adentro del shortcode.
+   las del tag de su temática (la detecta sola, o tematica="…"). Salen
+   las primeras "max" (7) del orden al azar que se sortea cada vez que el
+   tema se conecta a Vimeo (inc/vimeo.php): mismas clases y mismo orden
+   para todos hasta la próxima conexión. El HTML trae solo esas, así el
+   JSON-LD VideoObject describe exactamente los videos que se ven. Sin
+   token, o si no hay videos para esa temática, se usa la lista cargada a
+   mano adentro del shortcode.
 
    [oec-clases title="…" max="7"]  (tematica="nutricion-deportiva" opcional)
    ============================================================ */
@@ -89,9 +91,9 @@ function oec_render_clases_shortcode( $atts, $content = '' ): string {
 
 	// Desde Vimeo (inc/vimeo.php), si hay token y videos para esta temática.
 	$tem    = null === $atts['tematica'] ? ( function_exists( 'oec_vimeo_tematica_actual' ) ? oec_vimeo_tematica_actual() : '' ) : sanitize_title( $atts['tematica'] );
-	$clases = function_exists( 'oec_vimeo_videos' ) ? array_slice( oec_vimeo_videos( $tem ), 0, 40 ) : [];
+	$clases = function_exists( 'oec_vimeo_videos' ) ? array_slice( oec_vimeo_videos( $tem ), 0, $max ) : [];
 	if ( $clases ) {
-		return oec_render_clases( $clases, $atts['title'], $max, true );
+		return oec_render_clases( $clases, $atts['title'] );
 	}
 
 	// Si no, las [oec-clase] de adentro: se leen sus atributos, no se ejecutan.
@@ -116,30 +118,29 @@ function oec_render_clases_shortcode( $atts, $content = '' ): string {
 	if ( ! $clases ) {
 		return '';
 	}
-	// La lista a mano se muestra entera y en su orden (max = todas).
-	return oec_render_clases( $clases, $atts['title'], count( $clases ), false );
+	// La lista a mano se muestra entera y en su orden.
+	return oec_render_clases( $clases, $atts['title'] );
 }
 
 /**
  * Reproductor + lista. $clases: id, h (hash de los videos ocultos), title,
- * description, more (URL absoluta), thumb, duration, date, url. Vienen
- * todas en el HTML. $azar (las de Vimeo): main.js elige $max al azar y las
- * ordena al azar; la lista a mano se muestra tal cual.
+ * description, more (URL absoluta), thumb, duration, date, url — en el
+ * orden en que se muestran.
  */
-function oec_render_clases( array $clases, string $title, int $max, bool $azar ): string {
-	$total = array_sum( array_column( array_slice( $clases, 0, $max ), 'duration' ) );
+function oec_render_clases( array $clases, string $title ): string {
+	$total = array_sum( array_column( $clases, 'duration' ) );
 	$first = $clases[0];
 	$atts  = [ 'title' => $title ];
 
 	ob_start();
 	?>
-	<section class="oec-clases" data-oec-clases<?php echo $azar ? ' data-max="' . (int) $max . '"' : ''; ?> aria-labelledby="oec-clases-title">
+	<section class="oec-clases" data-oec-clases aria-labelledby="oec-clases-title">
 		<div class="oec-clases__head">
 			<span class="oec-agenda__eyebrow"><i class="bi bi-play-btn-fill" aria-hidden="true"></i> <?php esc_html_e( 'Clases abiertas', 'oec-theme' ); ?></span>
 			<h2 class="oec-agenda__title" id="oec-clases-title"><?php echo esc_html( $atts['title'] ); ?></h2>
-			<p class="oec-agenda__sub" data-clases-sub>
+			<p class="oec-agenda__sub">
 				<?php
-				$n = min( $max, count( $clases ) );
+				$n = count( $clases );
 				printf(
 					/* translators: 1: cantidad de clases, 2: duración total */
 					esc_html( _n( '%1$s clase completa, grabada en vivo · %2$s para mirar gratis.', '%1$s clases completas, grabadas en vivo · %2$s para mirar gratis.', $n, 'oec-theme' ) ),
@@ -177,7 +178,6 @@ function oec_render_clases( array $clases, string $title, int $max, bool $azar )
 					<button type="button" class="oec-clase" data-clase
 					        data-id="<?php echo (int) $c['id']; ?>"
 					        data-h="<?php echo esc_attr( $c['h'] ?? '' ); ?>"
-					        data-sec="<?php echo (int) $c['duration']; ?>"
 					        data-title="<?php echo esc_attr( $c['title'] ); ?>"
 					        data-desc="<?php echo esc_attr( $c['description'] ); ?>"
 					        data-more="<?php echo esc_url( $c['more'] ); ?>"
@@ -207,7 +207,8 @@ function oec_render_clases( array $clases, string $title, int $max, bool $azar )
 				'name'         => $c['title'],
 				'description'  => $c['description'] ?: $c['title'],
 				'thumbnailUrl' => $c['thumb'],
-				// Google exige fecha+hora con zona (ISO 8601); Vimeo solo da el día.
+				// Google exige fecha+hora con zona (ISO 8601): las de la API de
+				// Vimeo ya la traen; las del oEmbed (lista a mano), solo el día.
 				'uploadDate'   => $c['date'] ? ( new DateTime( $c['date'], wp_timezone() ) )->format( 'c' ) : null,
 				'duration'     => $c['duration'] ? 'PT' . $c['duration'] . 'S' : null,
 				'embedUrl'     => 'https://player.vimeo.com/video/' . $c['id'] . ( ! empty( $c['h'] ) ? '?h=' . $c['h'] : '' ),
