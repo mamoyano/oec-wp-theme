@@ -29,6 +29,8 @@ function oec_get_defaults(): array {
 		'oec_chat_kb'        => '', // vacío = OEC_AI_Chat::default_kb()
 		'oec_chat_whatsapp'  => '', // vacío = OEC_NL_WHATSAPP
 		'credits_api_key'    => '',
+		'vimeo_token'        => '', // clases de [oec-clases] desde la cuenta de Vimeo (inc/vimeo.php)
+		'vimeo_category'     => 'Educativo',
 		'catalog_sync_time'  => '03:00', // hora local del sync diario del catálogo (ver OEC_AI_Catalog::schedule())
 		// Revisor de contenidos (inc/content-reviewer.php)
 		'reviewer_mode'      => 'off',   // off | simulate | on
@@ -160,6 +162,14 @@ function oec_sanitize_options( $raw ): array {
 		(array) ( $raw['oec_api_tokens'] ?? [] )
 	), fn( $t ) => '' !== $t && $t !== $clean['oec_api_token'] ) ) );
 	$clean['credits_api_key'] = sanitize_text_field( $raw['credits_api_key'] ?? '' );
+	$clean['vimeo_token']     = sanitize_text_field( $raw['vimeo_token'] ?? '' );
+	$clean['vimeo_category']  = sanitize_text_field( $raw['vimeo_category'] ?? '' ) ?: $defaults['vimeo_category'];
+	// Token o categoría nuevos: la próxima visita vuelve a traer los videos.
+	$prev = oec_get_options();
+	if ( $clean['vimeo_token'] !== ( $prev['vimeo_token'] ?? '' ) || $clean['vimeo_category'] !== ( $prev['vimeo_category'] ?? '' ) ) {
+		delete_option( 'oec_vimeo_lib' );
+		delete_transient( 'oec_vimeo_fail' );
+	}
 	$time                       = (string) ( $raw['catalog_sync_time'] ?? '' );
 	$clean['catalog_sync_time'] = preg_match( '/^([01]\d|2[0-3]):[0-5]\d$/', $time ) ? $time : $defaults['catalog_sync_time'];
 
@@ -238,7 +248,7 @@ function oec_admin_section_keys(): array {
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
 		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp' ],
 		'revisor'         => [ 'reviewer_mode', 'reviewer_time', 'reviewer_email' ],
-		'integraciones'   => [ 'credits_api_key', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
+		'integraciones'   => [ 'credits_api_key', 'vimeo_token', 'vimeo_category', 'gtm_id', 'meta_pixel_id', 'ms_clarity_id' ],
 		'actualizaciones' => [],
 		'conversaciones'  => [],
 	];
@@ -668,6 +678,70 @@ function oec_render_settings_page(): void {
 										<?php esc_html_e( 'Clave de la API de api.onlineeducation.center/contable. Nunca se expone al navegador.', 'oec-theme' ); ?>
 										<?php if ( $opts['credits_api_key'] ) : ?>
 										<br><span style="color:#1e7e34;font-weight:600;">✓ <?php esc_html_e( 'Clave configurada — sistema de créditos activo.', 'oec-theme' ); ?></span>
+										<?php endif; ?>
+									</p>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<!-- Vimeo: clases de [oec-clases] (inc/vimeo.php) -->
+					<?php $vs = function_exists( 'oec_vimeo_status' ) ? oec_vimeo_status() : []; ?>
+					<div class="oec-card">
+						<div class="oec-card__header">
+							<h2><?php esc_html_e( 'Vimeo', 'oec-theme' ); ?></h2>
+							<p><?php esc_html_e( 'Las clases abiertas del home y de las landings salen de la cuenta de Vimeo: los videos de la categoría indicada, filtrados en cada landing por el tag de su temática (nutricion-deportiva, fuerza…). El link al curso se toma de la descripción del video. Se muestran hasta 7, al azar, en cada visita.', 'oec-theme' ); ?></p>
+						</div>
+						<div class="oec-card__body">
+							<div class="oec-tracker-row">
+								<div class="oec-tracker-row__head">
+									<div class="oec-tracker-logo" style="background:#17d5ff;color:#0b1f2a;font-size:.6rem;font-weight:900;">VIMEO</div>
+									<div>
+										<strong><?php esc_html_e( 'Token de acceso', 'oec-theme' ); ?></strong>
+										<p><?php esc_html_e( 'developer.vimeo.com → My Apps → tu app → Generate access token (Authenticated, permisos Public y Private).', 'oec-theme' ); ?></p>
+									</div>
+									<div class="oec-tracker-status">
+										<?php oec_tracker_badge( $opts['vimeo_token'] ); ?>
+									</div>
+								</div>
+								<div class="oec-tracker-row__field">
+									<label for="oec-vimeo-token"><?php esc_html_e( 'Token', 'oec-theme' ); ?></label>
+									<input type="password" id="oec-vimeo-token"
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_token]"
+									       value="<?php echo esc_attr( $opts['vimeo_token'] ); ?>"
+									       class="regular-text oec-tracker-input" data-tracker="vimeo_token"
+									       autocomplete="new-password" spellcheck="false">
+									<label for="oec-vimeo-cat" style="margin-top:.75rem;display:block;"><?php esc_html_e( 'Categoría de los videos', 'oec-theme' ); ?></label>
+									<input type="text" id="oec-vimeo-cat"
+									       name="<?php echo esc_attr( OEC_OPTION ); ?>[vimeo_category]"
+									       value="<?php echo esc_attr( $opts['vimeo_category'] ); ?>"
+									       class="regular-text" placeholder="Educativo">
+									<p class="description">
+										<?php if ( ! empty( $vs['time'] ) ) : ?>
+										<span style="color:#1e7e34;font-weight:600;">✓
+										<?php
+										printf(
+											/* translators: 1: videos de la categoría, 2: videos de la cuenta, 3: hace cuánto */
+											esc_html__( '%1$d videos de la categoría (de %2$d en la cuenta), actualizado hace %3$s.', 'oec-theme' ),
+											(int) $vs['n'], (int) $vs['total'], esc_html( human_time_diff( (int) $vs['time'] ) )
+										);
+										?>
+										</span><br>
+										<?php if ( $vs['tags'] ) : ?>
+										<?php esc_html_e( 'Por tag:', 'oec-theme' ); ?> <?php echo esc_html( implode( ' · ', array_map( fn( $t, $n ) => "$t ($n)", array_keys( array_slice( $vs['tags'], 0, 12, true ) ), array_slice( $vs['tags'], 0, 12, true ) ) ) ); ?><br>
+										<?php endif; ?>
+										<?php if ( $vs['sin_link'] ) : ?>
+										<span style="color:#b45309;"><?php echo esc_html( sprintf( __( '%d sin link a un curso en la descripción (no muestran "Ver el curso completo").', 'oec-theme' ), $vs['sin_link'] ) ); ?></span><br>
+										<?php endif; ?>
+										<?php if ( ! $vs['n'] && $vs['cats'] ) : ?>
+										<span style="color:#b45309;"><?php esc_html_e( 'Ningún video coincide con la categoría. Categorías encontradas en la cuenta:', 'oec-theme' ); ?> <?php echo esc_html( implode( ', ', array_keys( $vs['cats'] ) ) ); ?></span><br>
+										<?php endif; ?>
+										<?php endif; ?>
+										<?php if ( ! empty( $vs['error'] ) ) : ?>
+										<span style="color:#b32d2e;"><?php echo esc_html( $vs['error'] ); ?></span><br>
+										<?php endif; ?>
+										<?php if ( $opts['vimeo_token'] ) : ?>
+										<a class="button" style="margin-top:.5rem;" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=oec_vimeo_refresh' ), 'oec_vimeo_refresh' ) ); ?>"><?php esc_html_e( 'Actualizar ahora', 'oec-theme' ); ?></a>
 										<?php endif; ?>
 									</p>
 								</div>
