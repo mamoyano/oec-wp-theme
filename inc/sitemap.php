@@ -209,16 +209,36 @@ function oec_seo_cache_dir(): string {
 	$dir = trailingslashit( wp_upload_dir( null, false )['basedir'] ) . 'oec-seo';
 	if ( ! is_dir( $dir ) ) {
 		wp_mkdir_p( $dir );
-		file_put_contents( $dir . '/index.php', "<?php // Silence is golden.\n" );
+		@chmod( $dir, 0775 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+		oec_seo_write( $dir . '/index.php', "<?php // Silence is golden.\n" );
 	}
 	return $dir;
+}
+
+/**
+ * Escribe un archivo de la caché del sitemap con permiso de escritura para
+ * el grupo. En Cloudways el sitio corre con el usuario de la app y WP-CLI
+ * con el "master": comparten grupo, pero con 0644 los comandos de la
+ * terminal no podían reescribir lo que generó el sitio ("Permission denied"
+ * en sections.json) y el sitemap quedaba viejo. Si igual no se puede
+ * escribir, se saltea sin avisos: lo regenera el próximo pedido del sitio.
+ */
+function oec_seo_write( string $path, string $data ): bool {
+	if ( file_exists( $path ) ? ! is_writable( $path ) : ! is_writable( dirname( $path ) ) ) {
+		return false;
+	}
+	$ok = false !== file_put_contents( $path, $data, LOCK_EX );
+	if ( $ok ) {
+		@chmod( $path, 0664 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors
+	}
+	return $ok;
 }
 
 /** Qué se generó: [sección => ['pages' => n, 'lastmod' => [n => fecha]]]. */
 function oec_sitemap_state( ?array $save = null ): array {
 	$path = oec_seo_cache_dir() . '/sections.json';
 	if ( null !== $save ) {
-		file_put_contents( $path, wp_json_encode( $save ), LOCK_EX );
+		oec_seo_write( $path, (string) wp_json_encode( $save ) );
 		return $save;
 	}
 	$data = file_exists( $path ) ? json_decode( (string) file_get_contents( $path ), true ) : null;
@@ -315,7 +335,7 @@ function oec_sitemap_build( string $name ): array {
 	}
 	$lastmods = [];
 	foreach ( $chunks as $i => $chunk ) {
-		file_put_contents( "{$dir}/{$name}-" . ( $i + 1 ) . '.xml', oec_sitemap_urlset_xml( $chunk ), LOCK_EX );
+		oec_seo_write( "{$dir}/{$name}-" . ( $i + 1 ) . '.xml', oec_sitemap_urlset_xml( $chunk ) );
 		$dates             = array_filter( array_column( $chunk, 'lastmod' ) );
 		$lastmods[ $i + 1 ] = $dates ? max( $dates ) : '';
 	}
@@ -467,7 +487,7 @@ function oec_sitemap_hash( $data ): string {
 function oec_sitemap_lastmods_save(): void {
 	global $oec_sitemap_lastmods, $oec_sitemap_changed;
 	if ( null !== $oec_sitemap_lastmods ) {
-		file_put_contents( oec_seo_cache_dir() . '/lastmods.json', wp_json_encode( $oec_sitemap_lastmods ), LOCK_EX );
+		oec_seo_write( oec_seo_cache_dir() . '/lastmods.json', (string) wp_json_encode( $oec_sitemap_lastmods ) );
 	}
 	if ( $oec_sitemap_changed ) {
 		do_action( 'oec_seo_urls_changed', array_values( array_unique( $oec_sitemap_changed ) ) );
