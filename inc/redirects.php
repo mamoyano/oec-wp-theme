@@ -17,6 +17,8 @@ defined( 'ABSPATH' ) || exit;
      "-sa-{código}" (artículo no migrado) → búsqueda por el título
    - /especiales/{slug}     → landing de la temática o formaciones filtradas
    - /blogs, /blogs/page/N  → artículos filtrados por blogs
+   - páginas de los sitios viejos de las comunidades: /articulos-y-blogs,
+     /especiales, /cambiar-creditos, /newsletter y /socio
    - posts depurados        → 410 Gone (inc/redirects-gone.php)
    En la raíz (sitio principal):
    - /{página}              → /es/{página} (/links, /formaciones, /especiales/…)
@@ -228,8 +230,18 @@ function oec_redirect_es( string $rel ): ?string {
 	if ( 'formacion-incrustada' === $parts[0] && isset( $parts[1] ) ) {
 		return oec_redirect_formacion( $parts[1] );
 	}
-	if ( 'organizaciones-educativas' === $rel ) {
+	if ( 'organizaciones-educativas' === $rel || 'socio' === $rel ) {
 		return oec_organizaciones_url();
+	}
+	// Páginas de los sitios viejos de las comunidades (traumato.site…).
+	$viejas = [
+		'articulos-y-blogs' => oec_articulos_url( [] ),
+		'especiales'        => home_url( user_trailingslashit( '/formaciones' ) ),
+		'cambiar-creditos'  => home_url( user_trailingslashit( '/creditos-por-descuentos' ) ),
+		'newsletter'        => home_url( '/' ),
+	];
+	if ( isset( $viejas[ $rel ] ) && ! get_page_by_path( $rel ) ) {
+		return $viejas[ $rel ];
 	}
 	if ( 1 === count( $parts ) && ( $post = oec_redirect_truncado( $rel ) ?: oec_redirect_slug_viejo( $rel ) ) ) {
 		return $post;
