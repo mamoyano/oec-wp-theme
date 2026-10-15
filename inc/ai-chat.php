@@ -1879,12 +1879,44 @@ class OEC_AI_Chat {
 		} else {
 			$launch = __( 'Hola', 'oec-theme' );
 		}
-		return [ 'context' => $ctx, 'contextTitle' => $title, 'launch' => $launch, 'links' => (object) $links ];
+		return [
+			'context'      => $ctx,
+			'contextTitle' => $title,
+			'launch'       => $launch,
+			'links'        => (object) $links,
+			// WhatsApp con mensaje armado en el navegador: número, nombre del sitio y la
+			// página donde el asesor ve la conversación completa (sin entrar a WordPress).
+			'waNumber'     => self::whatsapp_number(),
+			'siteName'     => get_bloginfo( 'name' ),
+			'convUrl'      => home_url( '/?conversacion=' ),
+		];
 	}
 
+	/**
+	 * Número de WhatsApp para derivar (solo dígitos, con código de país). Se configura
+	 * en Ajustes; antes se guardaba un enlace completo, así que también se lo saca de
+	 * ahí. Sin nada cargado, el WhatsApp general del sitio.
+	 */
+	public static function whatsapp_number(): string {
+		$parse = static function ( string $v ): string {
+			if ( preg_match( '/(?:phone=|wa\.me\/)\+?(\d{8,15})/', $v, $m ) ) {
+				return $m[1];
+			}
+			$d = preg_replace( '/\D+/', '', $v );
+			return strlen( $d ) >= 8 && strlen( $d ) <= 15 ? $d : '';
+		};
+		return $parse( trim( (string) ( oec_get_options()['oec_chat_whatsapp'] ?? '' ) ) )
+			?: ( defined( 'OEC_NL_WHATSAPP' ) ? $parse( OEC_NL_WHATSAPP ) : '' );
+	}
+
+	/**
+	 * Enlace de WhatsApp para navegadores con el script viejo (HTML en caché): el
+	 * nuevo arma el mensaje en el momento, con la consulta y el enlace a la conversación.
+	 */
 	private static function whatsapp_url(): string {
-		$url = trim( (string) ( oec_get_options()['oec_chat_whatsapp'] ?? '' ) );
-		return $url ?: ( defined( 'OEC_NL_WHATSAPP' ) ? OEC_NL_WHATSAPP : '' );
+		$num = self::whatsapp_number();
+		/* translators: %s = nombre del sitio */
+		return $num ? 'https://wa.me/' . $num . '?text=' . rawurlencode( sprintf( __( 'Hola, vengo del chat de %s.', 'oec-theme' ), get_bloginfo( 'name' ) ) ) : '';
 	}
 
 	/**

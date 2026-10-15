@@ -28,6 +28,7 @@ class OEC_AI_Chat_Log {
 		add_action( self::CRON_HOOK, [ __CLASS__, 'purge' ] );
 		add_action( 'rest_api_init', [ __CLASS__, 'register_routes' ] );
 		add_action( 'admin_post_oec_chat_log_csv', [ __CLASS__, 'export_csv' ] );
+		add_action( 'template_redirect', [ __CLASS__, 'render_public' ], 0 );
 
 		// El borrado corre solo en el sitio de configuración (la tabla es una para toda la red).
 		add_action( 'init', static function () {
@@ -41,6 +42,76 @@ class OEC_AI_Chat_Log {
 				wp_schedule_event( strtotime( 'tomorrow 04:30:00' ), 'daily', self::CRON_HOOK );
 			}
 		} );
+	}
+
+	/* ── Conversación para el asesor (?conversacion=ID) ─────────
+	   El enlace viaja en el mensaje de WhatsApp que arma el chat al derivar: el
+	   asesor lee la conversación completa sin entrar a WordPress. Se llega solo con
+	   el identificador de la conversación (un UUID al azar que genera el navegador),
+	   no se indexa ni se guarda en ninguna caché, y dura lo que el registro (12 meses). */
+
+	public static function render_public(): void {
+		$cid = isset( $_GET['conversacion'] ) ? (string) wp_unslash( $_GET['conversacion'] ) : null; // phpcs:ignore WordPress.Security.NonceVerification
+		if ( null === $cid ) {
+			return;
+		}
+		nocache_headers();
+		header( 'Cache-Control: no-store, private, max-age=0' );
+		header( 'X-Robots-Tag: noindex, nofollow' );
+		header( 'Referrer-Policy: no-referrer' );
+		header( 'Content-Type: text/html; charset=utf-8' );
+
+		global $wpdb;
+		$rows = preg_match( '/^[A-Za-z0-9-]{16,40}$/', $cid )
+			? $wpdb->get_results( $wpdb->prepare( 'SELECT created_at, page, country, message, reply, ctx FROM ' . self::table() . ' WHERE cid = %s ORDER BY id ASC LIMIT 200', $cid ) ) // phpcs:ignore
+			: [];
+		$titles = $rows ? self::titles_by_id() : [];
+		$site   = get_bloginfo( 'name' );
+		$fmt    = static function ( string $text ): string {
+			$html = esc_html( trim( str_replace( '|||', "\n\n", $text ) ) );
+			$html = preg_replace( '/\*\*(.+?)\*\*/s', '<strong>$1</strong>', $html );
+			$html = preg_replace( '/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/', '<a href="$2" rel="noopener" target="_blank">$1</a>', $html );
+			$html = preg_replace( '/\[([^\]\n]+)\]\((?:WHATSAPP|INSCRIPCION|REGION)\)/', '$1', $html );
+			$html = preg_replace( '/!\[[^\]]*\]\([^)]*\)/', '', $html );
+			return wpautop( $html );
+		};
+		$where = static function ( string $ctx, string $page ) use ( $titles ): string {
+			if ( preg_match( '/^(formacion|cerrada):(.+)$/', $ctx, $m ) ) {
+				return ( 'cerrada' === $m[1] ? 'Ficha (inscripción cerrada): ' : 'Ficha: ' ) . ( $titles[ $m[2] ] ?? $m[2] );
+			}
+			if ( str_starts_with( $ctx, 'tematica:' ) ) {
+				return 'Landing: ' . substr( $ctx, 9 );
+			}
+			return $page;
+		};
+		?><!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow">
+<title><?php echo esc_html( sprintf( 'Conversación del chat · %s', $site ) ); ?></title>
+<style>
+body{margin:0;background:#f1f5f9;color:#0f172a;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20px}
+.turn{margin:0 0 18px}.meta{color:#64748b;font-size:12px;margin:0 0 6px}
+.q{background:#f59e0b;color:#fff;border-radius:14px 14px 2px 14px;padding:10px 14px;margin:0 0 8px auto;max-width:85%;width:fit-content}
+.a{background:#fff;border:1px solid #e2e8f0;border-radius:14px 14px 14px 2px;padding:4px 14px;max-width:92%}
+.a p{margin:.6em 0}.a a{color:#1d4ed8}.empty{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:20px}
+</style></head><body><main>
+<h1><?php echo esc_html( sprintf( 'Conversación con el asistente de %s', $site ) ); ?></h1>
+<?php if ( ! $rows ) : ?>
+	<p class="empty">No encontramos esta conversación. Puede que el enlace esté incompleto, que la conversación sea de hace más de <?php echo (int) self::RETENTION_MONTHS; ?> meses, o que la última respuesta todavía se esté guardando: probá de nuevo en unos segundos.</p>
+<?php else : ?>
+	<p class="sub"><?php echo esc_html( sprintf( '%d mensajes · %s · País: %s', count( $rows ), mysql2date( 'j \d\e F \d\e Y', $rows[0]->created_at ), $rows[0]->country ?: '—' ) ); ?></p>
+	<?php foreach ( $rows as $r ) : ?>
+	<div class="turn">
+		<p class="meta"><?php echo esc_html( mysql2date( 'H:i', $r->created_at ) . ' · ' . $where( (string) $r->ctx, (string) $r->page ) ); ?></p>
+		<div class="q"><?php echo nl2br( esc_html( $r->message ) ); ?></div>
+		<div class="a"><?php echo $fmt( (string) $r->reply ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado en $fmt ?></div>
+	</div>
+	<?php endforeach; ?>
+<?php endif; ?>
+</main></body></html>
+<?php
+		exit;
 	}
 
 	public static function table(): string {

@@ -52,6 +52,58 @@
     list.appendChild(row);
   }
 
+  // Parámetros de la PRIMERA visita (utm_*, fbclid, gclid, affcod…): se guardan 30 días
+  // para que lleguen al checkout aunque la persona después navegue a páginas sin ellos.
+  // Los propios del sitio (país, moneda, búsqueda, paginado) no cuentan.
+  const FIRST_KEY = 'oec_first_touch';
+  const SITE_PARAMS = ['country', 'currency', 'conversacion', 'q', 's', 'p', 'page', 'paged', 'oec_pg', 'preview', 'page_id'];
+  function pageParams() {
+    const out = [];
+    new URLSearchParams(location.search).forEach((v, k) => { if (v !== '' && SITE_PARAMS.indexOf(k) === -1) out.push([k, v]); });
+    return out;
+  }
+  function firstTouch() {
+    try {
+      const s = JSON.parse(localStorage.getItem(FIRST_KEY) || 'null');
+      return s && Date.now() - (s.ts || 0) < 30 * 864e5 && Array.isArray(s.params) ? s.params : [];
+    } catch (_) { return []; }
+  }
+  (function rememberFirstTouch() {
+    const now = pageParams();
+    if (now.length && !firstTouch().length) {
+      try { localStorage.setItem(FIRST_KEY, JSON.stringify({ ts: Date.now(), params: now })); } catch (_) {}
+    }
+  })();
+
+  // Inscripción: el checkout recibe todo lo que traiga la URL de esta página, lo de la
+  // primera visita que no esté en ella, y el código de afiliado que guarda la ficha.
+  function enrollLink() {
+    if (!chatLinks.INSCRIPCION) return '';
+    try {
+      const u = new URL(chatLinks.INSCRIPCION, location.href);
+      pageParams().concat(firstTouch()).forEach(([k, v]) => { if (!u.searchParams.has(k)) u.searchParams.set(k, v); });
+      if (!u.searchParams.has('affcod')) {
+        const s = JSON.parse(localStorage.getItem('AffiliateCode') || 'null');
+        if (s && s.value && (!s.expiry || Date.now() < s.expiry)) u.searchParams.set('affcod', s.value);
+      }
+      return u.toString();
+    } catch (_) { return chatLinks.INSCRIPCION; }
+  }
+
+  // WhatsApp: el mensaje le da contexto al asesor (dónde estaba, qué preguntó) y un
+  // enlace a la conversación completa, que se lee sin entrar a WordPress.
+  let lastQuestion = '';
+  function whatsappLink() {
+    if (!cfg.waNumber) return chatLinks.WHATSAPP || '';
+    const lines = ['Hola! Vengo del chat de ' + (cfg.siteName || 'la web') + '.'];
+    const t = pageTopic && pageTopic.k !== 'catalogo' ? pageTopic.t : '';
+    if (t) lines.push('Estaba viendo: ' + t + '.');
+    const q = String(lastQuestion || '').replace(/\s+/g, ' ').trim();
+    if (q) lines.push('Mi consulta: ' + (q.length > 220 ? q.slice(0, 217) + '…' : q));
+    if (cfg.convUrl && cid) lines.push('', 'Conversación con el asistente: ' + cfg.convUrl + encodeURIComponent(cid));
+    return 'https://wa.me/' + cfg.waNumber + '?text=' + encodeURIComponent(lines.join('\n'));
+  }
+
   // Cambia cada clave por su URL real; si esta página no la tiene, deja solo el texto.
   function resolveLinks(text) {
     return String(text)
@@ -60,7 +112,10 @@
       .replace(/\[([^\]\n]+)\]\((?:https?:\/\/)?(?:wa\.me|(?:[a-z]+\.)?whatsapp\.com)[^)\s]*\)/gi, '[$1](WHATSAPP)')
       .replace(/\[([^\]\n]+)\]\(REGION\)/g, (_, label) => window.oecRegion ? '[' + label + '](#oec-region)' : label)
       .replace(/\[([^\]\n]+)\]\((WHATSAPP|INSCRIPCION)\)/g,
-        (_, label, key) => chatLinks[key] ? '[' + label + '](' + chatLinks[key] + ')' : label);
+        (_, label, key) => {
+          const url = key === 'INSCRIPCION' ? enrollLink() : whatsappLink();
+          return url ? '[' + label + '](' + url + ')' : label;
+        });
   }
   const botName        = 'Asistente OEC';
 
@@ -82,9 +137,13 @@
   let saved = [];         // [{u: texto}] o [{a: texto con |||, f: tarjetas}]
 
   function newCid() {
-    return (window.crypto && crypto.randomUUID)
-      ? crypto.randomUUID()
-      : Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
+    // Al azar y largo: con este identificador se abre la conversación completa
+    // (enlace del mensaje de WhatsApp), así que no tiene que poder adivinarse.
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    if (window.crypto && crypto.getRandomValues) {
+      return Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    }
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
   }
 
   function loadConversation() {
@@ -680,6 +739,7 @@
   ];
 
   async function fetchReply(message) {
+    lastQuestion = message;
     let fullText   = '';   // complete reply text for history
     let bubText    = '';   // text for the current bubble only
     let bubble     = null;

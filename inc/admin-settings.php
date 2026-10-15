@@ -205,7 +205,14 @@ function oec_sanitize_options( $raw ): array {
 		$kb = '';
 	}
 	$clean['oec_chat_kb']       = $kb;
-	$clean['oec_chat_whatsapp'] = esc_url_raw( trim( (string) ( $raw['oec_chat_whatsapp'] ?? '' ) ) );
+	// Solo el número (con código de país): el mensaje lo arma el chat con la consulta y
+	// el enlace a la conversación. Si pegan un enlace de WhatsApp, se le saca el número.
+	$wa = trim( (string) ( $raw['oec_chat_whatsapp'] ?? '' ) );
+	if ( preg_match( '/(?:phone=|wa\.me\/)\+?(\d{8,15})/', $wa, $m ) ) {
+		$wa = $m[1];
+	}
+	$wa                         = preg_replace( '/\D+/', '', $wa );
+	$clean['oec_chat_whatsapp'] = strlen( $wa ) >= 8 && strlen( $wa ) <= 15 ? $wa : '';
 
 	// Revisor de contenidos
 	$mode                    = sanitize_key( $raw['reviewer_mode'] ?? '' );
@@ -1144,13 +1151,13 @@ function oec_render_settings_page(): void {
 								</p>
 							</div>
 							<div class="oec-tracker-row__field">
-								<label for="oec-chat-whatsapp"><?php esc_html_e( 'WhatsApp para derivar a una persona', 'oec-theme' ); ?></label>
-								<input type="url" id="oec-chat-whatsapp" class="large-text"
+								<label for="oec-chat-whatsapp"><?php esc_html_e( 'Número de WhatsApp para derivar a una persona', 'oec-theme' ); ?></label>
+								<input type="text" inputmode="numeric" id="oec-chat-whatsapp" class="regular-text"
 								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_chat_whatsapp]"
-								       value="<?php echo esc_attr( $opts['oec_chat_whatsapp'] ?? '' ); ?>"
-								       placeholder="<?php echo esc_attr( defined( 'OEC_NL_WHATSAPP' ) ? OEC_NL_WHATSAPP : 'https://api.whatsapp.com/send?phone=…' ); ?>">
+								       value="<?php echo esc_attr( class_exists( 'OEC_AI_Chat' ) && ! empty( $opts['oec_chat_whatsapp'] ) ? OEC_AI_Chat::whatsapp_number() : '' ); ?>"
+								       placeholder="5493512584960">
 								<p class="description">
-									<?php esc_html_e( 'El chat ofrece este enlace cuando piden hablar con una persona o no tiene el dato. Vacío = el WhatsApp general del sitio.', 'oec-theme' ); ?>
+									<?php esc_html_e( 'Solo el número, con código de país y sin +, espacios ni guiones. El mensaje lo arma el chat: incluye la consulta de la persona y un enlace para que el asesor lea la conversación completa, sin entrar a WordPress. Vacío = el WhatsApp general del sitio.', 'oec-theme' ); ?>
 								</p>
 							</div>
 							<div class="oec-tracker-row__field">
