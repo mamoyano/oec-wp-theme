@@ -2327,13 +2327,17 @@ TXT;
 	/** Texto por defecto del conocimiento de ventas (respuestas del equipo comercial, octubre 2026). */
 	public static function default_kb(): string {
 		$site = get_bloginfo( 'name' );
+		// Trayectoria de G-SE (solo en sus sitios): en línea desde 1999 como
+		// sobreentrenamiento.com; la copia más vieja en Web Archive es de octubre de 2000.
+		$gse     = false !== stripos( $site, 'Sobre Entrenamiento' ) || false !== stripos( (string) wp_parse_url( home_url(), PHP_URL_HOST ), 'g-se.com' );
+		$history = $gse ? "\n- Trayectoria: G-SE está en internet desde 1999, cuando se llamaba sobreentrenamiento.com. Se puede comprobar en Web Archive, que guarda una copia del sitio de octubre de 2000: https://web.archive.org/web/20001018030028/http://www.sobreentrenamiento.com/ (usalo si alguien duda de que seamos un servicio real o pregunta desde cuándo existimos)." : '';
 		return <<<TXT
 PAGOS
 - Cómo se paga, sea el medio que sea (tarjeta, transferencia, depósito, efectivo, PayPal…): SIEMPRE inscribiéndose por el checkout de la formación. Ahí se elige el medio de pago y el mismo sistema muestra y envía por mail los datos para completar el pago (por ejemplo, los datos bancarios para la transferencia). Nadie pasa datos de pago por chat, WhatsApp ni mail.
 - Cuotas: las formaciones con más de un módulo se pueden pagar módulo por módulo (cada módulo dura en general un mes), lo que funciona como cuotas. Además, si entre las formas de pago de la formación figuran PagoTic o Mercado Pago, esos medios ofrecen cuotas con interés. Si figura Klarna, permite comprar ahora y pagar después.
-- Pagar el Módulo 1 y después los siguientes: sí. El precio no cambia: se paga el que figura hoy. Los módulos se pueden pagar hasta un año después de terminada la formación; quien paga tarde solo pierde la interacción en vivo con los docentes, porque todo queda grabado.
+- Pagar el Módulo 1 y después los siguientes: sí. El precio no cambia: se paga el que figura hoy, salvo que hoy esté pagando con una promoción que tiene fecha de vencimiento. Los módulos se pueden pagar hasta un año después de terminada la formación; quien paga tarde solo pierde la interacción en vivo con los docentes, porque todo queda grabado. Pagar tarde da acceso al material, pero las evaluaciones se rinden en las fechas del calendario académico.
 - No se puede comprar un módulo suelto que no sea el primero: los módulos son consecutivos.
-- Pagando por módulos con tarjeta, el cobro se hace cada mes.
+- Pagando por módulos con tarjeta, cada módulo se paga por separado: el alumno genera el pago desde la administración del curso. No hay débitos automáticos.
 - Medios de pago: solo los que figuran en "Formas de pago" de cada formación (dependen del país). No ofrezcas otros.
 - Se puede pagar desde la cuenta de otra persona (paga otro, pero se inscribe y cursa quien hace la inscripción).
 - Comprar para un tercero (yo hago la inscripción y el pago, pero el alumno es otra persona: un regalo, mi pareja, mi hijo o hija, un empleado, un colega): es una venta especial y la gestiona una persona del equipo. No expliques cómo hacerlo por el checkout: derivá.
@@ -2343,7 +2347,7 @@ PAGOS
 - Confirmación del pago: con medios directos (tarjeta, PayPal) el mail de bienvenida llega al instante (revisar spam y promociones). Con medios indirectos (transferencia, depósito) hay que informar el pago en el sistema y una persona lo verifica: hasta 2 días hábiles. Pasado ese plazo, escribir a ventas@onlineeducation.center.
 
 CURSADA
-- Las clases en vivo, las conferencias y las sesiones de consulta quedan grabadas (con subtítulos). Se pueden ver mientras dure el acceso al campus: en formaciones sincrónicas, hasta 1 año después de que terminan; en asincrónicas, hasta 1 año después de que el alumno termina.
+- Las clases en vivo, las conferencias y las sesiones de consulta quedan grabadas (con subtítulos). Se pueden ver mientras dure el acceso al campus: en formaciones sincrónicas, hasta 1 año después de que terminan; en asincrónicas, hasta 1 año después de que el alumno hace el primer pago.
 - Quien se inscribe con el curso empezado puede ver todo lo anterior, incluso las preguntas de sus compañeros. No pierde contenido: solo la interacción en vivo de las clases ya dadas.
 - Días y horarios: si la ficha los indica ("Cómo se cursa"), usá eso. Si no los indica: en las formaciones sincrónicas los docentes proponen los horarios en vivo y quien no puede asistir no pierde nada porque queda grabado; en las asincrónicas todas las clases ya están grabadas.
 - Dentro del campus los horarios se muestran en el huso horario de cada alumno.
@@ -2355,10 +2359,10 @@ CURSADA
 - Presencial u online, en vivo o grabado: según la "Modalidad" y la "Sincronicidad" de cada formación.
 
 CERTIFICADOS
-- Reconocimiento: no se puede asegurar que se reconozca en todos los países; tiene el reconocimiento de las organizaciones que lo avalan, que figuran en el certificado. El diploma va acompañado de un certificado analítico con las asignaturas, los docentes y los contenidos.
+- Reconocimiento: no se puede asegurar que se reconozca en todos los países; tiene el reconocimiento de las organizaciones que lo avalan, que figuran en el certificado. El diploma va acompañado de un certificado analítico con las asignaturas, los docentes y los contenidos. Es un certificado de una entidad privada. No se hacen trámites de validación ni se envían certificados impresos.
 - No son habilitantes para ejercer (salvo que la descripción de un certificado lo diga): es formación complementaria.
 - Puntaje docente: no hay un trámite especial, pero en muchos institutos y profesorados de educación física de Argentina, Colombia y México, y en grados de CAFYD de España, se valoraron en la historia curricular de quienes aspiran a cargos docentes.
-- Se entrega al final de la formación, no por módulo. Una formación puede tener más de un certificado.
+- Se entrega al final de la formación, no por módulo. Una formación puede tener más de un certificado. No se entrega ningún certificado que no esté descripto en la formación, ni constancia de cursado.
 - Formato: la mayoría son digitales (PDF para descargar); el tipo de cada uno figura en la ficha.
 - Suele haber un certificado de asistencia para quien no rinde y otro de aprobación para quien rinde y aprueba: fijate cuáles tiene la formación.
 - No avalamos cursos de otras academias o instituciones.
@@ -2382,7 +2386,7 @@ INSCRIPCIÓN
 CONFIANZA
 - {$site} es una comunidad de Online Education Center (OEC), la empresa que opera la plataforma (https://onlineeducation.center/es). Por eso en el checkout puede aparecer el nombre "Online Education Center". Comunidades de OEC: G-SE, Traumato Site, Fisio One, Swimming Science, Voley, ISF.
 - Para mostrar que es un servicio real podés citar datos de la ficha (docentes, organizaciones que avalan, cantidad de alumnos, opiniones) y las redes oficiales.
-- No hay atención por teléfono ni por videollamada.
+- No hay atención por teléfono ni por videollamada.{$history}
 - Direcciones: 1901 60th Place, Suite L2389, Bradenton, FL 34203, USA; y Juan Antonio de Bárcena 121, Torre 1 – 3D, Villasol, Córdoba (5003), Argentina. Presencia administrativa en España, México, Chile y Colombia.
 TXT;
 	}
