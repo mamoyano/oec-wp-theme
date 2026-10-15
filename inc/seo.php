@@ -323,12 +323,13 @@ add_action( 'init', function () {
 
 // Ficha de formación: el plugin arma todo, pero su canonical dependía del
 // rel_canonical del core, que en producción no sale. Se imprime acá, con la
-// misma URL (data.canonical de la API → la comunidad dueña de la formación).
+// misma URL (data.canonical de la API → la comunidad dueña de la formación),
+// rearmada con la estructura nueva si es de este sitio (oec_local_canonical).
 add_action( 'wp_head', function () {
 	if ( is_page( 'formacion' ) && function_exists( 'oec_get_current_training_canonical' )
 		&& function_exists( 'oec_get_current_training_data' ) && oec_get_current_training_data() ) {
 		remove_action( 'wp_head', 'rel_canonical' );
-		echo '<link rel="canonical" href="' . esc_url( oec_get_current_training_canonical() ) . '">' . "\n";
+		echo '<link rel="canonical" href="' . esc_url( oec_local_canonical( (string) oec_get_current_training_canonical() ) ) . '">' . "\n";
 	}
 }, 2 );
 

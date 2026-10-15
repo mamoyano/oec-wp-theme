@@ -670,7 +670,7 @@ function oec_sitemap_formations( bool $open ): array {
 	$out = [];
 	foreach ( $rows as $r ) {
 		$f   = OEC_AI_Catalog::get_formation( (string) $r['id'] );
-		$loc = $f ? oec_sitemap_formation_loc( (string) ( $f['url'] ?? '' ) ) : '';
+		$loc = $f ? oec_sitemap_formation_loc( oec_local_canonical( (string) ( $f['url'] ?? '' ) ) ) : '';
 		if ( ! $loc ) {
 			continue;
 		}

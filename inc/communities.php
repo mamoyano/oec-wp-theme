@@ -70,6 +70,28 @@ function oec_formation_url( array $r ): string {
 	return home_url( user_trailingslashit( '/formacion/' . $slug ) );
 }
 
+/**
+ * Canonical de una formación de ESTE sitio, con la estructura de URLs nueva.
+ * La API manda el canonical que tenía la comunidad en su sitio viejo
+ * (voley.org: "https://www.voley.org/capacitacion/{slug}"), que tras la
+ * migración redirige: la ficha le diría a Google que la página verdadera es
+ * otra. Si el host es el de este sitio (con o sin www), se rearma como
+ * {sitio}/es/formacion/{slug}. Las de otras comunidades no se tocan.
+ * Lo usan la ficha del plugin (filtro oec_training_canonical) y el sitemap.
+ */
+function oec_local_canonical( string $url ): string {
+	$host = oec_community_host( $url );
+	if ( '' === $host || oec_community_host( home_url() ) !== $host ) {
+		return $url;
+	}
+	$path = (string) wp_parse_url( $url, PHP_URL_PATH );
+	if ( preg_match( '#^/(?:[a-z]{2}/)?(?:capacitacion|formacion)/([^/]+)/?$#', $path, $m ) ) {
+		return oec_config_url( user_trailingslashit( '/formacion/' . $m[1] ) );
+	}
+	return $url;
+}
+add_filter( 'oec_training_canonical', 'oec_local_canonical' );
+
 /** target/rel para el <a> de una formación externa ('' si es de este sitio). */
 function oec_formation_link_attrs( array $r ): string {
 	return oec_formation_is_external( $r ) ? ' target="_blank" rel="noopener"' : '';

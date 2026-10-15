@@ -23,8 +23,10 @@ defined( 'ABSPATH' ) || exit;
    - /{slug-de-post}        → /es/{slug} (WPML servía español sin prefijo)
    - /u/{nombre}-u-{id}     → autor en /es, o búsqueda por su nombre
    - Comunidades (voley.org…, sitios viejos sin migrar el contenido):
-     /capacitaciones → /es/formaciones, /publicaciones → /es/articulos y
-     /publicacion/… (posts, autores, categorías) → 410 Gone
+     /capacitaciones → /es/formaciones, /publicaciones → /es/articulos,
+     /capacitacion/{slug} → /es/formacion/{slug} (fichas: además, era el
+     canonical que mandaba la API) y /publicacion/… (posts, autores,
+     categorías) → 410 Gone
    (los /wp-content/uploads/… viejos los resuelve el .htaccess del servidor)
 
    En /en (sin contenido por ahora; como en g-se.com, todo va a /es):
@@ -279,6 +281,9 @@ function oec_redirect_root( string $rel ): ?string {
 		$target = ( $user && count_user_posts( $user->ID, 'post', true ) )
 			? get_author_posts_url( $user->ID )
 			: oec_articulos_url( [ 'q' => str_replace( '-', ' ', $name ) ] );
+	} elseif ( preg_match( '#^capacitacion/([^/]+)$#', $rel, $m ) ) {
+		// Ficha del sitio viejo de la comunidad.
+		$target = home_url( '/formacion/' . $m[1] );
 	} elseif ( isset( OEC_REDIRECT_LEGACY_PAGES[ $rel ] ) && ( $page = get_page_by_path( OEC_REDIRECT_LEGACY_PAGES[ $rel ] ) ) && 'publish' === $page->post_status ) {
 		$target = get_permalink( $page );
 	} elseif ( '' !== $rel && ( $page = get_page_by_path( $rel ) ) && 'publish' === $page->post_status ) {
@@ -297,6 +302,13 @@ function oec_redirect_root( string $rel ): ?string {
 	}
 	// Las imágenes y PDFs viejos (/wp-content/uploads/…) no llegan a PHP:
 	// los resuelve el .htaccess (ver el bloque "OEC uploads" en el servidor).
+
+	// switch_to_blog() no cambia las reglas de enlaces permanentes: las URLs
+	// de /es salen con la barra final de la raíz (/blog/%postname%/) aunque
+	// /es no la use, y eso suma un segundo 301. Se ajusta a la de /es.
+	if ( $target && ! str_ends_with( (string) get_option( 'permalink_structure' ), '/' ) ) {
+		$target = preg_replace( '#(?<=[^/])/(?=$|\?)#', '', $target, 1 );
+	}
 
 	restore_current_blog();
 	return $target;
