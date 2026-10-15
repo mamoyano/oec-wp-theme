@@ -315,10 +315,13 @@ add_action( 'admin_post_oec_cf_purge', function (): void {
 	$url    = esc_url_raw( wp_unslash( $_GET['url'] ?? '' ) );
 	$result = 'all' === $scope ? oec_cf_purge_all() : oec_cf_purge_page( $url );
 	$back   = wp_validate_redirect( esc_url_raw( wp_unslash( $_GET['back'] ?? '' ) ), admin_url() );
-	wp_safe_redirect( add_query_arg( [
-		'oec_cf'     => true === $result ? 'ok' : 'error',
-		'oec_cf_msg' => is_wp_error( $result ) ? rawurlencode( $result->get_error_message() ) : false,
-	], $back ) );
+	// El detalle del error no viaja en la URL: textos como "wp-config.php"
+	// en la query disparan el firewall de Cloudflare ("you have been
+	// blocked"). Se guarda un minuto para el usuario y la URL lleva solo el estado.
+	if ( is_wp_error( $result ) ) {
+		set_transient( 'oec_cf_msg_' . get_current_user_id(), $result->get_error_message(), MINUTE_IN_SECONDS );
+	}
+	wp_safe_redirect( add_query_arg( 'oec_cf', true === $result ? 'ok' : 'error', $back ) );
 	exit;
 } );
 
@@ -330,7 +333,7 @@ $oec_cf_notice = function (): void {
 	}
 	$msg = 'ok' === $estado
 		? __( 'Caché borrada en Cloudflare. Los cambios ya se ven (en tu navegador puede tardar hasta 5 minutos: recargá con Ctrl+F5 / Cmd+Shift+R).', 'oec-theme' )
-		: __( 'No se pudo borrar la caché: ', 'oec-theme' ) . sanitize_text_field( wp_unslash( $_GET['oec_cf_msg'] ?? '' ) ); // phpcs:ignore WordPress.Security.NonceVerification
+		: __( 'No se pudo borrar la caché: ', 'oec-theme' ) . (string) get_transient( 'oec_cf_msg_' . get_current_user_id() );
 	printf(
 		'<div class="notice notice-%1$s is-dismissible oec-cf-notice" style="%2$s"><p>%3$s</p></div>',
 		'ok' === $estado ? 'success' : 'error',

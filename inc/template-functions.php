@@ -49,6 +49,21 @@ function oec_config_theme_options(): array {
 	return wp_parse_args( (array) get_blog_option( oec_config_blog_id(), OEC_OPTION, [] ), oec_get_defaults() );
 }
 
+/**
+ * Campus virtual de la comunidad: el de Ajustes (Encabezado y pie) o, si
+ * está vacío, {comunidad}.onlineeducation.center/es/campus, armado con el
+ * dominio de la red (g-se.com → g-se, voley.org → voley…).
+ */
+function oec_campus_url(): string {
+	$url = (string) ( oec_config_theme_options()['campus_virtual_url'] ?? '' );
+	if ( $url ) {
+		return $url;
+	}
+	$host  = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
+	$label = strtok( $host, '.' ) ?: 'g-se';
+	return 'https://' . $label . '.onlineeducation.center/es/campus';
+}
+
 /** URL del sitio de configuración (páginas del newsletter, links de los emails). */
 function oec_config_url( string $path = '/' ): string {
 	return get_home_url( oec_config_blog_id(), $path );

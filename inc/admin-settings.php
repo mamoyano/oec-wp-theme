@@ -1367,8 +1367,8 @@ function oec_render_settings_page(): void {
 				<!-- Encabezado superior -->
 				<div class="oec-card">
 					<div class="oec-card__header">
-						<h2><?php esc_html_e( 'Barra superior del encabezado', 'oec-theme' ); ?></h2>
-						<p><?php esc_html_e( 'Aparece encima del header en todas las páginas. El enlace a Online Education Center es fijo; el Campus Virtual es configurable.', 'oec-theme' ); ?></p>
+						<h2><?php esc_html_e( 'Campus virtual', 'oec-theme' ); ?></h2>
+						<p><?php esc_html_e( 'El enlace "Campus" del menú del encabezado (cuando el sitio no tiene un menú propio en Apariencia → Menús).', 'oec-theme' ); ?></p>
 					</div>
 					<div class="oec-card__body">
 						<div class="oec-tracker-row__field">
@@ -1378,7 +1378,7 @@ function oec_render_settings_page(): void {
 							       value="<?php echo esc_attr( $opts['campus_virtual_url'] ); ?>"
 							       class="regular-text"
 							       placeholder="https://campus.example.com">
-							<p class="description"><?php esc_html_e( 'Si está vacío, el botón "Campus Virtual" no se muestra en la barra.', 'oec-theme' ); ?></p>
+							<p class="description"><?php esc_html_e( 'Si está vacío se usa el campus de la comunidad: {comunidad}.onlineeducation.center/es/campus (g-se, voley, traumato…).', 'oec-theme' ); ?></p>
 						</div>
 					</div>
 				</div>

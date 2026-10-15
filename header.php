@@ -285,13 +285,19 @@ class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 </script>
 <?php
 
+/**
+ * Menú cuando el sitio no tiene uno asignado en Apariencia → Menús (las
+ * comunidades nuevas): el mismo de G-SE, con el campus de la comunidad.
+ */
 function oec_header_fallback_nav(): void {
 	echo '<ul class="nav-list">';
-	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/formaciones' ) ) . '">'
+	echo '<li class="nav-item"><a href="' . esc_url( home_url( user_trailingslashit( '/formaciones' ) ) ) . '">'
 	   . esc_html__( 'Formaciones', 'oec-theme' ) . '</a></li>';
-	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/articulos' ) ) . '">'
-	   . esc_html__( 'Artículos y Blogs', 'oec-theme' ) . '</a></li>';
-	echo '<li class="nav-item"><a href="' . esc_url( home_url( '/creditos-por-descuentos' ) ) . '">'
+	echo '<li class="nav-item"><a href="' . esc_url( home_url( user_trailingslashit( '/articulos' ) ) ) . '">'
+	   . esc_html__( 'Artículos', 'oec-theme' ) . '</a></li>';
+	echo '<li class="nav-item"><a href="' . esc_url( home_url( user_trailingslashit( '/creditos-por-descuentos' ) ) ) . '">'
 	   . esc_html__( 'Créditos', 'oec-theme' ) . '</a></li>';
+	echo '<li class="nav-item nav-item--muted"><a href="' . esc_url( oec_campus_url() ) . '" target="_blank" rel="noopener noreferrer">'
+	   . esc_html__( 'Campus', 'oec-theme' ) . ' <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a></li>';
 	echo '</ul>';
 }
