@@ -2277,6 +2277,7 @@ TXT;
 		$opts = oec_get_options();
 		$kb   = trim( (string) ( $opts['oec_chat_kb'] ?? '' ) ) ?: self::default_kb();
 		$kb   = str_replace( '{CREDITOS_URL}', home_url( '/creditos-por-descuentos' ), $kb );
+		$kb   = str_replace( '{CAMPUS_URL}', function_exists( 'oec_campus_url' ) ? oec_campus_url() : '', $kb );
 		$site = get_bloginfo( 'name' );
 
 		$redes = array_filter( [
@@ -2318,8 +2319,9 @@ CÓMO PAGAR — regla fija: todo pago empieza en el checkout. Si pide los datos 
 {$derivar}
 
 SI LA PERSONA YA ES ALUMNA (dice que pagó, que no puede entrar, o pregunta por su examen, su diploma o su clase): no le vendas nada; decile a dónde ir:
-- Pagó y no recibió el acceso, o no puede entrar al campus; o consultó a la Mesa de Ayuda y no le respondieron → para derivarla a una persona, {$humano}.
-- No encuentra la clase o el link; necesita más tiempo para rendir o terminar; no le aparecen los exámenes; quiere darse de baja; su diploma tiene un error → Mesa de Ayuda del campus virtual.
+- Pregunta cómo entrar a su cuenta, al campus o dónde ver sus pagos o formaciones → los enlaces de "CUENTA Y ACCESO".
+- Pagó y no recibió el acceso, o ya probó y no puede entrar al campus; o consultó a la Mesa de Ayuda y no le respondieron → para derivarla a una persona, {$humano}.
+- No encuentra la clase o el link; necesita más tiempo para rendir o terminar; no le aparecen los exámenes; quiere darse de baja; su diploma tiene un error → Mesa de Ayuda: https://account.onlineeducation.center/es/help-desk
 - Perdió o quiere cambiar el email de su cuenta → ventas@onlineeducation.center.
 TXT;
 	}
@@ -2373,6 +2375,14 @@ DESCUENTOS
 - Descuentos para grupos o socios de asociaciones: depende de la formación; escribir a ventas@onlineeducation.center.
 - No hay becas ni beneficios por discapacidad por el momento.
 - Vencimiento de una promoción: si el descuento tiene fecha de vencimiento, figura junto al precio de la formación.
+
+CUENTA Y ACCESO — cuando pregunta cómo entrar a su cuenta, dónde ve lo que compró, dónde entra a cursar, etc., derivalo según lo que necesita (siempre como enlace markdown con un texto corto):
+- Entrar a cursar (clases, material, foros): campus virtual, {CAMPUS_URL} (también está en el menú de arriba del sitio, "Campus").
+- Su cuenta general de Online Education Center: https://account.onlineeducation.center/es/
+- Sus pagos y transferencias: https://account.onlineeducation.center/es/billing
+- Las formaciones que compró: https://account.onlineeducation.center/es/trainings
+- Consultas sobre su cursada (clases, exámenes, plazos, certificados, bajas): Mesa de Ayuda, https://account.onlineeducation.center/es/help-desk
+- No hay usuario ni contraseña en este sitio. Si ya probó y no puede entrar, o pagó y no le llegó el acceso, derivalo a una persona.
 
 INSCRIPCIÓN
 - Próxima edición de una formación cerrada: no hay información, la decide el organizador. Ofrecé formaciones similares que estén abiertas.
