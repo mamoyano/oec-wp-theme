@@ -132,3 +132,62 @@ function oec_community_badge( array $r, string $class = '' ): string {
 		. '<span class="screen-reader-text">' . esc_html__( '(se abre en otra pestaña)', 'oec-theme' ) . '</span>'
 		. '</span>';
 }
+
+/**
+ * Textos de la comunidad de este sitio para "Quiénes somos" (y lo que se
+ * quiera reutilizar): según el dominio de la red, sin "www." ni "nuevo.".
+ * Las que todavía no tienen textos propios usan los de G-SE.
+ */
+function oec_qs_comunidad(): array {
+	$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
+	$todas = [
+		'g-se.com'         => [
+			'nombre'    => 'G-SE',
+			'area'      => __( 'las ciencias del ejercicio', 'oec-theme' ),
+			'titulo'    => __( 'La comunidad de las ciencias del ejercicio en español', 'oec-theme' ),
+			'bajada'    => __( 'G-SE es una comunidad de profesionales de las ciencias del ejercicio físico con publicaciones recientes de journals, blogs, redes sociales y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+			'encontrar' => __( 'Todo lo que un profesional del ejercicio necesita, en un solo lugar', 'oec-theme' ),
+			'historia'  => __( 'Desde 1997 conectando profesionales del ejercicio con conocimiento de calidad', 'oec-theme' ),
+			'comite'    => __( 'Entrenadores, investigadores, nutricionistas, preparadores físicos y docentes de todo el mundo.', 'oec-theme' ),
+		],
+		'voley.org'        => [
+			'nombre'    => 'Voley.org',
+			'area'      => __( 'el vóley', 'oec-theme' ),
+			'titulo'    => __( 'La comunidad del vóley en español', 'oec-theme' ),
+			'bajada'    => __( 'Voley.org es una comunidad de entrenadores, preparadores físicos y profesionales del vóley con la investigación más reciente, blogs y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+			'encontrar' => __( 'Todo lo que un profesional del vóley necesita, en un solo lugar', 'oec-theme' ),
+			'historia'  => __( 'Desde 1997 conectando profesionales del deporte con conocimiento de calidad', 'oec-theme' ),
+			'comite'    => __( 'Entrenadores, preparadores físicos, investigadores, kinesiólogos y docentes del vóley de todo el mundo.', 'oec-theme' ),
+		],
+		'traumato.site'    => [
+			'nombre'    => 'Traumato Site',
+			'area'      => __( 'la traumatología y la ortopedia', 'oec-theme' ),
+			'titulo'    => __( 'La comunidad de la traumatología y la ortopedia en español', 'oec-theme' ),
+			'bajada'    => __( 'Traumato Site es una comunidad de traumatólogos, ortopedistas, kinesiólogos y fisioterapeutas con la investigación más reciente resumida cada día y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+			'encontrar' => __( 'Todo lo que un profesional de la traumatología necesita, en un solo lugar', 'oec-theme' ),
+			'historia'  => __( 'Desde 1997 conectando profesionales de la salud con conocimiento de calidad', 'oec-theme' ),
+			'comite'    => __( 'Traumatólogos, ortopedistas, kinesiólogos, investigadores y docentes de todo el mundo.', 'oec-theme' ),
+		],
+		'fisio.one'        => [
+			'nombre'    => 'Fisio One',
+			'area'      => __( 'la fisioterapia', 'oec-theme' ),
+			'titulo'    => __( 'La comunidad de la fisioterapia en español', 'oec-theme' ),
+			'bajada'    => __( 'Fisio One es una comunidad de fisioterapeutas y kinesiólogos con la investigación más reciente, blogs y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+			'encontrar' => __( 'Todo lo que un profesional de la fisioterapia necesita, en un solo lugar', 'oec-theme' ),
+			'historia'  => __( 'Desde 1997 conectando profesionales de la salud con conocimiento de calidad', 'oec-theme' ),
+			'comite'    => __( 'Fisioterapeutas, kinesiólogos, investigadores y docentes de todo el mundo.', 'oec-theme' ),
+		],
+		'swimming.science' => [
+			'nombre'    => 'Swimming Science',
+			'area'      => __( 'la natación', 'oec-theme' ),
+			'titulo'    => __( 'La comunidad de la natación en español', 'oec-theme' ),
+			'bajada'    => __( 'Swimming Science es una comunidad de entrenadores, preparadores físicos y profesionales de la natación con la investigación más reciente, blogs y las mejores formaciones online del mundo de habla hispana.', 'oec-theme' ),
+			'encontrar' => __( 'Todo lo que un profesional de la natación necesita, en un solo lugar', 'oec-theme' ),
+			'historia'  => __( 'Desde 1997 conectando profesionales del deporte con conocimiento de calidad', 'oec-theme' ),
+			'comite'    => __( 'Entrenadores, preparadores físicos, investigadores y docentes de la natación de todo el mundo.', 'oec-theme' ),
+		],
+	];
+	$c         = $todas[ $host ] ?? $todas['g-se.com'];
+	$c['host'] = isset( $todas[ $host ] ) ? $host : 'g-se.com';
+	return $c;
+}
