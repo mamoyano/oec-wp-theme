@@ -2108,7 +2108,7 @@ class OEC_AI_Chat {
 		}
 		if ( $open ) {
 			$lines[] = ! empty( $f['register_url'] )
-				? 'Para inscribirse: escribí exactamente [Inscribirme](INSCRIPCION) (el sistema lo convierte en el enlace al checkout).'
+				? 'Para inscribirse: poné en tu respuesta el enlace [Inscribirme](INSCRIPCION) tal cual (el sistema lo convierte en el botón al checkout). La persona solo lo toca: invitala con "Podés inscribirte acá: [Inscribirme](INSCRIPCION)" o "Inscribite desde [Inscribirme](INSCRIPCION)", nunca le digas que escriba algo.'
 				: 'Para inscribirse: con el botón de inscripción de esta misma página.';
 		}
 		return implode( "\n", $lines );
@@ -2291,7 +2291,7 @@ TXT;
 
 		$wa     = self::whatsapp_url();
 		$humano = $wa
-			? 'escribí exactamente este enlace: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el link real; nunca escribas vos una dirección de WhatsApp como wa.me ni un número de teléfono)'
+			? 'poné en tu respuesta este enlace tal cual: [Escribinos por WhatsApp](WHATSAPP) (el sistema lo convierte en el enlace real; la persona solo lo toca, no le digas que escriba nada; nunca escribas vos una dirección de WhatsApp como wa.me ni un número de teléfono)'
 			: 'indicá que escriba a ventas@onlineeducation.center';
 
 		$derivar = self::$derive

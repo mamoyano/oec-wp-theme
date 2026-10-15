@@ -101,7 +101,10 @@
     const q = String(lastQuestion || '').replace(/\s+/g, ' ').trim();
     if (q) lines.push('Mi consulta: ' + (q.length > 220 ? q.slice(0, 217) + '…' : q));
     if (cfg.convUrl && cid) lines.push('', 'Conversación con el asistente: ' + cfg.convUrl + encodeURIComponent(cid));
-    return 'https://wa.me/' + cfg.waNumber + '?text=' + encodeURIComponent(lines.join('\n'));
+    // encodeURIComponent deja sin codificar ( ) ! ' *: un ")" en el texto (el nombre del
+    // sitio es "… (G-SE)") cortaba el enlace markdown y el resto quedaba como texto.
+    const enc = s => encodeURIComponent(s).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+    return 'https://wa.me/' + cfg.waNumber + '?text=' + enc(lines.join('\n'));
   }
 
   // Cambia cada clave por su URL real; si esta página no la tiene, deja solo el texto.
