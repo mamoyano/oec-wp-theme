@@ -73,7 +73,8 @@ get_header();
 			<h1><?php echo esc_html( $qs['titulo'] ); ?></h1>
 			<p class="page-hero__lead"><?php echo esc_html( $qs['bajada'] ); ?></p>
 			<ul class="cred-hero__facts qs-hero__facts">
-				<li><strong><?php echo esc_html( (int) current_time( 'Y' ) - 1997 ); ?></strong><span><?php esc_html_e( 'años de trayectoria', 'oec-theme' ); ?></span></li>
+				<?php // Igual que "Años en la industria" del hero de las homes (desde="1999" en [oec-tematica-stats]). ?>
+				<li><strong><?php echo esc_html( (int) current_time( 'Y' ) - 1999 ); ?></strong><span><?php esc_html_e( 'años de trayectoria', 'oec-theme' ); ?></span></li>
 				<?php if ( $qs_formaciones ) : ?>
 				<li><strong><?php echo esc_html( number_format_i18n( $qs_formaciones ) ); ?></strong><span><?php esc_html_e( 'formaciones abiertas', 'oec-theme' ); ?></span></li>
 				<?php endif; ?>
