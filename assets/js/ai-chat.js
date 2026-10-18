@@ -81,7 +81,10 @@
     if (!chatLinks.INSCRIPCION) return '';
     try {
       const u = new URL(chatLinks.INSCRIPCION, location.href);
-      pageParams().concat(firstTouch()).forEach(([k, v]) => { if (!u.searchParams.has(k)) u.searchParams.set(k, v); });
+      // La campaña vigente (assets/js/campaign-links.js) manda sobre la primera visita.
+      // Si hay campaña, la primera visita no se suma (las UTM no se mezclan).
+      const campaign = window.oecCampaign ? Object.entries(window.oecCampaign.get()) : [];
+      pageParams().concat(campaign.length ? campaign : firstTouch()).forEach(([k, v]) => { if (!u.searchParams.has(k)) u.searchParams.set(k, v); });
       if (!u.searchParams.has('affcod')) {
         const s = JSON.parse(localStorage.getItem('AffiliateCode') || 'null');
         if (s && s.value && (!s.expiry || Date.now() < s.expiry)) u.searchParams.set('affcod', s.value);
