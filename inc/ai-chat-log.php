@@ -252,7 +252,7 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 			"SELECT COUNT(*) AS consultas, COUNT(DISTINCT cid) AS conversaciones,
 			        SUM(formations <> '[]') AS con_tarjetas, SUM(clicks <> '[]') AS con_clic,
 			        ROUND(AVG(NULLIF(ms_first,0))) AS ms_first, ROUND(AVG(NULLIF(ms_total,0))) AS ms_total,
-			        SUM(error <> '') AS errores
+			        SUM(error <> '' AND error NOT LIKE 'Sin IA:%%') AS errores
 			 FROM $t WHERE $where", // phpcs:ignore
 			...$args
 		) );
@@ -268,17 +268,17 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 			"SELECT IF(model = '', 'haiku-4-5', model) AS m, COUNT(*) AS consultas,
 			        SUM(formations <> '[]') AS con_tarjetas, SUM(clicks <> '[]') AS con_clic,
 			        ROUND(AVG(NULLIF(ms_first,0))) AS ms_first, ROUND(AVG(NULLIF(ms_total,0))) AS ms_total,
-			        SUM(error <> '') AS errores
+			        SUM(error <> '' AND error NOT LIKE 'Sin IA:%%') AS errores
 			 FROM $t WHERE $where GROUP BY m ORDER BY consultas DESC", // phpcs:ignore
 			...$args
 		) );
-		$model_label = static fn( $m ) => OEC_AI_Chat::MODELS[ $m ?: 'haiku-4-5' ]['label'] ?? $m;
+		$model_label = static fn( $m ) => 'sin-ia' === $m ? 'Frenadas sin IA (basura, pausa o tope diario)' : ( OEC_AI_Chat::MODELS[ $m ?: 'haiku-4-5' ]['label'] ?? $m );
 		// Comparación por modo: catálogo, vendedor de temática, vendedor de una formación
 		$by_mode = $wpdb->get_results( $wpdb->prepare(
 			"SELECT IF(ctx = '', 'catalogo', SUBSTRING_INDEX(ctx, ':', 1)) AS m, COUNT(*) AS consultas,
 			        SUM(formations <> '[]') AS con_tarjetas, SUM(clicks <> '[]') AS con_clic,
 			        ROUND(AVG(NULLIF(ms_first,0))) AS ms_first, ROUND(AVG(NULLIF(ms_total,0))) AS ms_total,
-			        SUM(error <> '') AS errores
+			        SUM(error <> '' AND error NOT LIKE 'Sin IA:%%') AS errores
 			 FROM $t WHERE $where GROUP BY m ORDER BY consultas DESC", // phpcs:ignore
 			...$args
 		) );

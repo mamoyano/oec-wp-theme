@@ -1118,6 +1118,7 @@ class OEC_AI_Chat {
 
 		$message       = $request->get_param( 'message' );
 		$history       = $request->get_param( 'history' );
+		self::abuse_guard( $request, $ip, (string) $message, (array) $history, $t0 );
 		$country       = strtoupper( $request->get_param( 'country' ) );
 		$currency      = strtoupper( $request->get_param( 'currency' ) );
 		$mentioned_ids = $request->get_param( 'mentioned_ids' );
@@ -1394,6 +1395,111 @@ class OEC_AI_Chat {
 	}
 
 	/** ¿Hay alguna formación abierta con 2+ palabras de la consulta en su título? */
+	/* ── Mensajes basura y abuso ──────────────────────────────
+	   Sin llamar a la IA: (1) basura evidente (teclado aporreado, letras repetidas,
+	   sin vocales) o copia de una respuesta del propio chat → respuesta fija;
+	   (2) tres seguidos en una conversación → 10 minutos de pausa con la misma
+	   respuesta fija; (3) más de DAILY_LIMIT consultas por día desde una misma
+	   conexión → se ofrece WhatsApp. Queda en el registro con el motivo. */
+
+	const DAILY_LIMIT = 60;
+	const JUNK_PAUSE  = 3;   // mensajes basura seguidos para pausar
+	const JUNK_WAIT   = 600; // segundos de pausa
+
+	private static function abuse_guard( WP_REST_Request $request, string $ip, string $message, array $history, float $t0 ): void {
+		$cid = substr( preg_replace( '/[^A-Za-z0-9-]/', '', (string) $request->get_param( 'cid' ) ), 0, 40 );
+		$day = 'oec_chat_day_' . md5( $ip . '|' . current_time( 'Y-m-d' ) );
+		$n   = (int) get_transient( $day ) + 1;
+		set_transient( $day, $n, DAY_IN_SECONDS );
+		if ( $n > self::DAILY_LIMIT ) {
+			self::canned_reply( $request, $message, $t0, 'tope diario',
+				'Por hoy llegaste al máximo de consultas con el asistente.' . ( self::whatsapp_number() ? ' Si necesitás algo más, [escribinos por WhatsApp](WHATSAPP) y te responde una persona del equipo.' : ' Volvé a escribirnos mañana.' ) );
+		}
+
+		$pause = 'oec_chat_junk_' . md5( $cid ?: $ip );
+		$junk  = (int) get_transient( $pause );
+		if ( $junk >= self::JUNK_PAUSE ) {
+			self::canned_reply( $request, $message, $t0, 'pausa por basura',
+				'Mejor sigamos en unos minutos. Cuando quieras, contame qué formación o tema estás buscando y te ayudo.' );
+		}
+		$reason = self::junk_reason( $message, $history );
+		if ( '' === $reason ) {
+			if ( $junk ) {
+				delete_transient( $pause ); // solo cuentan los seguidos
+			}
+			return;
+		}
+		set_transient( $pause, $junk + 1, self::JUNK_WAIT );
+		self::canned_reply( $request, $message, $t0, $reason,
+			'No te entendí. ¿Me contás qué formación o tema estás buscando? Por ejemplo: "nutrición deportiva", "fuerza" o "un posgrado en fútbol".' );
+	}
+
+	/** Motivo por el que un mensaje es basura, o '' si es un mensaje normal. */
+	private static function junk_reason( string $message, array $history ): string {
+		$m = trim( $message );
+		if ( '' === $m ) {
+			return '';
+		}
+		// Copia de una respuesta del chat (pegaba lo que el asistente acababa de decir)
+		$norm = self::title_norm( $m );
+		if ( strlen( $norm ) >= 40 ) {
+			foreach ( array_slice( $history, -6 ) as $turn ) {
+				if ( 'assistant' === ( $turn['role'] ?? '' ) && str_contains( ' ' . self::title_norm( (string) ( $turn['content'] ?? '' ) ) . ' ', ' ' . substr( $norm, 0, 60 ) ) ) {
+					return 'copia de la respuesta';
+				}
+			}
+		}
+		$plain   = remove_accents( mb_strtolower( $m ) );
+		$letters = preg_replace( '/[^a-z]/', '', $plain );
+		if ( strlen( $letters ) < 6 ) {
+			return ''; // "ok", "si", "dale": cortos pero normales
+		}
+		// Muy pocas letras distintas en un mensaje largo ("aeaeaeae…"); la risa no cuenta
+		$distinct = count( array_unique( str_split( $letters ) ) );
+		if ( strlen( $letters ) >= 12 && $distinct <= 3 && ! preg_match( '/^(ja|je|ji|jo|ha)+$/', $letters ) ) {
+			return 'basura';
+		}
+		// Teclado aporreado: la misma letra 4+ veces seguidas, o palabras largas sin vocales
+		if ( preg_match( '/([a-z])\1{3,}/', $letters ) ) {
+			return 'basura';
+		}
+		foreach ( preg_split( '/[^a-z]+/', $plain, -1, PREG_SPLIT_NO_EMPTY ) as $w ) {
+			// Sin vocales, o cinco consonantes seguidas ("asdfghjkl"; en castellano el
+			// máximo habitual es cuatro: "instr-")
+			if ( strlen( $w ) >= 5 && ( ! preg_match( '/[aeiouy]/', $w ) || preg_match( '/[bcdfghjklmnpqrstvwxz]{5,}/', $w ) ) ) {
+				return 'basura';
+			}
+		}
+		return '';
+	}
+
+	/** Responde un texto fijo sin llamar a la IA, lo anota en el registro y termina. */
+	private static function canned_reply( WP_REST_Request $request, string $message, float $t0, string $reason, string $text ): void {
+		self::sse_data( [ 't' => $text ] );
+		self::sse_data( [ 'done' => true, 'formations' => [] ] );
+		if ( function_exists( 'fastcgi_finish_request' ) ) {
+			fastcgi_finish_request();
+		}
+		if ( class_exists( 'OEC_AI_Chat_Log' ) ) {
+			$ctx = self::resolve_context( $request->get_param( 'context' ) );
+			OEC_AI_Chat_Log::insert( [
+				'cid'        => $request->get_param( 'cid' ),
+				'turn'       => $request->get_param( 'turn' ),
+				'page'       => $request->get_param( 'page' ),
+				'country'    => strtoupper( (string) $request->get_param( 'country' ) ),
+				'message'    => $message,
+				'reply'      => $text,
+				'formations' => [],
+				'expanded'   => false,
+				'ms_first'   => round( ( microtime( true ) - $t0 ) * 1000 ),
+				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
+				'error'      => 'Sin IA: ' . $reason,
+				'model'      => 'sin-ia', // en el registro no se cuenta como consulta de un modelo
+				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
+			] );
+		}
+		exit;
+	}
 	private static function matches_titles( string $query ): bool {
 		static $generic = [ 'curso', 'cursos', 'formacion', 'formaciones', 'quiero', 'busco', 'buscando',
 			'aprender', 'sobre', 'algo', 'interesa', 'tienen', 'tenes', 'alguna', 'algun', 'para', 'como', 'online' ];
