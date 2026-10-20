@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.178
+Version: 1.0.179
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5299,3 +5299,145 @@ body.oec-chat-open .oec-chat-bubble { display: none; }
   .oec-sub__item { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "label arrow" "title arrow" "meta arrow"; }
   .oec-sub__cta { width: 100%; justify-content: center; }
 }
+
+/* ============================================================
+   LIVE — /especiales/live (page-live.php, inc/live.php)
+   Negro + el rojo neón del corazón del video. Colores en el <main>:
+   --live-accent, --live-dark, --live-dark-2 (OEC_LIVE_COLORS).
+   ============================================================ */
+.oec-live { --live-accent-rgb: 255, 59, 59; --live-btn: #d81f2c; background: var(--color-light); } /* --live-btn: el neón con blanco no llega a 4,5:1 de contraste */
+.oec-live-wrap { width: 88%; max-width: 1280px; margin: 0 auto; }
+
+/* Logo: punto que late + LIVE + pulso que se dibuja */
+.oec-live-logo { display: block; height: auto; overflow: visible; }
+.oec-live-logo__text { font-family: var(--font-base); font-size: 58px; font-weight: 900; letter-spacing: .04em; fill: currentColor; }
+.oec-live-logo__dot { fill: var(--live-accent); }
+.oec-live-logo__halo { fill: var(--live-accent); opacity: .35; transform-box: fill-box; transform-origin: center; animation: oec-live-halo 1.6s ease-out infinite; }
+.oec-live-logo__pulse { fill: none; stroke: var(--live-accent); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 100; animation: oec-live-ecg 2.4s linear infinite; }
+@keyframes oec-live-halo { 0% { transform: scale(.8); opacity: .55; } 100% { transform: scale(2.1); opacity: 0; } }
+@keyframes oec-live-ecg { 0% { stroke-dashoffset: 100; } 55%, 100% { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .oec-live-logo__halo, .oec-live-logo__pulse { animation: none; } }
+
+/* Hero: negro como el fondo del video, el corazón a la derecha */
+.oec-live-hero { position: relative; overflow: hidden; isolation: isolate; background: #000; color: var(--color-white); min-height: 640px; display: flex; align-items: center; }
+.oec-live-hero__video { position: absolute; top: 0; right: -6%; z-index: -2; width: 78%; height: 100%; object-fit: cover; object-position: center; }
+.oec-live-hero__shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #000 0%, #000 32%, rgba(0,0,0,.55) 58%, rgba(0,0,0,0) 80%), linear-gradient(0deg, rgba(0,0,0,.85) 0%, rgba(0,0,0,0) 30%); }
+.oec-live-hero__inner { padding-block: 64px 56px; }
+.oec-live-hero__inner .breadcrumb { margin: 0 0 22px; justify-content: flex-start; }
+.oec-live-hero__logo { width: min(300px, 62vw); color: var(--color-white); margin-bottom: 22px; }
+.oec-live-hero__title { max-width: 620px; margin: 0 0 10px; font-size: clamp(28px, 4.2vw, 46px); font-weight: 800; line-height: 1.12; color: var(--color-white); }
+.oec-live-hero__claim { margin: 0 0 16px; font-size: clamp(18px, 2.2vw, 24px); font-weight: 800; letter-spacing: .01em; color: var(--live-accent); text-shadow: 0 0 24px rgba(var(--live-accent-rgb), .45); }
+.oec-live-hero__lead { max-width: 560px; margin: 0 0 28px; font-size: 17px; line-height: 1.6; color: rgba(var(--color-white-rgb), .86); }
+.oec-live-hero__actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.oec-live-hero__stats { display: flex; flex-wrap: wrap; gap: 10px 34px; margin: 40px 0 0; padding: 0; list-style: none; font-size: 14px; color: rgba(var(--color-white-rgb), .7); }
+.oec-live-hero__stats strong { display: block; font-size: clamp(26px, 3vw, 34px); line-height: 1.1; color: var(--color-white); }
+.oec-live-btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 13px 26px; border-radius: 8px; border: 2px solid var(--live-btn);
+  background: var(--live-btn); color: #fff !important; font-weight: 700; font-size: 14.5px; text-decoration: none !important;
+  box-shadow: 0 0 28px rgba(var(--live-accent-rgb), .35); transition: transform .2s, filter .2s, background .2s;
+}
+.oec-live-btn:hover { transform: translateY(-2px); filter: brightness(1.08); }
+.oec-live-btn--ghost { background: transparent; border-color: rgba(var(--color-white-rgb), .5); box-shadow: none; }
+.oec-live-btn--ghost:hover { border-color: var(--color-white); background: rgba(var(--color-white-rgb), .08); }
+@media (max-width: 760px) {
+  /* En el celular el corazón va arriba, a la vista, y se funde en negro; el texto, debajo. */
+  .oec-live-hero { display: block; min-height: 0; }
+  .oec-live-hero__video { top: 0; right: auto; left: 0; width: 100%; height: 290px; }
+  .oec-live-hero__shade { background: linear-gradient(180deg, rgba(0,0,0,.25) 0, rgba(0,0,0,0) 90px, rgba(0,0,0,0) 170px, #000 290px); }
+  .oec-live-hero__inner { padding-block: 20px 44px; }
+  .oec-live-hero__inner .breadcrumb { margin-bottom: 190px; }
+  .oec-live-hero__stats { gap: 10px 26px; }
+}
+
+/* Bloques */
+.oec-live-block { padding-block: 4.5rem; background: var(--color-light); }
+.oec-live-block--alt { background: linear-gradient(180deg, #fff3f3 0%, #ffe7e7 100%); }
+.oec-live-block--dark { background: linear-gradient(160deg, var(--live-dark) 0%, var(--live-dark-2) 100%); color: var(--color-white); }
+.oec-live-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #c81e2b; }
+.oec-live-block--dark .oec-live-eyebrow { color: var(--live-accent); }
+.oec-live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--live-accent); box-shadow: 0 0 0 0 rgba(var(--live-accent-rgb), .6); animation: oec-live-dot 1.6s ease-out infinite; }
+@keyframes oec-live-dot { 0% { box-shadow: 0 0 0 0 rgba(var(--live-accent-rgb), .6); } 100% { box-shadow: 0 0 0 10px rgba(var(--live-accent-rgb), 0); } }
+@media (prefers-reduced-motion: reduce) { .oec-live-dot { animation: none; } }
+.oec-live-h2 { margin: 0 0 28px; font-size: clamp(24px, 3vw, 34px); font-weight: 800; line-height: 1.15; color: var(--color-dark); }
+.oec-live-block--dark .oec-live-h2 { color: var(--color-white); }
+
+/* Por qué en vivo */
+.oec-live-pilares { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.oec-live-pilar { background: var(--color-white); border: 1px solid var(--color-border); border-top: 3px solid var(--live-accent); border-radius: 16px; padding: 26px 24px; }
+.oec-live-pilar i { font-size: 26px; color: #c81e2b; }
+.oec-live-pilar h3 { margin: 12px 0 8px; font-size: 18px; font-weight: 800; color: var(--color-dark); }
+.oec-live-pilar p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--color-muted); }
+@media (max-width: 900px) { .oec-live-pilares { grid-template-columns: minmax(0, 1fr); } }
+
+/* Grupos por temática */
+.oec-live-grupo + .oec-live-grupo { margin-top: 44px; }
+.oec-live-grupo__head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 20px; padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--color-border); }
+.oec-live-grupo__title { display: flex; align-items: center; gap: 10px; margin: 0; font-size: 21px; font-weight: 800; color: var(--color-dark); }
+.oec-live-grupo__dot { width: 12px; height: 12px; border-radius: 50%; background: var(--grupo-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--grupo-accent) 25%, transparent); }
+.oec-live-grupo__n { font-size: 13px; font-weight: 600; color: var(--color-muted); }
+.oec-live-grupo__more { font-size: 14px; font-weight: 700; color: var(--color-dark) !important; text-decoration: none !important; }
+.oec-live-grupo__more:hover { color: #c81e2b !important; }
+.oec-live-vacio { font-size: 16px; color: var(--color-muted); }
+
+/* Quiénes enseñan: todos del mismo tamaño */
+.oec-live-docentes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 26px 18px; margin: 48px 0 0; padding: 0; list-style: none; }
+.oec-live-docente { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; color: var(--color-white) !important; text-decoration: none !important; }
+.oec-live-docente__foto { display: grid; place-items: center; width: 112px; height: 112px; margin-bottom: 8px; border-radius: 50%; overflow: hidden; border: 3px solid var(--live-accent); background: var(--live-dark-2); font-size: 34px; font-weight: 800; box-shadow: 0 0 24px rgba(var(--live-accent-rgb), .25); transition: transform .2s; }
+.oec-live-docente__foto img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 20%; }
+a.oec-live-docente:hover .oec-live-docente__foto { transform: scale(1.05); }
+.oec-live-docente strong { font-size: 15px; line-height: 1.3; }
+.oec-live-docente__area { font-size: 12.5px; line-height: 1.4; color: rgba(var(--color-white-rgb), .65); }
+.oec-live-docentes__mas { margin: 28px 0 0; text-align: center; font-size: 15px; color: rgba(var(--color-white-rgb), .7); }
+
+/* Preguntas frecuentes */
+.oec-live-faq { max-width: 860px; }
+.oec-live-faq .oec-faq-item { background: var(--color-white); border: 1px solid var(--color-border); border-radius: 12px; padding: 4px 22px; margin-bottom: 12px; }
+.oec-live-faq .oec-faq-item summary { position: relative; padding: 18px 28px 18px 0; font-size: 16px; font-weight: 700; color: var(--color-dark); cursor: pointer; list-style: none; }
+.oec-live-faq .oec-faq-item summary::-webkit-details-marker { display: none; }
+.oec-live-faq .oec-faq-item summary::after { content: '+'; position: absolute; right: 0; top: 50%; transform: translateY(-50%); font-size: 22px; font-weight: 400; color: #c81e2b; }
+.oec-live-faq .oec-faq-item[open] summary::after { content: '−'; }
+.oec-live-faq .oec-faq-item p { margin: 0 0 18px; font-size: 15px; line-height: 1.65; color: var(--color-muted); }
+
+/* Cierre */
+.oec-live-cierre { text-align: center; }
+.oec-live-cierre__logo { width: 200px; margin: 0 auto 18px; color: var(--color-white); }
+.oec-live-cierre p { max-width: 560px; margin: -14px auto 26px; color: rgba(var(--color-white-rgb), .8); }
+.oec-live-cierre .oec-live-hero__actions { justify-content: center; }
+
+/* LIVE en /especiales (banner) y en [oec-tematica-nav] del home */
+.oec-live-banner {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px 32px;
+  margin: 2.5rem 0 1rem; padding: 26px 32px; border-radius: 18px; text-decoration: none !important; color: var(--color-white) !important;
+  background: radial-gradient(circle at 92% 50%, rgba(255, 59, 59, .35) 0%, rgba(255, 59, 59, 0) 45%), #000;
+  box-shadow: 0 20px 40px -24px rgba(255, 59, 59, .6); transition: transform .2s;
+}
+.oec-live-banner:hover { transform: translateY(-3px); }
+.oec-live-banner__logo .oec-live-logo { width: 180px; color: var(--color-white); }
+.oec-live-banner__text strong { display: block; font-size: 20px; font-weight: 800; color: var(--live-accent); }
+.oec-live-banner__text span { font-size: 15px; color: rgba(var(--color-white-rgb), .8); }
+.oec-live-banner__cta { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 8px; background: #d81f2c; font-weight: 700; font-size: 14.5px; white-space: nowrap; }
+@media (max-width: 760px) {
+  .oec-live-banner { grid-template-columns: minmax(0, 1fr); padding: 22px; }
+  .oec-live-banner__logo .oec-live-logo { width: 150px; }
+  .oec-live-banner__cta { justify-self: start; }
+}
+/* !important: el hero del home pisa el fondo de los botones de temática (translúcidos). */
+.oec-tematica-nav .oec-tematica-nav__item--live { background: #000 !important; border-color: rgba(255, 59, 59, .75) !important; color: var(--color-white) !important; font-weight: 800; letter-spacing: .06em; box-shadow: 0 0 18px rgba(255, 59, 59, .3); }
+.oec-tematica-nav__item--live .oec-tematica-nav__dot { animation: oec-live-dot 1.6s ease-out infinite; --live-accent-rgb: 255, 59, 59; }
+@media (prefers-reduced-motion: reduce) { .oec-tematica-nav__item--live .oec-tematica-nav__dot { animation: none; } }
+
+/* [oec-live] en el home: discreta, como las demás tiras, con el mismo
+   degradado que el pie de /especiales/live (negro → rojo oscuro). */
+.oec-live-home { padding-block: 4rem; color: var(--color-white); background: linear-gradient(160deg, #0b0203 0%, #4a0610 100%); --live-accent-rgb: 255, 59, 59; }
+/* La tarjeta "más" del final de la tira: borde y flecha claros (los del plugin son para fondo blanco). */
+.oec-live-home .oec-scroll-more { border-color: rgba(var(--color-white-rgb), .45) !important; color: var(--color-white) !important; }
+.oec-live-home .oec-scroll-more:hover { border-color: var(--live-accent) !important; color: var(--live-accent) !important; background: rgba(var(--color-white-rgb), .06) !important; }
+.oec-live-home__head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 1rem 2rem; margin-bottom: 1.5rem; }
+.oec-live-home__title { margin: 0; line-height: 1; }
+.oec-live-home__logo { width: 190px; color: var(--color-white); }
+.oec-live-home__lead { margin: 10px 0 0; font-size: 16px; color: rgba(var(--color-white-rgb), .8); }
+.oec-live-home__more { display: inline-flex; align-items: center; gap: .4rem; font-size: .875rem; font-weight: 700; white-space: nowrap; color: var(--color-white) !important; text-decoration: none !important; }
+.oec-live-home__more:hover { color: var(--live-accent) !important; }
+.oec-live-home__more i { transition: transform .2s; }
+.oec-live-home__more:hover i { transform: translateX(3px); }
+.oec-live-home .oec-scroll-section { margin-bottom: 0 !important; }

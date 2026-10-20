@@ -40,6 +40,7 @@ get_header();
 
 <main id="main-content">
 <div class="container">
+	<?php echo function_exists( 'oec_live_banner' ) ? oec_live_banner() : ''; // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 	<div class="oec-especiales-grid">
 		<?php foreach ( $oec_especiales as $esp ) :
 			$count = null;

@@ -332,14 +332,30 @@ function oec_render_tira_shortcode( $atts ): string {
 	}
 	$rows = array_slice( array_values( $rows ), 0, max( 1, (int) $atts['limit'] ) );
 
-	$more_url = $atts['more-url'] ? home_url( $atts['more-url'] ) : '';
-	$brand    = get_option( 'oec_brand_color', '#a435f0' );
+	return oec_tira_html( $rows, [
+		'title'      => $atts['title'],
+		'more_url'   => $atts['more-url'] ? home_url( $atts['more-url'] ) : '',
+		'more_label' => oec_tira_more_label( $atts ),
+		'almanaque'  => 'si' === $atts['almanaque'],
+		'countdown'  => 'cierre' === $atts['orden'],
+	] );
+}
+
+/**
+ * La tira en sí (cards en fila con flechas), a partir de filas de
+ * oec_tira_catalogo() ya filtradas y ordenadas. La usan [oec-tira] y
+ * /especiales/live (page-live.php). $o: title, more_url, more_label,
+ * almanaque, countdown.
+ */
+function oec_tira_html( array $rows, array $o ): string {
+	$o = array_merge( [ 'title' => '', 'more_url' => '', 'more_label' => '', 'almanaque' => false, 'countdown' => false ], $o );
+	$brand = get_option( 'oec_brand_color', '#a435f0' );
 
 	ob_start();
 	?>
 <style>:root { --oec-brand: <?php echo esc_html( $brand ); ?>; }</style>
 <section class="oec-scroll-section">
-	<?php if ( $atts['title'] ) : ?><h2 class="oec-scroll-title"><?php echo esc_html( $atts['title'] ); ?></h2><?php endif; ?>
+	<?php if ( $o['title'] ) : ?><h2 class="oec-scroll-title"><?php echo esc_html( $o['title'] ); ?></h2><?php endif; ?>
 	<div class="oec-scroll-wrapper">
 		<button type="button" class="oec-scroll-arrow oec-scroll-arrow-left" aria-label="<?php esc_attr_e( 'Anterior', 'oec-theme' ); ?>"><i class="bi bi-chevron-left"></i></button>
 		<div class="oec-scroll-track">
@@ -347,9 +363,9 @@ function oec_render_tira_shortcode( $atts ): string {
 			<p class="oec-empty-title"><?php esc_html_e( 'No hay formaciones disponibles en este momento.', 'oec-theme' ); ?></p>
 			<?php endif; ?>
 			<?php foreach ( $rows as $r ) : ?>
-				<?php echo oec_formacion_card( $r, [ 'almanaque' => 'si' === $atts['almanaque'], 'countdown' => 'cierre' === $atts['orden'] ] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
+				<?php echo oec_formacion_card( $r, [ 'almanaque' => $o['almanaque'], 'countdown' => $o['countdown'] ] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<?php endforeach; ?>
-			<?php if ( $more_url ) : ?><a class="oec-scroll-more" href="<?php echo esc_url( $more_url ); ?>" aria-label="<?php echo esc_attr( oec_tira_more_label( $atts ) ); ?>"><i class="bi bi-arrow-right" aria-hidden="true"></i></a><?php endif; ?>
+			<?php if ( $o['more_url'] ) : ?><a class="oec-scroll-more" href="<?php echo esc_url( $o['more_url'] ); ?>" aria-label="<?php echo esc_attr( $o['more_label'] ?: __( 'Ver todas las formaciones', 'oec-theme' ) ); ?>"><i class="bi bi-arrow-right" aria-hidden="true"></i></a><?php endif; ?>
 		</div>
 		<button type="button" class="oec-scroll-arrow oec-scroll-arrow-right" aria-label="<?php esc_attr_e( 'Siguiente', 'oec-theme' ); ?>"><i class="bi bi-chevron-right"></i></button>
 	</div>
@@ -379,7 +395,7 @@ function oec_tira_more_label( array $atts ): string {
    los carga el tema, con la misma versión por fecha de modificación. ── */
 add_action( 'wp_enqueue_scripts', function () {
 	$post = get_queried_object();
-	if ( ! ( $post instanceof WP_Post ) || ! has_shortcode( $post->post_content, 'oec-tira' ) ) {
+	if ( ! ( $post instanceof WP_Post ) || ! ( has_shortcode( $post->post_content, 'oec-tira' ) || oec_is_live_page() ) ) {
 		return;
 	}
 	$dir = WP_PLUGIN_DIR . '/oec-wordpress-plugin';

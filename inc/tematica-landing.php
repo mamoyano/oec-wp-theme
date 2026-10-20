@@ -655,6 +655,13 @@ function oec_render_tematica_nav_shortcode(): string {
 	ob_start();
 	?>
 	<div class="oec-tematica-nav">
+		<?php if ( function_exists( 'oec_live_disponible' ) && oec_live_disponible() ) : ?>
+		<a class="oec-tematica-nav__item oec-tematica-nav__item--live" href="<?php echo esc_url( oec_live_url() ); ?>" style="--card-accent: <?php echo esc_attr( OEC_LIVE_COLORS['accent'] ); ?>;">
+			<span class="oec-tematica-nav__dot" aria-hidden="true"></span>
+			LIVE
+			<i class="bi bi-arrow-right" aria-hidden="true"></i>
+		</a>
+		<?php endif; ?>
 		<?php foreach ( $items as $it ) : ?>
 		<a class="oec-tematica-nav__item" href="<?php echo esc_url( $it['url'] ); ?>" style="--card-accent: <?php echo esc_attr( $it['accent'] ); ?>;">
 			<span class="oec-tematica-nav__dot" aria-hidden="true"></span>
