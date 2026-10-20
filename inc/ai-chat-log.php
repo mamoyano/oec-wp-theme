@@ -82,6 +82,9 @@ class OEC_AI_Chat_Log {
 			if ( str_starts_with( $ctx, 'tematica:' ) ) {
 				return 'Landing: ' . substr( $ctx, 9 );
 			}
+			if ( 'live' === $ctx ) {
+				return 'LIVE (/especiales/live)';
+			}
 			return $page;
 		};
 		?><!doctype html>
@@ -282,7 +285,7 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 			 FROM $t WHERE $where GROUP BY m ORDER BY consultas DESC", // phpcs:ignore
 			...$args
 		) );
-		$mode_names = [ 'catalogo' => 'Catálogo (resto del sitio)', 'tematica' => 'Vendedor de temática (landings)', 'formacion' => 'Vendedor de una formación (fichas)', 'cerrada' => 'Ficha con inscripción cerrada' ];
+		$mode_names = [ 'catalogo' => 'Catálogo (resto del sitio)', 'tematica' => 'Vendedor de temática (landings)', 'formacion' => 'Vendedor de una formación (fichas)', 'cerrada' => 'Ficha con inscripción cerrada', 'live' => 'Asesor de LIVE (/especiales/live)' ];
 		// Interés en formaciones con inscripción cerrada: para pedirle al socio que reabra
 		$closed_demand = $wpdb->get_results( $wpdb->prepare(
 			"SELECT SUBSTRING(ctx, 9) AS fid, COUNT(DISTINCT cid) AS conversaciones, COUNT(*) AS consultas,
@@ -299,6 +302,9 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 			if ( str_starts_with( $ctx, 'cerrada:' ) ) {
 				$id = substr( $ctx, 8 );
 				return 'Ficha cerrada: ' . ( $titles[ $id ] ?? $id );
+			}
+			if ( 'live' === $ctx ) {
+				return 'LIVE';
 			}
 			return str_starts_with( $ctx, 'tematica:' ) ? 'Landing: ' . substr( $ctx, 9 ) : '';
 		};

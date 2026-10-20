@@ -6,7 +6,7 @@
   const endpoint       = cfg.endpoint || '';
   const streamEndpoint = cfg.streamEndpoint || '';
   const clickEndpoint  = cfg.clickEndpoint || '';
-  // Página desde donde se chatea: { mode: 'formacion', id } · { mode: 'tematica', tematica } · { mode: 'catalogo' }.
+  // Página desde donde se chatea: { mode: 'formacion', id } · { mode: 'tematica', tematica } · { mode: 'live' } · { mode: 'catalogo' }.
   // El servidor cambia el rol del asistente según esto (vendedor de la formación / de la temática / catálogo).
   const pageContext    = cfg.context || { mode: 'catalogo' };
   // Enlaces que la IA escribe con una clave en vez de la URL: [Inscribirme](INSCRIPCION), [Escribinos por WhatsApp](WHATSAPP)
@@ -16,6 +16,7 @@
   // (los de otra ficha hablan de otra formación) y sabe qué fichas se miraron antes.
   const ctxKey = pageContext.mode === 'formacion' ? 'formacion:' + pageContext.id
                : pageContext.mode === 'tematica'  ? 'tematica:' + pageContext.tematica
+               : pageContext.mode === 'live'      ? 'live'
                : 'catalogo';
 
   // Rótulo "Hablando sobre: …" del historial: al cambiar de página en medio de una

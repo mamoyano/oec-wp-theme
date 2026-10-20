@@ -300,6 +300,39 @@ class OEC_AI_Chat {
 		return array_column( array_slice( $scored, 0, $limit ), 1 );
 	}
 
+	/**
+	 * LIVE (/especiales/live, inc/live.php): las formaciones en vivo (SYNC o
+	 * MIXED) con relevancia 2, abiertas, por fecha de inicio. Vacío si la
+	 * página no está publicada.
+	 */
+	private static function live_ids(): array {
+		if ( ! function_exists( 'oec_live_formaciones' ) || ! oec_live_disponible() ) {
+			return [];
+		}
+		return array_column( oec_live_formaciones(), 'id' );
+	}
+
+	/** ¿Pregunta por LIVE o por formaciones en vivo? ("asincrónica" no cuenta). */
+	private static function asks_live( string $message ): bool {
+		return (bool) preg_match( '/\blive\b|en\s+vivo|en\s+directo|\bsincr[oó]nic/iu', $message );
+	}
+
+	/** En la página LIVE: las LIVE que mejor coinciden; si son pocas, se completa con otras LIVE. */
+	private static function prefilter_live( string $query, string $extra ): array {
+		$ids = array_flip( self::live_ids() );
+		$in  = array_values( array_filter( OEC_AI_Catalog::get_index( true ), static fn( $e ) => isset( $ids[ $e['id'] ] ) ) );
+		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
+		if ( count( $top ) < 3 ) {
+			$seen = array_flip( array_column( $top, 'id' ) );
+			foreach ( $in as $e ) {
+				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < 3 ) {
+					$top[] = $e;
+				}
+			}
+		}
+		return self::load_formations( $top );
+	}
+
 	private static function load_formations( array $entries ): array {
 		return array_values( array_filter( array_map(
 			static fn( $e ) => OEC_AI_Catalog::get_formation( $e['id'] ),
@@ -1053,6 +1086,9 @@ class OEC_AI_Chat {
 		if ( 'formacion' === $ctx['mode'] ) {
 			return 'formacion:' . $ctx['id'];
 		}
+		if ( 'live' === $ctx['mode'] ) {
+			return 'live';
+		}
 		return 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : 'catalogo';
 	}
 
@@ -1185,11 +1221,20 @@ class OEC_AI_Chat {
 			self::sse_status( 'Revisando el catálogo de formaciones...' );
 			$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
 			if ( $launch ) {
-				$formations = self::featured( 'tematica' === $ctx['mode'] ? $ctx['tematica'] : '' );
+				$formations = 'live' === $ctx['mode']
+					? self::load_formations( array_map( static fn( $id ) => [ 'id' => $id ], array_slice( self::live_ids(), 0, 5 ) ) )
+					: self::featured( 'tematica' === $ctx['mode'] ? $ctx['tematica'] : '' );
+			} elseif ( 'live' === $ctx['mode'] ) {
+				$formations = self::prefilter_live( $message, $extra );
 			} else {
 				$formations = 'tematica' === $ctx['mode']
 					? self::prefilter_tematica( $message, $extra, $ctx['tematica'] )
 					: self::prefilter( $message, $extra );
+				// Pregunta por LIVE o por formaciones en vivo desde otra página: van
+				// también las LIVE (las primeras por fecha de inicio), con sus datos reales.
+				if ( self::asks_live( (string) $message ) ) {
+					$formations = self::merge_mentioned( $formations, array_slice( self::live_ids(), 0, 6 ) );
+				}
 			}
 			$formations = $recall
 				? self::merge_mentioned( [], $visited )
@@ -1236,7 +1281,7 @@ class OEC_AI_Chat {
 		// daba una presentación tibia que terminaba en "¿qué querés saber?". La
 		// indicación va pegada al saludo, con lo que tiene que decir.
 		if ( ! $focus && $launch ) {
-			$where = 'tematica' === $ctx['mode'] ? 'la página de formaciones de «' . ( $ctx['title'] ?? $ctx['tematica'] ) . '»' : 'el sitio';
+			$where = 'tematica' === $ctx['mode'] ? 'la página de formaciones de «' . ( $ctx['title'] ?? $ctx['tematica'] ) . '»' : ( 'live' === $ctx['mode'] ? 'la página LIVE (las mejores formaciones en vivo)' : 'el sitio' );
 			$last  = count( $messages ) - 1;
 			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde {$where} con esa pregunta."
 				. ' Las formaciones del contexto son las más destacadas de hoy. Respondé en 3 mensajes separados por |||:'
@@ -1367,7 +1412,7 @@ class OEC_AI_Chat {
 				// Ficha con inscripción cerrada: se anota aparte ("cerrada:ID") para contar
 				// cuánta gente pregunta por cada una (Chat IA → Conversaciones) y poder
 				// pedirle al socio educativo que la reabra.
-				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
+				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( 'live' === $ctx['mode'] ? 'live' : '' ) ),
 			] );
 		}
 		exit;
@@ -1495,7 +1540,7 @@ class OEC_AI_Chat {
 				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
 				'error'      => 'Sin IA: ' . $reason,
 				'model'      => 'sin-ia', // en el registro no se cuenta como consulta de un modelo
-				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : '' ),
+				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( 'live' === $ctx['mode'] ? 'live' : '' ) ),
 			] );
 		}
 		exit;
@@ -1593,7 +1638,7 @@ class OEC_AI_Chat {
 		$system = [
 			[
 				'type'          => 'text',
-				'text'          => self::system_prompt( $total ) . "\n\n" . self::sales_knowledge(),
+				'text'          => self::system_prompt( $total ) . "\n\n" . self::sales_knowledge() . self::live_knowledge(),
 				'cache_control' => [ 'type' => 'ephemeral' ],
 			],
 		];
@@ -1906,6 +1951,13 @@ class OEC_AI_Chat {
 				return $ctx;
 			}
 		}
+		// LIVE (/especiales/live)
+		if ( preg_match( '#/especiales/live/?$#', $path ) ) {
+			$ctx = self::resolve_context( [ 'mode' => 'live' ] );
+			if ( 'live' === $ctx['mode'] ) {
+				return $ctx;
+			}
+		}
 		// Landing de temática
 		if ( function_exists( 'oec_especiales_registradas' ) ) {
 			foreach ( oec_especiales_registradas() as $e ) {
@@ -1927,6 +1979,9 @@ class OEC_AI_Chat {
 			if ( $f && ! empty( $f['title'] ) ) {
 				return [ 'mode' => 'formacion', 'id' => $id, 'title' => (string) $f['title'] ];
 			}
+		}
+		if ( 'live' === $mode && function_exists( 'oec_live_disponible' ) && oec_live_disponible() ) {
+			return [ 'mode' => 'live', 'title' => 'LIVE' ];
 		}
 		if ( 'tematica' === $mode && function_exists( 'oec_especiales_registradas' ) ) {
 			foreach ( oec_especiales_registradas() as $e ) {
@@ -1977,6 +2032,8 @@ class OEC_AI_Chat {
 		} elseif ( 'tematica' === $ctx['mode'] ) {
 			/* translators: %s = nombre de la temática */
 			$launch = sprintf( __( 'Hola, ¿qué formaciones de %s me recomiendas?', 'oec-theme' ), $title );
+		} elseif ( 'live' === $ctx['mode'] ) {
+			$launch = __( 'Hola, ¿qué formaciones en vivo me recomiendas?', 'oec-theme' );
 		} elseif ( is_front_page() ) {
 			/* translators: %s = nombre del sitio */
 			$launch = sprintf( __( 'Hola, ¿qué es lo mejor que tiene hoy %s?', 'oec-theme' ), get_bloginfo( 'name' ) );
@@ -2362,6 +2419,16 @@ La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte s
 - En la línea <<IDS:…>> poné SOLO las otras formaciones que nombres; nunca la de esta ficha (la persona ya está en su página).{$before}
 TXT;
 		}
+		if ( 'live' === $ctx['mode'] ) {
+			return <<<TXT
+MODO DE ESTA CONVERSACIÓN: ASESOR DE LIVE
+La persona está en la página LIVE: las mejores formaciones en vivo del sitio (ver "LIVE" en el conocimiento). Las formaciones de abajo son de LIVE (salvo que haya preguntado por otra cosa).
+- Tu objetivo es ayudarla a elegir una formación LIVE e inscribirse.
+- Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones LIVE de la lista, con una frase sobre para quién es cada una y quién la dicta, y preguntá por su perfil u objetivo para afinar.
+- Lo distintivo de LIVE es el contacto en vivo con docentes de la élite: preguntas, casos reales y experiencia que todavía no está escrita. Usalo con naturalidad cuando sume, sin exagerar ni repetirlo en cada mensaje.
+- Si pregunta por un área sin formaciones LIVE, decilo y ofrecé lo que haya en el contexto.{$before}
+TXT;
+		}
 		if ( 'tematica' === $ctx['mode'] ) {
 			return <<<TXT
 MODO DE ESTA CONVERSACIÓN: ASESOR DE LA TEMÁTICA «{$ctx['title']}»
@@ -2372,6 +2439,38 @@ La persona está en la página de {$ctx['title']}. Las formaciones de abajo son 
 TXT;
 		}
 		return ltrim( $before );
+	}
+
+	/**
+	 * Qué es LIVE y qué formaciones la integran hoy, para que el chat lo sepa en
+	 * todo el sitio. Sale del catálogo (cambia con el sync, así que la caché de
+	 * instrucciones se rehace como mucho una vez por día). Vacío si LIVE no
+	 * está publicada.
+	 */
+	private static function live_knowledge(): string {
+		if ( ! function_exists( 'oec_live_formaciones' ) || ! oec_live_disponible() ) {
+			return '';
+		}
+		$temas = [];
+		foreach ( oec_especiales_registradas() as $e ) {
+			$temas[ $e['tematica'] ] = $e['title'];
+		}
+		$lista = [];
+		foreach ( oec_live_formaciones() as $r ) {
+			$area    = array_values( array_intersect_key( $temas, array_flip( $r['tags'] ) ) );
+			$lista[] = '  - «' . $r['title'] . '»' . ( $area ? ' (' . implode( ', ', $area ) . ')' : '' ) . ( 'SYNC' === $r['synchronicity'] ? ' — 100% en vivo' : ' — mixta' );
+		}
+		$url   = oec_live_url();
+		$lista = $lista ? "\n- Formaciones LIVE hoy:\n" . implode( "\n", $lista ) : '';
+		return <<<TXT
+
+
+LIVE — sección especial del sitio: {$url}
+- Reúne las mejores formaciones en vivo: solo entran las 100% sincrónicas o mixtas que tienen la máxima calificación de la plataforma. Se agrupan por temática.
+- Su lema es "Made for humans, by humans": docentes de la élite mundial del entrenamiento, la nutrición y la fisiología que enseñan en vivo, con preguntas, debate y casos reales. Buena parte de esa experiencia todavía no está escrita, ni en papers ni en la IA: decilo así, sin exagerar ni decir que "no está en ningún lado".
+- Las clases en vivo y las consultas quedan grabadas, como en toda formación sincrónica (ver el conocimiento de ventas).
+- Si preguntan qué es LIVE, por clases en vivo o por formaciones sincrónicas, explicalo en una o dos frases, recomendá formaciones LIVE del contexto y ofrecé la página: [Ver LIVE]({$url}).{$lista}
+TXT;
 	}
 
 	/**
