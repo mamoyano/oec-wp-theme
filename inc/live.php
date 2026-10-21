@@ -213,6 +213,9 @@ const OEC_LIVE_GLOBOS = [
 	14 => 'Mireia Porta',
 	15 => 'Iñigo Mujika',
 	16 => 'Louise Burke',
+	17 => 'Michael Boyle',
+	18 => 'Esther Morenco Martínez',
+	19 => 'Mauricio Moyano',
 ];
 
 /**
