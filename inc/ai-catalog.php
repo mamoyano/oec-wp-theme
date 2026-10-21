@@ -1027,6 +1027,22 @@ class OEC_AI_Catalog {
 
 	/* ── Data transformation ────────────────────────────────── */
 
+	/**
+	 * Formación armada con los datos de la API que ya tiene otro (la copia que el plugin
+	 * guarda al mostrar la ficha), sin pedir nada. Para fichas que el catálogo no
+	 * guarda (cerradas viejas que ya no están en el listado).
+	 */
+	public static function from_api_data( array $d ): ?array {
+		if ( empty( $d['id'] ) || empty( $d['title'] ) ) {
+			return null;
+		}
+		try {
+			return self::process( $d, [] );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+	}
+
 	private static function process( array $d, array $raw_reviews ): array {
 		$strip = static fn( $html ) => trim( wp_strip_all_tags( $html ?? '' ) );
 		// Igual, pero sin pegar las frases que el HTML separaba con <br>, </p> o </li>

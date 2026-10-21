@@ -838,8 +838,15 @@ class OEC_AI_Chat {
 
 	/** Copia de la formación que el plugin guarda al mostrar la ficha (datos completos de la API). */
 	private static function plugin_data( string $id ): array {
-		$cached = get_option( 'oec_cache_' . md5( "trainings/{$id}" ) );
-		return is_array( $cached ) && is_array( $cached['data'] ?? null ) ? $cached['data'] : [];
+		// El plugin la guarda con el ID tal como vino en la URL: si llegó en minúsculas
+		// ("t-t59022…"), con el ID del catálogo ("t-T59022…") no se encuentra.
+		foreach ( array_unique( [ $id, strtolower( $id ) ] ) as $key ) {
+			$cached = get_option( 'oec_cache_' . md5( "trainings/{$key}" ) );
+			if ( is_array( $cached ) && is_array( $cached['data'] ?? null ) ) {
+				return $cached['data'];
+			}
+		}
+		return [];
 	}
 
 	/**
@@ -1975,9 +1982,9 @@ class OEC_AI_Chat {
 		$mode = is_array( $raw ) ? (string) ( $raw['mode'] ?? '' ) : '';
 		if ( 'formacion' === $mode ) {
 			$id = (string) ( $raw['id'] ?? '' );
-			$f  = preg_match( '/^t-[A-Za-z0-9]{14}$/', $id ) ? OEC_AI_Catalog::get_formation( $id ) : null;
+			$f  = preg_match( '/^t-[A-Za-z0-9]{14}$/', $id ) ? self::formation( $id ) : null;
 			if ( $f && ! empty( $f['title'] ) ) {
-				return [ 'mode' => 'formacion', 'id' => $id, 'title' => (string) $f['title'] ];
+				return [ 'mode' => 'formacion', 'id' => (string) ( $f['id'] ?? $id ), 'title' => (string) $f['title'] ];
 			}
 		}
 		if ( 'live' === $mode && function_exists( 'oec_live_disponible' ) && oec_live_disponible() ) {
@@ -2177,8 +2184,49 @@ class OEC_AI_Chat {
 		}
 	}
 
+	/**
+	 * La formación del catálogo o, si el catálogo no la guarda (cerradas viejas que ya
+	 * no están en el listado), la que arma con la copia que el plugin guardó al mostrar
+	 * la ficha. Sin esto, en esas fichas el chat respondía como si estuviera en el home.
+	 */
+	private static function formation( string $id ): ?array {
+		$id = self::canonical_id( $id );
+		$f  = OEC_AI_Catalog::get_formation( $id );
+		if ( $f ) {
+			return $f;
+		}
+		$d = self::plugin_data( $id );
+		return $d && method_exists( 'OEC_AI_Catalog', 'from_api_data' ) ? OEC_AI_Catalog::from_api_data( $d ) : null;
+	}
+
+	/**
+	 * El ID tal como lo guarda el catálogo. En las URLs puede llegar con otra
+	 * capitalización ("t-t59022…" en vez de "t-T59022…"): la API y el plugin lo
+	 * resuelven igual, pero el archivo del catálogo no se encontraba en el servidor
+	 * (Linux distingue mayúsculas) y el chat respondía como si estuviera en el home.
+	 */
+	private static function canonical_id( string $id ): string {
+		static $map = null;
+		if ( OEC_AI_Catalog::get_formation( $id ) ) {
+			return $id;
+		}
+		if ( null === $map ) {
+			$map = [];
+			foreach ( array_merge( OEC_AI_Catalog::get_listing( true ), OEC_AI_Catalog::get_index( true ) ) as $r ) {
+				if ( ! empty( $r['id'] ) ) {
+					$map[ strtolower( (string) $r['id'] ) ] = (string) $r['id'];
+				}
+			}
+		}
+		if ( isset( $map[ strtolower( $id ) ] ) ) {
+			return $map[ strtolower( $id ) ];
+		}
+		$d = self::plugin_data( $id );
+		return ! empty( $d['id'] ) && 0 === strcasecmp( (string) $d['id'], $id ) ? (string) $d['id'] : $id;
+	}
+
 	private static function focus_base( string $id ): ?array {
-		$f = OEC_AI_Catalog::get_formation( $id );
+		$f = self::formation( $id );
 		if ( ! $f || array_key_exists( 'methodology', $f ) ) {
 			return $f;
 		}
