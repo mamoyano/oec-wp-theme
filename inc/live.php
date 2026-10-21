@@ -14,11 +14,13 @@ defined( 'ABSPATH' ) || exit;
    la franja de créditos. LIVE se suma aparte, destacada, en /especiales
    y en [oec-tematica-nav].
 
-   El video del corazón y su primer cuadro (poster, el LCP) van en el
-   tema (assets/img/live/): la página no depende de nada subido a mano.
+   El hero muestra "globos" con nuestros docentes dando clase (videos
+   cuadrados de 8 s, en el tema: assets/img/live/docentes/{n}.mp4 y su
+   primer cuadro en .webp), que aparecen y se desvanecen por la mitad
+   derecha (main.js). La página no depende de nada subido a mano.
    ============================================================ */
 
-/** Paleta: el rojo neón del corazón del video, sobre negro. */
+/** Paleta: rojo neón ("en vivo") sobre negro. */
 const OEC_LIVE_COLORS = [
 	'accent' => '#ff3b3b',
 	'dark'   => '#0b0203',
@@ -188,12 +190,65 @@ add_action( 'admin_init', function (): void {
 	set_transient( $key, 1, DAY_IN_SECONDS );
 } );
 
-// El poster del hero es el LCP: que el navegador lo pida apenas lee el <head>.
-add_action( 'wp_head', function (): void {
-	if ( oec_is_live_page() ) {
-		printf( '<link rel="preload" as="image" href="%s" fetchpriority="high">' . "\n", esc_url( OEC_THEME_URI . '/assets/img/live/poster.webp?v=' . OEC_THEME_VERSION ) );
+/**
+ * Docentes de los globos del hero: el número es el de su video en
+ * assets/img/live/docentes/. Para sumar uno: tools/live-globo.sh <video>
+ * <número> (lo deja en 8 s, 240 px, sin audio, más su primer cuadro en
+ * .webp) y una línea acá con su nombre.
+ */
+const OEC_LIVE_GLOBOS = [
+	1  => 'Horacio Anselmi',
+	2  => 'Francis Holway',
+	3  => 'Juan José González Badillo',
+	4  => 'Juan Ramón Heredia',
+	5  => 'Stuart McGill',
+	6  => 'Ariel Couceiro',
+	7  => 'Bret Contreras',
+	8  => 'Javier Fernández Alba',
+	9  => 'Brad Schoenfeld',
+	10 => 'Mario Di Santo',
+	11 => 'Luis García',
+	12 => 'Felipe Isidro',
+	13 => 'Richard Kreider',
+	14 => 'Mireia Porta',
+	15 => 'Iñigo Mujika',
+	16 => 'Louise Burke',
+];
+
+/**
+ * Los globos del hero: 8 lugares fijos (posición y tamaño en % de la
+ * mitad derecha, elegidos para que no se pisen) que main.js va llenando
+ * con docentes al azar; cada tanto uno se desvanece y aparece otro. Los
+ * videos se piden recién al aparecer su globo. Decorativo para lectores
+ * de pantalla: los nombres van en el texto de la página.
+ */
+function oec_live_globos_html(): string {
+	$base = OEC_THEME_URI . '/assets/img/live/docentes/';
+	$data = [];
+	foreach ( OEC_LIVE_GLOBOS as $n => $nombre ) {
+		$data[] = [ 'v' => $base . $n . '.mp4?v=' . OEC_THEME_VERSION, 'p' => $base . $n . '.webp?v=' . OEC_THEME_VERSION, 'n' => $nombre ];
 	}
-}, 3 );
+	// left %, top %, ancho % (del contenedor), segundos del vaivén; y los
+	// mismos tres para el celular (solo los seis primeros: ver style.css).
+	$slots = [
+		[ 6, 8, 24, 7, 2, 4, 26 ],
+		[ 44, 4, 18, 9, 38, 0, 22 ],
+		[ 70, 14, 22, 8, 70, 6, 26 ],
+		[ 22, 42, 28, 10, 18, 50, 24 ],
+		[ 60, 44, 20, 7.5, 50, 52, 22 ],
+		[ 4, 66, 17, 8.5, 80, 58, 18 ],
+		[ 52, 70, 21, 9.5, 0, 0, 0 ],
+		[ 76, 68, 16, 7, 0, 0, 0 ],
+	];
+	$html  = '<div class="oec-live-globos" data-oec-live-globos="' . esc_attr( wp_json_encode( $data ) ) . '" aria-hidden="true">';
+	foreach ( $slots as [ $x, $y, $s, $d, $mx, $my, $ms ] ) {
+		$html .= sprintf(
+			'<div class="oec-live-globo" style="--x:%1$s%%;--y:%2$s%%;--s:%3$s%%;--d:%4$ss;--mx:%5$s%%;--my:%6$s%%;--ms:%7$s%%"><div class="oec-live-globo__flota"><div class="oec-live-globo__circle"><video muted playsinline loop preload="none"></video></div><span class="oec-live-globo__name"></span></div></div>',
+			$x, $y, $s, $d, $mx, $my, $ms
+		);
+	}
+	return $html . '</div>';
+}
 
 // <title> descriptivo (el de la página es solo "LIVE"): es lo que muestra Google.
 add_filter( 'document_title_parts', function ( array $parts ): array {

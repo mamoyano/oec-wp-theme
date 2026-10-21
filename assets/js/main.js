@@ -701,6 +701,116 @@
     });
   });
 
+  /* ── LIVE (/especiales/live): globos de docentes dando clase ──────────
+     Cada globo entra en un punto al azar de la mitad derecha, la cruza
+     siguiendo una curva suave (10–15 s) y se desvanece al final; hay
+     ~6 a la vez (4 en el celular), de distintos tamaños, y se pueden
+     cruzar (el más grande, adelante). Nunca el mismo docente dos veces a
+     la vez. Cada video se pide al aparecer su globo y se suelta al irse;
+     con ahorro de datos, solo la foto. Con "reducir movimiento" (o sin
+     Web Animations) quedan los lugares fijos de oec_live_globos_html(),
+     quietos. Sin globos nuevos mientras el hero no se ve. */
+  document.querySelectorAll('[data-oec-live-globos]').forEach((box) => {
+    let data = [];
+    try { data = JSON.parse(box.dataset.oecLiveGlobos); } catch (e) { return; }
+    if (!data.length) return;
+    const conn = navigator.connection || {};
+    const ahorro = conn.saveData || /(^|-)2g$/.test(conn.effectiveType || '');
+    const quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const slots = [...box.querySelectorAll('.oec-live-globo')];
+    const activar = (el, d) => {
+      const v = el.querySelector('video');
+      el.querySelector('.oec-live-globo__name').textContent = d.n;
+      v.poster = d.p;
+      if (!ahorro) {
+        v.src = d.v;
+        v.play().catch(() => {});
+      }
+    };
+    const soltar = (el) => {
+      const v = el.querySelector('video');
+      v.pause();
+      v.removeAttribute('src');
+      v.load();
+    };
+
+    // Quietos: un docente distinto en cada lugar fijo visible.
+    if (quieto || typeof box.animate !== 'function') {
+      const orden = mezclar(data.map((_, i) => i));
+      slots.filter((sl) => sl.offsetParent !== null).forEach((sl, k) => {
+        if (k < orden.length) { activar(sl, data[orden[k]]); sl.classList.add('is-on'); }
+      });
+      return;
+    }
+
+    box.classList.add('is-libre');
+    const plantilla = slots[0];
+    const angosto = window.matchMedia('(max-width: 760px)');
+    const enUso = new Set();
+    let cola = [];
+    const siguiente = () => {
+      for (let vuelta = 0; vuelta < 2; vuelta++) {
+        if (!cola.length) cola = mezclar(data.map((_, i) => i));
+        const k = cola.findIndex((i) => !enUso.has(i));
+        if (k !== -1) return cola.splice(k, 1)[0];
+        cola = [];
+      }
+      return -1;
+    };
+    const azar = (a, b) => a + Math.random() * (b - a);
+    const entre = (v, a, b) => Math.min(Math.max(v, a), b);
+
+    const lanzar = () => {
+      // Celular o escritorio se mira en cada globo: si giran el teléfono o cambia el ancho, se acomoda.
+      const movil = angosto.matches;
+      if (!visible || document.hidden || enUso.size >= (movil ? 4 : 6)) return;
+      const i = siguiente();
+      if (i < 0) return;
+      const W = box.clientWidth;
+      const H = box.clientHeight;
+      const s = Math.round(movil ? azar(62, 104) : azar(96, 200));
+      const maxX = Math.max(0, W - s);
+      const maxY = Math.max(0, H - s - 30); // lugar para el nombre
+      // Curva: de un punto al azar a otro, pasando por un punto de control
+      // corrido hacia un costado (bezier cuadrática).
+      const x1 = azar(0, maxX), y1 = azar(0, maxY);
+      const ang = azar(0, Math.PI * 2), dist = azar(0.35, 0.7) * W;
+      const x2 = entre(x1 + Math.cos(ang) * dist, 0, maxX), y2 = entre(y1 + Math.sin(ang) * dist, 0, maxY);
+      const cx = (x1 + x2) / 2 + azar(-60, 60), cy = (y1 + y2) / 2 + azar(-60, 60);
+      const punto = (t) => [(1 - t) ** 2 * x1 + 2 * (1 - t) * t * cx + t * t * x2, (1 - t) ** 2 * y1 + 2 * (1 - t) * t * cy + t * t * y2];
+
+      const el = plantilla.cloneNode(true);
+      el.removeAttribute('style');
+      el.classList.remove('is-on');
+      el.classList.add('oec-live-globo--libre');
+      el.style.width = s + 'px';
+      el.style.zIndex = String(s);
+      box.appendChild(el);
+      enUso.add(i);
+      activar(el, data[i]);
+      const anim = el.animate(
+        [[0, 0, 0.85], [0.12, 1, 1], [0.5, 1, 1], [0.86, 1, 0.97], [1, 0, 0.9]].map(([t, o, sc]) => {
+          const [x, y] = punto(t);
+          return { offset: t, opacity: o, transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${sc})` };
+        }),
+        { duration: azar(10000, 15000), easing: 'linear', fill: 'both' }
+      );
+      anim.onfinish = () => {
+        soltar(el);
+        el.remove();
+        enUso.delete(i);
+      };
+    };
+
+    let visible = true;
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(([e]) => { visible = e.isIntersecting; }).observe(box);
+    }
+    // Arranque escalonado y, después, uno nuevo cada tanto si hay lugar.
+    for (let k = 0; k < 3; k++) setTimeout(lanzar, 200 + k * 700);
+    setInterval(lanzar, 2000);
+  });
+
   /* ── Cinta de logos [oec-trust-logos] ───────────────────────
      La pista trae los logos dos veces; se corre el largo exacto de una
      vuelta (del 1.º logo al 1.º de la segunda copia) y se empalma. Con el

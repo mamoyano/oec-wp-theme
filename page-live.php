@@ -38,7 +38,7 @@ add_filter( 'oec_seo', function ( $c ) use ( $oec_live_rows, $oec_live_img ) {
 	return array_merge( $c, [
 		'title'       => __( 'LIVE: formaciones en vivo con docentes de élite', 'oec-theme' ),
 		'description' => sprintf( __( 'Made for humans, by humans: %d formaciones en vivo con docentes de la élite del deporte, la nutrición y la fisiología. Experiencia que todavía no está escrita: ni en papers ni en la IA.', 'oec-theme' ), count( $oec_live_rows ) ),
-		'image'       => $oec_live_img . '/poster.webp',
+		'image'       => $oec_live_img . '/og.jpg',
 	] );
 } );
 
@@ -46,10 +46,9 @@ get_header();
 ?>
 <main id="main-content" class="oec-live" style="--live-accent: <?php echo esc_attr( $oec_live_c['accent'] ); ?>; --live-dark: <?php echo esc_attr( $oec_live_c['dark'] ); ?>; --live-dark-2: <?php echo esc_attr( $oec_live_c['dark-2'] ); ?>;">
 
-	<?php /* ── HERO: el corazón late a la derecha; el video llega sin src y lo pide main.js con la primera interacción (como el de las landings) ── */ ?>
+	<?php /* ── HERO: globos con nuestros docentes dando clase, que aparecen y se desvanecen en la mitad derecha (main.js) ── */ ?>
 	<section class="oec-live-hero">
-		<video class="oec-live-hero__video" muted playsinline loop preload="none" aria-hidden="true" poster="<?php echo esc_url( $oec_live_img . '/poster.webp?v=' . OEC_THEME_VERSION ); ?>" data-oec-src="<?php echo esc_url( $oec_live_img . '/heart.mp4?v=' . OEC_THEME_VERSION ); ?>"></video>
-		<div class="oec-live-hero__shade" aria-hidden="true"></div>
+		<?php echo oec_live_globos_html(); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 		<div class="oec-live-wrap oec-live-hero__inner">
 			<?php oec_breadcrumb( [ [ __( 'Especiales', 'oec-theme' ), home_url( user_trailingslashit( '/especiales' ) ) ], [ 'LIVE' ] ] ); ?>
 			<?php echo oec_live_logo( 'oec-live-hero__logo' ); // phpcs:ignore WordPress.Security.EscapeOutput -- SVG fijo ?>
