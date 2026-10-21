@@ -216,6 +216,10 @@ const OEC_LIVE_GLOBOS = [
 	17 => 'Michael Boyle',
 	18 => 'Esther Morenco Martínez',
 	19 => 'Mauricio Moyano',
+	20 => 'Bob Bowman',
+	21 => 'Julio Calleja',
+	22 => 'Alejandro Gómez Monroy',
+	23 => 'Javier Butragueño',
 ];
 
 /**
