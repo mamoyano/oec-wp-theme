@@ -38,7 +38,6 @@ add_filter( 'oec_seo', function ( $c ) use ( $oec_live_rows, $oec_live_img ) {
 	return array_merge( $c, [
 		'title'       => __( 'LIVE: formaciones en vivo con docentes de élite', 'oec-theme' ),
 		'description' => sprintf( __( 'Made for humans, by humans: %d formaciones en vivo con docentes de la élite del deporte, la nutrición y la fisiología. Experiencia que todavía no está escrita: ni en papers ni en la IA.', 'oec-theme' ), count( $oec_live_rows ) ),
-		'image'       => $oec_live_img . '/og.jpg',
 	] );
 } );
 

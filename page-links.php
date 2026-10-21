@@ -85,7 +85,15 @@ $icons_url = function_exists( 'oec_unprefix_asset_src' ) ? oec_unprefix_asset_sr
 <meta property="og:title" content="<?php echo esc_attr( $titulo ); ?>">
 <meta property="og:description" content="<?php echo esc_attr( $desc ); ?>">
 <meta property="og:url" content="<?php echo esc_url( get_permalink() ); ?>">
-<?php if ( $logo ) : ?><meta property="og:image" content="<?php echo esc_url( $logo ); ?>">
+<?php
+// Para compartir: la tarjeta de marca (1200×630, JPEG); el logo es chico y .webp (WhatsApp no lo muestra).
+$og_img = function_exists( 'oec_seo_share_card' ) ? oec_seo_share_card( 'generica' ) : null;
+$og_img = $og_img ?: ( $logo ? [ $logo, 0, 0 ] : null );
+?>
+<?php if ( $og_img ) : ?><meta property="og:image" content="<?php echo esc_url( $og_img[0] ); ?>">
+<?php if ( $og_img[1] ) : ?><meta property="og:image:width" content="<?php echo (int) $og_img[1]; ?>">
+<meta property="og:image:height" content="<?php echo (int) $og_img[2]; ?>">
+<?php endif; ?>
 <?php endif; ?>
 <?php if ( get_site_icon_url() ) : ?><link rel="icon" href="<?php echo esc_url( get_site_icon_url( 32 ) ); ?>">
 <link rel="apple-touch-icon" href="<?php echo esc_url( get_site_icon_url( 180 ) ); ?>">

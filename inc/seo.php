@@ -134,8 +134,34 @@ add_action( 'save_post', function ( $post_id, $post ) {
 	}
 }, 20, 2 );
 
-/** Imagen por defecto: la destacada del home, si no el logo o el ícono del sitio. */
+/**
+ * ¿Van las tarjetas para compartir? Son de G-SE (logo, docentes, textos en
+ * castellano): solo en g-se.com/es (y su copia local). En las otras
+ * comunidades (fisio.one, voley.org…) y en /en, la imagen de siempre.
+ */
+function oec_seo_share_cards_on(): bool {
+	$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
+	return in_array( $host, [ 'g-se.com', 'oec-test.local' ], true ) && 0 === strpos( get_locale(), 'es' );
+}
+
+/**
+ * Tarjeta para compartir diseñada para una página (assets/img/share/{clave}.jpg,
+ * 1200×630: logo, el H1 de la página y una imagen que la representa), como
+ * [url, ancho, alto, alt] — o null si no hay una para esa clave.
+ */
+function oec_seo_share_card( string $clave ): ?array {
+	$file = '/assets/img/share/' . sanitize_file_name( $clave ) . '.jpg';
+	if ( '' === $clave || ! oec_seo_share_cards_on() || ! file_exists( OEC_THEME_DIR . $file ) ) {
+		return null;
+	}
+	return [ OEC_THEME_URI . $file . '?v=' . OEC_THEME_VERSION, 1200, 630, get_bloginfo( 'name' ) ];
+}
+
+/** Imagen por defecto: la tarjeta de marca; si no está, la destacada del home, el logo o el ícono del sitio. */
 function oec_seo_default_image() {
+	if ( $card = oec_seo_share_card( 'generica' ) ) {
+		return $card;
+	}
 	$front = (int) get_option( 'page_on_front' );
 	if ( $front && has_post_thumbnail( $front ) ) {
 		return (int) get_post_thumbnail_id( $front );
@@ -347,7 +373,9 @@ function oec_seo_head(): void {
 	$canon = array_key_exists( 'canonical', $c ) ? $c['canonical'] : $url;
 
 	$img = null;
-	if ( is_int( $c['image'] ?? null ) ) {
+	if ( is_array( $c['image'] ?? null ) ) {
+		$img = $c['image']; // ya armada: [url, ancho, alto, alt] (oec_seo_share_card)
+	} elseif ( is_int( $c['image'] ?? null ) ) {
 		$img = oec_seo_share_image( $c['image'] );
 	} elseif ( ! empty( $c['image'] ) ) {
 		$att = attachment_url_to_postid( $c['image'] );
@@ -438,3 +466,31 @@ function oec_seo_head(): void {
 		echo '<script type="application/ld+json">' . wp_json_encode( $graph, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . "</script>\n";
 	}
 }
+
+/*
+ * Tarjetas para compartir de las páginas clave (WhatsApp, LinkedIn, Facebook…):
+ * home, LIVE, las landings de temática (por su slug, hijas de /especiales) y
+ * las páginas con tarjeta propia (formaciones, docentes, especiales, …). Va al
+ * final de todos los filtros, así le gana a la imagen que pone cada plantilla
+ * o la primera [oec-tira] de una landing. Las demás páginas usan la genérica
+ * (oec_seo_default_image), y las fichas y los artículos, su propia imagen.
+ */
+add_filter( 'oec_seo', function ( $c ) {
+	if ( ! is_array( $c ) || is_single() ) {
+		return $c;
+	}
+	$clave = '';
+	if ( is_front_page() ) {
+		$clave = 'home';
+	} elseif ( function_exists( 'oec_is_live_page' ) && oec_is_live_page() ) {
+		$clave = 'live';
+	} elseif ( is_page() ) {
+		$clave = (string) get_post_field( 'post_name', get_queried_object_id() );
+		// /links tiene de destacada el logo chico en .webp (WhatsApp no lo muestra).
+		$clave = [ 'links' => 'generica' ][ $clave ] ?? $clave;
+	}
+	if ( $card = oec_seo_share_card( $clave ) ) {
+		$c['image'] = $card;
+	}
+	return $c;
+}, 99 );
