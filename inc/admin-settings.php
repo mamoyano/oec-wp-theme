@@ -1841,7 +1841,9 @@ add_action( 'wp_body_open', 'oec_output_gtm_body', 1 );
 const OEC_CAMPAIGN_LINKS = true;
 
 function oec_output_fbclid_links(): void {
-	$js = (string) file_get_contents( get_template_directory() . '/assets/js/campaign-links.js' );
+	// is_readable: mientras WordPress reemplaza el tema al actualizarlo, el archivo no existe un instante.
+	$file = get_template_directory() . '/assets/js/campaign-links.js';
+	$js   = is_readable( $file ) ? (string) file_get_contents( $file ) : '';
 	if ( '' !== $js ) {
 		echo "<script>\n" . $js . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput
 	}
