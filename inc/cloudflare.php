@@ -21,6 +21,9 @@ defined( 'ABSPATH' ) || exit;
       campus (reemplaza al script del sitio viejo, misma URL). Borra la
       página en Cloudflare y, si es una ficha, los datos de la API que el
       plugin guarda un día.
+   5. Precalentado: a las 00:02 y después de sincronizar o de borrar todo,
+      el sitio vuelve a pedir la home, los listados y las fichas abiertas
+      (sección 8).
 
    Credenciales en wp-config.php (nunca en el repo, que es público):
      define( 'OEC_CF_API_TOKEN', '…' ); // token con permiso Zone → Cache Purge
@@ -143,7 +146,11 @@ function oec_cf_purge_urls( array $urls ) {
 }
 
 function oec_cf_purge_all() {
-	return oec_cf_request( [ 'purge_everything' => true ], __( 'todo el sitio', 'oec-theme' ) );
+	$result = oec_cf_request( [ 'purge_everything' => true ], __( 'todo el sitio', 'oec-theme' ) );
+	if ( true === $result ) {
+		oec_cf_warm_soon( 'todo' );
+	}
+	return $result;
 }
 
 /* ── 3. Cola: los borrados automáticos se mandan al final del pedido ── */
@@ -404,6 +411,131 @@ function oec_cf_purge_endpoint(): void {
 	);
 	exit;
 }
+
+/* ── 8. Precalentado: volver a llenar Cloudflare antes que las visitas ──
+   La home, los listados y las fichas vencen a medianoche y no se sirven
+   vencidas (ver oec_cf_cache_control()): la primera visita de cada una
+   esperaba que el servidor la armara (~1,5 s una ficha, contra ~0,1 s
+   desde Cloudflare). A las 00:02, después de sincronizar el catálogo y
+   después de borrar todo el sitio, el sitio se pide a sí mismo esas
+   páginas a través de Cloudflare, de a una (las fichas consultan la API) y
+   en tandas de ~50 s por pasada del cron. Solo en producción, en el sitio
+   de configuración (/es) y con Cloudflare configurado.
+   Con "Tiered Cache" activado en Cloudflare, lo que se llena desde acá
+   sirve para todos sus centros de datos, no solo para el más cercano. */
+
+const OEC_CF_WARM_OPTION = 'oec_cf_warm';
+
+/** Páginas con listados y landings (las mismas que borra la sincronización, más artículos). */
+const OEC_CF_WARM_PAGES = [ 'formaciones', 'docentes', 'organizaciones', 'articulos', 'especiales', 'links' ];
+
+function oec_cf_warm_enabled(): bool {
+	return oec_cf_configured() && 'production' === wp_get_environment_type() && oec_is_config_site();
+}
+
+/** Home, listados, landings y fichas abiertas de este sitio. */
+function oec_cf_warm_urls(): array {
+	$urls = [ home_url( '/' ) ];
+	foreach ( OEC_CF_WARM_PAGES as $slug ) {
+		$page = get_page_by_path( $slug );
+		if ( $page ) {
+			$urls[] = get_permalink( $page );
+			foreach ( get_pages( [ 'child_of' => $page->ID ] ) as $child ) {
+				$urls[] = get_permalink( $child );
+			}
+		}
+	}
+	if ( class_exists( 'OEC_AI_Catalog' ) ) {
+		foreach ( OEC_AI_Catalog::get_listing() as $r ) {
+			if ( ! empty( $r['open'] ) && ! oec_formation_is_external( $r ) ) {
+				$urls[] = oec_formation_url( $r );
+			}
+		}
+	}
+	return array_values( array_unique( array_filter( $urls, 'is_string' ) ) );
+}
+
+/** Precalentar en un par de minutos (después de que salga el borrado de este pedido). */
+function oec_cf_warm_soon( string $motivo ): void {
+	if ( oec_cf_warm_enabled() && ! wp_next_scheduled( 'oec_cf_warm_start', [ $motivo ] ) ) {
+		wp_schedule_single_event( time() + 2 * MINUTE_IN_SECONDS, 'oec_cf_warm_start', [ $motivo ] );
+	}
+}
+
+// Todas las noches a las 00:02 (hora del sitio).
+add_action( 'init', function (): void {
+	if ( oec_cf_warm_enabled() && ! wp_next_scheduled( 'oec_cf_warm_start', [ 'noche' ] ) ) {
+		$t = ( new DateTimeImmutable( 'tomorrow', wp_timezone() ) )->getTimestamp() + 2 * MINUTE_IN_SECONDS;
+		wp_schedule_single_event( $t, 'oec_cf_warm_start', [ 'noche' ] );
+	}
+} );
+add_action( 'oec_ai_catalog_synced', fn() => oec_cf_warm_soon( 'catalogo' ) );
+
+add_action( 'oec_cf_warm_start', function ( string $motivo = '' ): void {
+	if ( ! oec_cf_warm_enabled() ) {
+		return;
+	}
+	update_option( OEC_CF_WARM_OPTION, [
+		'motivo'   => $motivo,
+		'inicio'   => time(),
+		'fin'      => 0,
+		'pending'  => oec_cf_warm_urls(),
+		'llenadas' => 0,
+		'estaban'  => 0,
+		'errores'  => [],
+	], false );
+	wp_clear_scheduled_hook( 'oec_cf_warm_batch' );
+	do_action( 'oec_cf_warm_batch' );
+} );
+
+add_action( 'oec_cf_warm_batch', function (): void {
+	$s = get_option( OEC_CF_WARM_OPTION );
+	if ( ! is_array( $s ) || empty( $s['pending'] ) ) {
+		return;
+	}
+	$hasta = time() + 50;
+	while ( $s['pending'] && time() < $hasta ) {
+		$url = array_shift( $s['pending'] );
+		$res = wp_remote_get( $url, [
+			'timeout'     => 30,
+			'redirection' => 0,
+			'user-agent'  => 'Mozilla/5.0 (compatible; OEC-Cache-Warmer/1.0; +' . home_url( '/' ) . ')',
+		] );
+		$code = is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
+		if ( 200 === $code ) {
+			'HIT' === strtoupper( (string) wp_remote_retrieve_header( $res, 'cf-cache-status' ) ) ? $s['estaban']++ : $s['llenadas']++;
+		} elseif ( count( $s['errores'] ) < 20 ) {
+			$s['errores'][] = ( $code ?: $res->get_error_message() ) . ' ' . $url;
+		}
+	}
+	$s['fin'] = $s['pending'] ? 0 : time();
+	update_option( OEC_CF_WARM_OPTION, $s, false );
+	if ( $s['pending'] ) {
+		wp_schedule_single_event( time() + MINUTE_IN_SECONDS, 'oec_cf_warm_batch' );
+	}
+} );
+
+// Estado en la barra de administración, debajo del último borrado.
+add_action( 'admin_bar_menu', function ( WP_Admin_Bar $bar ): void {
+	if ( ! current_user_can( 'edit_posts' ) || ! oec_cf_warm_enabled() || ! $bar->get_node( 'oec-cf' ) ) {
+		return;
+	}
+	$s = get_option( OEC_CF_WARM_OPTION );
+	if ( ! is_array( $s ) ) {
+		$txt = __( 'Precalentado: todavía no corrió', 'oec-theme' );
+	} elseif ( ! $s['fin'] ) {
+		$txt = sprintf( __( 'Precalentado en curso: faltan %d páginas', 'oec-theme' ), count( $s['pending'] ) );
+	} else {
+		$txt = sprintf(
+			__( 'Precalentado hace %1$s: %2$d páginas (%3$d ya estaban), %4$d errores', 'oec-theme' ),
+			human_time_diff( $s['fin'] ),
+			$s['llenadas'] + $s['estaban'],
+			$s['estaban'],
+			count( $s['errores'] )
+		);
+	}
+	$bar->add_node( [ 'parent' => 'oec-cf', 'id' => 'oec-cf-warm', 'title' => esc_html( $txt ), 'href' => false, 'meta' => [ 'title' => implode( "\n", (array) ( $s['errores'] ?? [] ) ) ] ] );
+}, 91 );
 
 // Por si el servidor sí deja pasar /purge-cache.php a WordPress.
 add_action( 'parse_request', function (): void {

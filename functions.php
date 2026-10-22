@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.191' );
+define( 'OEC_THEME_VERSION', '1.0.192' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -73,9 +73,17 @@ function oec_enqueue_assets(): void {
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
 
-	// País y moneda de los precios: en el <head> y sin defer, tiene que correr
-	// antes que el script de la ficha (ver assets/js/region.js).
-	wp_enqueue_script( 'oec-region', OEC_THEME_URI . '/assets/js/region.js', [], oec_asset_version( 'assets/js/region.js' ), false );
+	// País y moneda de los precios (ver assets/js/region.js). En la ficha va en
+	// el <head> y sin defer: tiene que correr antes que el script del plugin. En
+	// el resto, con defer (sigue corriendo antes que el chat y que DOMContentLoaded)
+	// para no bloquear el render.
+	wp_enqueue_script(
+		'oec-region',
+		OEC_THEME_URI . '/assets/js/region.js',
+		[],
+		oec_asset_version( 'assets/js/region.js' ),
+		is_page( 'formacion' ) ? false : [ 'strategy' => 'defer', 'in_footer' => false ]
+	);
 
 	// Asistente IA — TODO: re-condicionar a oec_anthropic_key tras pruebas de UI
 	wp_enqueue_script(

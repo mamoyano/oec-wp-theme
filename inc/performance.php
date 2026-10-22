@@ -490,6 +490,17 @@ function oec_send_cache_headers(): void {
 // inexistente, newsletter…) siguen pisando este header.
 add_action( 'wp', 'oec_send_cache_headers' );
 
+// Una redirección que sale después de 'wp' (la canónica de WP con/sin barra
+// final, las de inc/redirects.php…) heredaba el tiempo de la página: hasta 30
+// días en Cloudflare. Si después cambia el destino, la vieja queda pegada (y
+// con la inversa nueva, en bucle). Se guardan 1 h.
+add_filter( 'wp_redirect', function ( $location ) {
+	if ( $location && did_action( 'wp' ) && ! headers_sent() && ! is_admin() && ! defined( 'REST_REQUEST' ) && ! is_user_logged_in() ) {
+		header( 'Cache-Control: public, max-age=300, s-maxage=' . HOUR_IN_SECONDS );
+	}
+	return $location;
+}, 999 );
+
 /* ============================================================
    14. OCULTAR VERSIÓN DE PHP — el header X-Powered-By lo agrega el
        propio PHP (ini "expose_php"), no WordPress; header_remove()

@@ -157,7 +157,11 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 	$sync     = [ 'SYNC' => 'Sincrónica', 'MIXED' => 'Mixta', 'ASYNC-F' => 'Asincrónica c/foros' ][ $r['synchronicity'] ] ?? 'Asincrónica';
 	$rev_n    = (int) ( $r['reviews']['count'] ?? 0 );
 	// imgrsize elige AVIF/WebP según el Accept del navegador; q=80 pesa ~40 % menos que 89 sin diferencia visible a este tamaño.
-	$img      = $r['image'] ? 'https://imgrsize.oe-img.center/campus/capacitacion/imagen/' . basename( (string) wp_parse_url( $r['image'], PHP_URL_PATH ) ) . '?w=640&q=80' : '';
+	// La card mide ~330 px de ancho (en el carrusel y en la grilla): 400 alcanza en pantallas comunes
+	// y 640 queda para las de alta densidad.
+	$img_base = $r['image'] ? 'https://imgrsize.oe-img.center/campus/capacitacion/imagen/' . basename( (string) wp_parse_url( $r['image'], PHP_URL_PATH ) ) : '';
+	$img      = $img_base ? $img_base . '?w=640&q=80' : '';
+	$srcset   = $img_base ? $img_base . '?w=400&q=80 400w, ' . $img . ' 640w' : '';
 	$title    = mb_strlen( $r['title'] ) > 100 ? mb_substr( $r['title'], 0, 97 ) . '...' : $r['title'];
 	// La card muestra ~8 renglones y el resto lo tapa el degradé: la descripción
 	// completa (a veces 3000+ caracteres) solo engordaba el HTML (~250 KB en el home).
@@ -179,7 +183,7 @@ function oec_formacion_card( array $r, array $o = [] ): string {
 					<div class="oec-badges-container">
 						<?php foreach ( $r['badges'] as $b ) : ?><div class="oec-badge-item"><?php echo esc_html( $b ); ?></div><?php endforeach; ?>
 					</div>
-					<?php if ( $img ) : ?><img src="<?php echo esc_url( $img ); ?>" class="oec-image" alt="<?php echo esc_attr( $r['title'] ); ?>" width="640" height="350" <?php echo empty( $o['eager'] ) ? 'loading="lazy" decoding="async"' : 'fetchpriority="high"'; ?>><?php endif; ?>
+					<?php if ( $img ) : ?><img src="<?php echo esc_url( $img ); ?>" srcset="<?php echo esc_attr( $srcset ); ?>" sizes="(max-width: 600px) calc(100vw - 48px), 380px" class="oec-image" alt="<?php echo esc_attr( $r['title'] ); ?>" width="640" height="350" <?php echo empty( $o['eager'] ) ? 'loading="lazy" decoding="async"' : 'fetchpriority="high"'; ?>><?php endif; ?>
 				</div>
 				<div class="oec-body">
 					<div class="oec-title"><?php echo esc_html( $title ); ?></div>

@@ -81,7 +81,7 @@ function oec_nl_manage_identity( WP_REST_Request $request ): ?string {
 }
 
 function oec_nl_manage_url( string $email = '' ): string {
-	$url = oec_config_url( '/' . OEC_NL_MANAGE_SLUG . '/' );
+	$url = oec_config_url( user_trailingslashit( '/' . OEC_NL_MANAGE_SLUG ) );
 	return $email ? $url . '?email=' . rawurlencode( $email ) : $url;
 }
 

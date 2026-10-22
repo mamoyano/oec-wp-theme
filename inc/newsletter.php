@@ -766,7 +766,7 @@ function oec_nl_confirm_url( string $email, string $first, string $last, array $
 		'ls'  => $lists,
 		'exp' => time() + OEC_NL_CONFIRM_HOURS * HOUR_IN_SECONDS,
 	] );
-	return add_query_arg( 't', $token, oec_config_url( '/newsletter-confirmado/' ) );
+	return add_query_arg( 't', $token, oec_config_url( user_trailingslashit( '/newsletter-confirmado' ) ) );
 }
 
 function oec_nl_send_confirmation( string $email, string $first, string $last, array $lists ) {
@@ -1787,7 +1787,7 @@ function oec_nl_build_email( array $list, int $sent_at, int $since ) {
 		return new WP_Error( 'oec_nl_empty', 'Sin artículos nuevos ni formaciones.' );
 	}
 
-	$claim = oec_config_url( '/otorgar-creditos/' ) . '?t=' . $sent_at . '&s=' . oec_nl_claim_sig( $sent_at ) . '&email={email}';
+	$claim = oec_config_url( user_trailingslashit( '/otorgar-creditos' ) ) . '?t=' . $sent_at . '&s=' . oec_nl_claim_sig( $sent_at ) . '&email={email}';
 
 	return oec_nl_render_email( [
 		'date'    => wp_date( 'l j \d\e F', $sent_at ),

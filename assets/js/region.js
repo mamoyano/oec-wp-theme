@@ -9,8 +9,9 @@
  *
  * Expone window.oecRegion { get(), set(), reset(), open(), current() } y el
  * evento "oec:region" (document). Lo usan el chat con IA y el selector del pie.
- * Se carga en el <head>, sin defer: en la ficha tiene que correr antes que el
- * script del plugin, que lee el país y la moneda de la URL al iniciar.
+ * En la ficha se carga en el <head> sin defer: tiene que correr antes que el
+ * script del plugin, que lee el país y la moneda de la URL al iniciar. En el
+ * resto de las páginas va con defer (functions.php).
  */
 (function () {
   'use strict';
@@ -79,13 +80,17 @@
     }
   })();
 
-  /* ── 2. Detección por IP (una vez por página) ── */
+  /* ── 2. Detección por IP (una vez por visita: queda en sessionStorage) ── */
+  const IP_KEY = 'oec_region_ip';
   let detecting = null;
   function detect() {
     if (!detecting) {
-      detecting = fetch(PREFS_URL, { cache: 'no-store' })
+      let saved = null;
+      try { const s = JSON.parse(sessionStorage.getItem(IP_KEY) || 'null'); saved = s ? clean(s.country, s.currency) : null; } catch (_) {}
+      detecting = saved ? Promise.resolve(saved) : fetch(PREFS_URL, { cache: 'no-store' })
         .then(r => (r.ok ? r.json() : null))
         .then(d => (d ? clean(d.country, d.currency) : null))
+        .then(r => { if (r) { try { sessionStorage.setItem(IP_KEY, JSON.stringify(r)); } catch (_) {} } return r; })
         .catch(() => null);
     }
     return detecting;
