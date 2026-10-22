@@ -525,6 +525,42 @@ add_filter( 'the_content', function ( string $content ): string {
 	return false === $j ? "[oec-campana]\n" . $content : substr_replace( $content, "\n[oec-campana]\n", $j, 0 );
 }, 9 );
 
+/**
+ * Banner de la campaña para /especiales (page-especiales.php), arriba del
+ * de LIVE: mientras está por empezar o en curso.
+ */
+function oec_cmp_banner(): string {
+	$phase = oec_cmp_view_phase();
+	if ( ! in_array( $phase, [ 'teaser', 'live' ], true ) || ! get_page_by_path( 'especiales/' . oec_cmp_opts()['slug'] ) ) {
+		return '';
+	}
+	$rows = oec_cmp_formaciones( $phase );
+	if ( ! $rows ) {
+		return '';
+	}
+	$o    = oec_cmp_opts();
+	$t    = oec_cmp_times( $o );
+	$max  = 'live' === $phase ? oec_cmp_max_pct( $rows ) : 0;
+	$head = 'live' === $phase
+		? ( $max ? sprintf( 'Hasta %d%% OFF en %d formaciones', $max, count( $rows ) ) : sprintf( '%d formaciones con descuento', count( $rows ) ) )
+		: sprintf( 'Se viene: %s', oec_cmp_dias_texto( $o ) );
+	$text = 'live' === $phase
+		? sprintf( 'Promo flash: solo %s. El descuento se aplica solo al inscribirte, sin códigos.', oec_cmp_dias_texto( $o ) )
+		: sprintf( 'Descuentos fuertes en %d formaciones, solo por %s. Mirá desde ahora cuáles participan.', count( $rows ), oec_cmp_duracion_texto( $o ) );
+	ob_start();
+	?>
+	<a class="oec-cmp-banner" href="<?php echo esc_url( oec_cmp_url( $o ) ); ?>" data-oec-cmp-phase="<?php echo esc_attr( $phase ); ?>">
+		<span class="oec-cmp-banner__title"><?php echo oec_cmp_wordmark( $o['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></span>
+		<span class="oec-cmp-banner__text"><strong><?php echo esc_html( $head ); ?></strong><span><?php echo esc_html( $text ); ?></span></span>
+		<span class="oec-cmp-banner__side">
+			<?php echo oec_cmp_countdown( 'live' === $phase ? $t['end'] : $t['start'], 'live' === $phase ? 'Termina en' : 'Empieza en', 'oec-cmp-cd--sm' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
+			<span class="oec-cmp-btn oec-cmp-btn--sm"><?php echo esc_html( 'live' === $phase ? 'Ver las ofertas' : 'Ver cuáles participan' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+		</span>
+	</a>
+	<?php
+	return (string) ob_get_clean();
+}
+
 /* ── Piezas compartidas (landing y franja) ────────────────── */
 
 /**

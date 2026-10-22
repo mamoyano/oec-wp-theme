@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.193
+Version: 1.0.194
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5524,7 +5524,8 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 .oec-cmp-cd--sm .oec-cmp-cd__l { font-size: 9.5px; }
 
 /* ── Landing ── */
-.oec-cmpL { background: #f3f6fb; }
+/* clip: la cinta va girada y más ancha que la pantalla; sin esto se podía scrollear de costado. */
+.oec-cmpL { background: #f3f6fb; overflow-x: clip; }
 .oec-cmpL-wrap { width: 88%; max-width: 1280px; margin: 0 auto; }
 .oec-cmpL-hero { position: relative; overflow: hidden; isolation: isolate; color: var(--color-white); background: radial-gradient(ellipse 80% 70% at 85% 10%, var(--cmp-dark-2) 0%, rgba(0, 0, 0, 0) 60%), var(--cmp-dark); }
 .oec-cmpL-hero__inner { position: relative; padding-block: 56px 72px; }
@@ -5693,4 +5694,17 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 @media (prefers-reduced-motion: reduce) {
   .oec-cmp-word__main::before, .oec-cmp-word__main::after, .oec-cmpL-hero__grid, .oec-cmpL-hero__glow, .oec-cmpL-hero__pcts span, .oec-cmpL-tape__track, .oec-cmp-bar__track { animation: none; }
   .oec-cmp-word__main::before, .oec-cmp-word__main::after { display: none; }
+}
+
+/* ── Banner de la campaña en /especiales (como el de LIVE) ── */
+.oec-cmp-banner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 18px 32px; margin: 2.5rem 0 1rem; padding: 26px 32px; border-radius: 18px; text-decoration: none !important; color: var(--color-white) !important; background: radial-gradient(circle at 92% 50%, rgba(var(--cmp-accent-rgb), .22) 0%, rgba(var(--cmp-accent-rgb), 0) 45%), linear-gradient(150deg, var(--cmp-dark) 0%, var(--cmp-dark-2) 100%); box-shadow: 0 0 0 1px rgba(var(--cmp-accent-rgb), .35); transition: transform .2s; }
+.oec-cmp-banner[hidden] { display: none; }
+.oec-cmp-banner:hover { transform: translateY(-3px); }
+.oec-cmp-banner__title { font-size: 40px; }
+.oec-cmp-banner__text strong { display: block; font-size: 20px; font-weight: 800; color: var(--cmp-accent); }
+.oec-cmp-banner__text span { font-size: 15px; color: rgba(var(--color-white-rgb), .8); }
+.oec-cmp-banner__side { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+@media (max-width: 860px) {
+  .oec-cmp-banner { grid-template-columns: minmax(0, 1fr); padding: 22px; }
+  .oec-cmp-banner__side { align-items: flex-start; }
 }
