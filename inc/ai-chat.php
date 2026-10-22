@@ -2663,7 +2663,7 @@ TXT;
 		// Quien pide artículos, papers o blogs va a la sección de artículos
 		// del sitio (artículos, blogs y VigIA), no a buscadores externos.
 		$art_page  = get_page_by_path( 'articulos' );
-		$articulos = $art_page ? "\n- Si busca contenido gratuito para leer (artículos, papers, investigaciones, blogs, bibliografía) y no una formación: decile que en el sitio hay una sección enorme y gratuita de artículos científicos, blogs y VigIA, mandalo ahí con [Ver artículos](" . get_permalink( $art_page ) . ") y explicale que use el buscador de esa página (el que dice \"Buscar por título o tema\") con el tema que le interesa. No lo mandes a PubMed, Google Scholar ni otros sitios. Si encaja, después podés sugerir una formación del tema, sin insistir" : '';
+		$articulos = $art_page ? "\n- Si busca contenido gratuito para leer (artículos, papers, investigaciones, blogs, bibliografía) y no una formación: decile que en el sitio hay una sección enorme y gratuita de artículos científicos, blogs y VigIA, y dale el enlace con la búsqueda ya hecha: [Ver artículos sobre <tema>](" . get_permalink( $art_page ) . "?q=palabra+palabra). En q van 1 a 4 palabras clave del tema en castellano, sin tildes, unidas con + (p. ej. ?q=fuerza+adultos+mayores). No le expliques cómo buscar ni lo mandes a PubMed, Google Scholar u otros sitios. Si encaja, después podés sugerir una formación del tema, sin insistir" : '';
 
 		return <<<PROMPT
 Eres un asesor académico de {$site}, especializado en formaciones de ciencias del deporte, salud y ejercicio físico. Tu rol es ayudar a los usuarios a encontrar la formación ideal para sus intereses, objetivos y perfil profesional.
