@@ -135,23 +135,39 @@ add_action( 'save_post', function ( $post_id, $post ) {
 }, 20, 2 );
 
 /**
- * ¿Van las tarjetas para compartir? Son de G-SE (logo, docentes, textos en
- * castellano): solo en g-se.com/es (y su copia local). En las otras
- * comunidades (fisio.one, voley.org…) y en /en, la imagen de siempre.
+ * Carpeta de las tarjetas para compartir del sitio actual, dentro de
+ * assets/img/share/: '' para G-SE (y su copia local), una por comunidad
+ * (voley/, traumato/, fisio/, swimming/), cada una con su logo, sus colores,
+ * sus docentes y sus portadas. null = sin tarjetas: una comunidad nueva
+ * (hasta que se le armen) o el sitio en inglés (los textos están en castellano).
  */
-function oec_seo_share_cards_on(): bool {
+function oec_seo_share_dir(): ?string {
+	if ( 0 !== strpos( get_locale(), 'es' ) ) {
+		return null;
+	}
 	$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( network_home_url(), PHP_URL_HOST ) );
-	return in_array( $host, [ 'g-se.com', 'oec-test.local' ], true ) && 0 === strpos( get_locale(), 'es' );
+	return [
+		'g-se.com'         => '',
+		'oec-test.local'   => '',
+		'voley.org'        => 'voley',
+		'traumato.site'    => 'traumato',
+		'fisio.one'        => 'fisio',
+		'swimming.science' => 'swimming',
+	][ $host ] ?? null;
 }
 
 /**
- * Tarjeta para compartir diseñada para una página (assets/img/share/{clave}.jpg,
+ * Tarjeta para compartir diseñada para una página (assets/img/share/[{comunidad}/]{clave}.jpg,
  * 1200×630: logo, el H1 de la página y una imagen que la representa), como
  * [url, ancho, alto, alt] — o null si no hay una para esa clave.
  */
 function oec_seo_share_card( string $clave ): ?array {
-	$file = '/assets/img/share/' . sanitize_file_name( $clave ) . '.jpg';
-	if ( '' === $clave || ! oec_seo_share_cards_on() || ! file_exists( OEC_THEME_DIR . $file ) ) {
+	$dir = oec_seo_share_dir();
+	if ( '' === $clave || null === $dir ) {
+		return null;
+	}
+	$file = '/assets/img/share/' . ( '' === $dir ? '' : $dir . '/' ) . sanitize_file_name( $clave ) . '.jpg';
+	if ( ! file_exists( OEC_THEME_DIR . $file ) ) {
 		return null;
 	}
 	return [ OEC_THEME_URI . $file . '?v=' . OEC_THEME_VERSION, 1200, 630, get_bloginfo( 'name' ) ];
