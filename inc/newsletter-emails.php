@@ -587,7 +587,8 @@ function oec_nl_render_email( array $d ): string {
 		'sublabel'   => $d['date'],
 		'heading'    => $d['topic'] ? 'Lo nuevo en ' . esc_html( $d['topic'] ) : 'Lo nuevo de esta semana',
 		'intro'      => 'Hola {firstname:colega}, estos son los artículos y formaciones que seleccionamos para vos.',
-		'body'       => oec_nl_claim_html( $d['claim'] ) . $d['content'] . $cta,
+		// La campaña de descuentos (si hay) va primera: Gmail recorta el final de los emails largos.
+		'body'       => ( $d['campaign'] ?? '' ) . oec_nl_claim_html( $d['claim'] ) . $d['content'] . $cta,
 		'subscribed' => true,
 	] );
 }

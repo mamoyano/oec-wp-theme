@@ -31,20 +31,21 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Todas las formaciones abiertas del catálogo, con solo los campos que
- * usan las cards. Cacheado hasta el próximo sync.
+ * usan las cards. Cacheado hasta el próximo sync. $all: también las de
+ * los tokens secundarios (las campañas, inc/campaign.php).
  */
-function oec_tira_catalogo(): array {
+function oec_tira_catalogo( bool $all = false ): array {
 	if ( ! class_exists( 'OEC_AI_Catalog' ) ) {
 		return [];
 	}
 	$meta = OEC_AI_Catalog::get_meta();
-	$key  = 'oec_tira_cat_' . md5( (string) ( $meta['finished_at'] ?? '' ) );
+	$key  = 'oec_tira_cat_' . ( $all ? 'all_' : '' ) . md5( (string) ( $meta['finished_at'] ?? '' ) );
 	$hit  = get_transient( $key );
 	if ( is_array( $hit ) ) {
 		return $hit;
 	}
 	$rows = [];
-	foreach ( OEC_AI_Catalog::get_index() as $e ) {
+	foreach ( OEC_AI_Catalog::get_index( $all ) as $e ) {
 		$f = OEC_AI_Catalog::get_formation( (string) $e['id'] );
 		if ( ! $f ) {
 			continue;
@@ -399,7 +400,7 @@ function oec_tira_more_label( array $atts ): string {
    los carga el tema, con la misma versión por fecha de modificación. ── */
 add_action( 'wp_enqueue_scripts', function () {
 	$post = get_queried_object();
-	if ( ! ( $post instanceof WP_Post ) || ! ( has_shortcode( $post->post_content, 'oec-tira' ) || oec_is_live_page() ) ) {
+	if ( ! ( $post instanceof WP_Post ) || ! ( has_shortcode( $post->post_content, 'oec-tira' ) || oec_is_live_page() || oec_is_campaign_page() ) ) {
 		return;
 	}
 	$dir = WP_PLUGIN_DIR . '/oec-wordpress-plugin';

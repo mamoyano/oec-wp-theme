@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.192' );
+define( 'OEC_THEME_VERSION', '1.0.193' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -463,6 +463,7 @@ require OEC_THEME_DIR . '/inc/sitios.php';
 require OEC_THEME_DIR . '/inc/tiras.php';
 require OEC_THEME_DIR . '/inc/destacadas.php';
 require OEC_THEME_DIR . '/inc/live.php';
+require OEC_THEME_DIR . '/inc/campaign.php';
 require OEC_THEME_DIR . '/inc/subtematica.php';
 require OEC_THEME_DIR . '/inc/formaciones.php';
 require OEC_THEME_DIR . '/inc/ai-chat.php';

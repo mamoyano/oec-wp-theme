@@ -1740,9 +1740,22 @@ function oec_nl_collect_trainings( array $list ): array {
 
 function oec_nl_subject( array $list ): string {
 	$date = wp_date( 'l j \d\e F' );
-	return $list['general']
+	// Con una campaña de descuentos en curso o por empezar, el asunto la anuncia primero (inc/campaign.php).
+	$cmp  = function_exists( 'oec_cmp_nl_subject_prefix' ) ? oec_cmp_nl_subject_prefix( time() ) : '';
+	return $cmp . ( $list['general']
 		? sprintf( 'Novedades de esta semana: %s', $date )
-		: sprintf( 'Novedades en %s: %s', $list['label'], $date );
+		: sprintf( 'Novedades en %s: %s', $list['label'], $date ) );
+}
+
+/** Link a una página del sitio desde el newsletter: redirector de OEC + UTM, como las formaciones. */
+function oec_nl_site_link( string $url ): string {
+	$target = add_query_arg( [ 'utm_source' => 'mailing', 'utm_medium' => 'elastic', 'utm_campaign' => 'newsletter+semanal', 'utm_content' => wp_date( 'Y-m-d' ) ], $url );
+	return OEC_NL_REDIRECTOR . '?c_mail={email}&l=' . rawurlencode( $target );
+}
+
+/** Bloque de la campaña de descuentos para un newsletter enviado en $at ('' si no hay). */
+function oec_nl_campaign_html( int $at ): string {
+	return function_exists( 'oec_cmp_nl_block' ) ? oec_cmp_nl_block( $at, 'oec_nl_site_link' ) : '';
 }
 
 /** Link de formación con el redirector de OEC (merge tags simples de Elastic Email). */
@@ -1790,10 +1803,11 @@ function oec_nl_build_email( array $list, int $sent_at, int $since ) {
 	$claim = oec_config_url( user_trailingslashit( '/otorgar-creditos' ) ) . '?t=' . $sent_at . '&s=' . oec_nl_claim_sig( $sent_at ) . '&email={email}';
 
 	return oec_nl_render_email( [
-		'date'    => wp_date( 'l j \d\e F', $sent_at ),
-		'topic'   => $list['general'] ? '' : $list['label'],
-		'content' => oec_nl_mix_html( $posts, $trainings ),
-		'claim'   => $claim,
+		'date'     => wp_date( 'l j \d\e F', $sent_at ),
+		'topic'    => $list['general'] ? '' : $list['label'],
+		'content'  => oec_nl_mix_html( $posts, $trainings ),
+		'claim'    => $claim,
+		'campaign' => oec_nl_campaign_html( $sent_at ),
 	] );
 }
 
@@ -1866,14 +1880,17 @@ function oec_nl_send_digest( string $list_name, string $only_to = '' ) {
 	$sent_at = time();
 	$since   = (int) ( $state['last_sent'][ $list_name ] ?? 0 ) ?: $sent_at - WEEK_IN_SECONDS;
 
-	// Sin artículos nuevos no se envía (las formaciones solas no justifican el correo).
+	// Sin artículos nuevos no se envía (las formaciones solas no justifican el correo),
+	// salvo con una campaña de descuentos en curso o por empezar: esa semana sale igual.
 	// En una prueba se usan los últimos, para que siempre haya algo que mirar.
 	if ( ! oec_nl_collect_posts( $list, $since ) ) {
-		if ( ! $test ) {
+		if ( ! $test && '' === oec_nl_campaign_html( $sent_at ) ) {
 			oec_nl_log( 'info', sprintf( '%s: sin artículos nuevos, no se envía.', $list_name ) );
 			return 'empty';
 		}
-		$since = 0;
+		if ( $test ) {
+			$since = 0;
+		}
 	}
 
 	$html = oec_nl_build_email( $list, $sent_at, $since );

@@ -317,6 +317,41 @@ class OEC_AI_Chat {
 		return (bool) preg_match( '/\blive\b|en\s+vivo|en\s+directo|\bsincr[oó]nic/iu', $message );
 	}
 
+	/**
+	 * Campaña de descuentos en curso o por empezar (inc/campaign.php): sus
+	 * formaciones, las de mayor descuento primero. Vacío si no hay campaña.
+	 */
+	private static function campaign_ids(): array {
+		if ( ! function_exists( 'oec_cmp_phase' ) || ! in_array( oec_cmp_phase(), [ 'teaser', 'live' ], true ) ) {
+			return [];
+		}
+		return array_column( oec_cmp_formaciones( oec_cmp_phase() ), 'id' );
+	}
+
+	/** ¿Pregunta por la campaña, promos o descuentos? */
+	private static function asks_campaign( string $message ): bool {
+		$name = function_exists( 'oec_cmp_opts' ) ? preg_quote( mb_strtolower( strtok( (string) oec_cmp_opts()['name'], ' ' ) ), '/' ) : '';
+		return (bool) preg_match( '/\bcyber|black|promo|oferta|rebaja|descuento|\boff\b|barat|' . ( $name ?: 'cyber' ) . '/iu', $message );
+	}
+
+	/** En la landing de la campaña: las de la campaña que mejor coinciden; si son pocas, se completa con las de más descuento. */
+	private static function prefilter_campaign( string $query, string $extra ): array {
+		$order = self::campaign_ids();
+		$ids   = array_flip( $order );
+		$in    = array_values( array_filter( OEC_AI_Catalog::get_index( true ), static fn( $e ) => isset( $ids[ $e['id'] ] ) ) );
+		usort( $in, static fn( $a, $b ) => $ids[ $a['id'] ] <=> $ids[ $b['id'] ] );
+		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
+		if ( count( $top ) < 3 ) {
+			$seen = array_flip( array_column( $top, 'id' ) );
+			foreach ( $in as $e ) {
+				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < 3 ) {
+					$top[] = $e;
+				}
+			}
+		}
+		return self::load_formations( $top );
+	}
+
 	/** En la página LIVE: las LIVE que mejor coinciden; si son pocas, se completa con otras LIVE. */
 	private static function prefilter_live( string $query, string $extra ): array {
 		$ids = array_flip( self::live_ids() );
@@ -1093,8 +1128,8 @@ class OEC_AI_Chat {
 		if ( 'formacion' === $ctx['mode'] ) {
 			return 'formacion:' . $ctx['id'];
 		}
-		if ( 'live' === $ctx['mode'] ) {
-			return 'live';
+		if ( 'live' === $ctx['mode'] || 'campana' === $ctx['mode'] ) {
+			return $ctx['mode'];
 		}
 		return 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : 'catalogo';
 	}
@@ -1228,11 +1263,13 @@ class OEC_AI_Chat {
 			self::sse_status( 'Revisando el catálogo de formaciones...' );
 			$extra      = trim( substr( $expanded, strlen( $message ) ) ); // solo la ampliación de la IA
 			if ( $launch ) {
-				$formations = 'live' === $ctx['mode']
-					? self::load_formations( array_map( static fn( $id ) => [ 'id' => $id ], array_slice( self::live_ids(), 0, 5 ) ) )
+				$formations = 'live' === $ctx['mode'] || 'campana' === $ctx['mode']
+					? self::load_formations( array_map( static fn( $id ) => [ 'id' => $id ], array_slice( 'live' === $ctx['mode'] ? self::live_ids() : self::campaign_ids(), 0, 5 ) ) )
 					: self::featured( 'tematica' === $ctx['mode'] ? $ctx['tematica'] : '' );
 			} elseif ( 'live' === $ctx['mode'] ) {
 				$formations = self::prefilter_live( $message, $extra );
+			} elseif ( 'campana' === $ctx['mode'] ) {
+				$formations = self::prefilter_campaign( $message, $extra );
 			} else {
 				$formations = 'tematica' === $ctx['mode']
 					? self::prefilter_tematica( $message, $extra, $ctx['tematica'] )
@@ -1241,6 +1278,10 @@ class OEC_AI_Chat {
 				// también las LIVE (las primeras por fecha de inicio), con sus datos reales.
 				if ( self::asks_live( (string) $message ) ) {
 					$formations = self::merge_mentioned( $formations, array_slice( self::live_ids(), 0, 6 ) );
+				}
+				// Pregunta por la campaña, promos o descuentos: van las de la campaña (las de más descuento).
+				if ( self::asks_campaign( (string) $message ) ) {
+					$formations = self::merge_mentioned( $formations, array_slice( self::campaign_ids(), 0, 6 ) );
 				}
 			}
 			$formations = $recall
@@ -1288,7 +1329,7 @@ class OEC_AI_Chat {
 		// daba una presentación tibia que terminaba en "¿qué querés saber?". La
 		// indicación va pegada al saludo, con lo que tiene que decir.
 		if ( ! $focus && $launch ) {
-			$where = 'tematica' === $ctx['mode'] ? 'la página de formaciones de «' . ( $ctx['title'] ?? $ctx['tematica'] ) . '»' : ( 'live' === $ctx['mode'] ? 'la página LIVE (las mejores formaciones en vivo)' : 'el sitio' );
+			$where = 'tematica' === $ctx['mode'] ? 'la página de formaciones de «' . ( $ctx['title'] ?? $ctx['tematica'] ) . '»' : ( 'live' === $ctx['mode'] ? 'la página LIVE (las mejores formaciones en vivo)' : ( 'campana' === $ctx['mode'] ? 'la página de la promo «' . $ctx['title'] . '» (las formaciones con descuento)' : 'el sitio' ) );
 			$last  = count( $messages ) - 1;
 			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: acaba de abrir el chat desde {$where} con esa pregunta."
 				. ' Las formaciones del contexto son las más destacadas de hoy. Respondé en 3 mensajes separados por |||:'
@@ -1419,7 +1460,7 @@ class OEC_AI_Chat {
 				// Ficha con inscripción cerrada: se anota aparte ("cerrada:ID") para contar
 				// cuánta gente pregunta por cada una (Chat IA → Conversaciones) y poder
 				// pedirle al socio educativo que la reabra.
-				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( 'live' === $ctx['mode'] ? 'live' : '' ) ),
+				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( in_array( $ctx['mode'], [ 'live', 'campana' ], true ) ? $ctx['mode'] : '' ) ),
 			] );
 		}
 		exit;
@@ -1547,7 +1588,7 @@ class OEC_AI_Chat {
 				'ms_total'   => round( ( microtime( true ) - $t0 ) * 1000 ),
 				'error'      => 'Sin IA: ' . $reason,
 				'model'      => 'sin-ia', // en el registro no se cuenta como consulta de un modelo
-				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( 'live' === $ctx['mode'] ? 'live' : '' ) ),
+				'ctx'        => 'formacion' === $ctx['mode'] ? 'formacion:' . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( in_array( $ctx['mode'], [ 'live', 'campana' ], true ) ? $ctx['mode'] : '' ) ),
 			] );
 		}
 		exit;
@@ -1645,7 +1686,7 @@ class OEC_AI_Chat {
 		$system = [
 			[
 				'type'          => 'text',
-				'text'          => self::system_prompt( $total ) . "\n\n" . self::sales_knowledge() . self::live_knowledge(),
+				'text'          => self::system_prompt( $total ) . "\n\n" . self::sales_knowledge() . self::live_knowledge() . self::campaign_knowledge(),
 				'cache_control' => [ 'type' => 'ephemeral' ],
 			],
 		];
@@ -1965,6 +2006,13 @@ class OEC_AI_Chat {
 				return $ctx;
 			}
 		}
+		// Landing de la campaña de descuentos (/especiales/{slug}, inc/campaign.php)
+		if ( function_exists( 'oec_cmp_opts' ) && preg_match( '#/especiales/' . preg_quote( (string) oec_cmp_opts()['slug'], '#' ) . '/?$#', $path ) ) {
+			$ctx = self::resolve_context( [ 'mode' => 'campana' ] );
+			if ( 'campana' === $ctx['mode'] ) {
+				return $ctx;
+			}
+		}
 		// Landing de temática
 		if ( function_exists( 'oec_especiales_registradas' ) ) {
 			foreach ( oec_especiales_registradas() as $e ) {
@@ -1989,6 +2037,9 @@ class OEC_AI_Chat {
 		}
 		if ( 'live' === $mode && function_exists( 'oec_live_disponible' ) && oec_live_disponible() ) {
 			return [ 'mode' => 'live', 'title' => 'LIVE' ];
+		}
+		if ( 'campana' === $mode && self::campaign_ids() ) {
+			return [ 'mode' => 'campana', 'title' => (string) oec_cmp_opts()['name'] ];
 		}
 		if ( 'tematica' === $mode && function_exists( 'oec_especiales_registradas' ) ) {
 			foreach ( oec_especiales_registradas() as $e ) {
@@ -2041,6 +2092,9 @@ class OEC_AI_Chat {
 			$launch = sprintf( __( 'Hola, ¿qué formaciones de %s me recomiendas?', 'oec-theme' ), $title );
 		} elseif ( 'live' === $ctx['mode'] ) {
 			$launch = __( 'Hola, ¿qué formaciones en vivo me recomiendas?', 'oec-theme' );
+		} elseif ( 'campana' === $ctx['mode'] ) {
+			/* translators: %s = nombre de la campaña */
+			$launch = sprintf( __( 'Hola, ¿qué formación del %s me recomiendas?', 'oec-theme' ), $title );
 		} elseif ( is_front_page() ) {
 			/* translators: %s = nombre del sitio */
 			$launch = sprintf( __( 'Hola, ¿qué es lo mejor que tiene hoy %s?', 'oec-theme' ), get_bloginfo( 'name' ) );
@@ -2477,6 +2531,16 @@ La persona está en la página LIVE: las mejores formaciones en vivo del sitio (
 - Si pregunta por un área sin formaciones LIVE, decilo y ofrecé lo que haya en el contexto.{$before}
 TXT;
 		}
+		if ( 'campana' === $ctx['mode'] ) {
+			return <<<TXT
+MODO DE ESTA CONVERSACIÓN: ASESOR DE LA PROMO «{$ctx['title']}»
+La persona está en la página de la promo «{$ctx['title']}» (ver "CAMPAÑA DE DESCUENTOS" en el conocimiento). Las formaciones de abajo participan de la promo (salvo que haya preguntado por otra cosa).
+- Tu objetivo es ayudarla a elegir una formación de la promo e inscribirse antes de que termine.
+- Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones de la promo de áreas distintas, cada una con su descuento y para quién es, y preguntá por su perfil u objetivo para afinar.
+- Nombrá el descuento de cada formación y el precio con descuento si está en el contexto. Recordá que se aplica solo al inscribirse, sin códigos, y cuándo termina la promo. Urgencia real, sin exagerar ni repetirla en cada mensaje.
+- Si busca algo que no está en la promo, decilo y ofrecé lo más parecido de la promo; si no hay nada, lo que haya en el contexto.{$before}
+TXT;
+		}
 		if ( 'tematica' === $ctx['mode'] ) {
 			return <<<TXT
 MODO DE ESTA CONVERSACIÓN: ASESOR DE LA TEMÁTICA «{$ctx['title']}»
@@ -2518,6 +2582,45 @@ LIVE — sección especial del sitio: {$url}
 - Su lema es "Made for humans, by humans": docentes de la élite mundial del entrenamiento, la nutrición y la fisiología que enseñan en vivo, con preguntas, debate y casos reales. Buena parte de esa experiencia todavía no está escrita, ni en papers ni en la IA: decilo así, sin exagerar ni decir que "no está en ningún lado".
 - Las clases en vivo y las consultas quedan grabadas, como en toda formación sincrónica (ver el conocimiento de ventas).
 - Si preguntan qué es LIVE, por clases en vivo o por formaciones sincrónicas, explicalo en una o dos frases, recomendá formaciones LIVE del contexto y ofrecé la página: [Ver LIVE]({$url}).{$lista}
+TXT;
+	}
+
+	/**
+	 * La campaña de descuentos en curso o por empezar (inc/campaign.php): qué
+	 * es, fechas, cómo se aplica y qué formaciones participan con su %. Vacío
+	 * si no hay. Cambia con el estado y los descuentos (la caché de
+	 * instrucciones se rehace sola).
+	 */
+	private static function campaign_knowledge(): string {
+		if ( ! function_exists( 'oec_cmp_phase' ) ) {
+			return '';
+		}
+		$phase = oec_cmp_phase();
+		if ( ! in_array( $phase, [ 'teaser', 'live' ], true ) ) {
+			return '';
+		}
+		$o     = oec_cmp_opts();
+		$rows  = oec_cmp_formaciones( $phase );
+		$url   = oec_cmp_url( $o );
+		$dias  = oec_cmp_dias_texto( $o );
+		$fin   = oec_cmp_fin_texto( $o );
+		$dur   = oec_cmp_duracion_texto( $o );
+		$lista = [];
+		foreach ( $rows as $r ) {
+			$lista[] = '  - «' . $r['title'] . '»' . ( 'live' === $phase && $r['cmp_pct'] ? ' — ' . $r['cmp_pct'] . '% de descuento' : '' );
+		}
+		$lista = $lista ? "\n- Formaciones que participan:\n" . implode( "\n", $lista ) : '';
+		$estado = 'live' === $phase
+			? "- ESTÁ EN CURSO: termina {$fin} (hora de Argentina). El descuento de cada formación es su \"descuento por pago anticipado\" de la API de precios, que vence con la promo."
+			: '- TODAVÍA NO EMPEZÓ: empieza el ' . wp_date( 'l j \\d\\e F \\a \\l\\a\\s H:i', oec_cmp_times( $o )['start'] ) . " (hora de Argentina) y dura {$dur}. Los porcentajes se conocen cuando empieza: no los anticipes ni prometas un % concreto. Si alguien quiere inscribirse ya, puede hacerlo al precio de hoy o esperar al inicio de la promo; invitalo a suscribirse al newsletter en la página de la promo para que le avisemos.";
+		return <<<TXT
+
+
+CAMPAÑA DE DESCUENTOS: «{$o['name']}» — {$url}
+- Es una promo flash de {$dur} ({$dias}) con descuentos fuertes en formaciones seleccionadas junto a los socios educativos. Cuando termina, los precios vuelven a la normalidad y no se extiende.
+{$estado}
+- El descuento se aplica solo al inscribirse durante la promo: no hay códigos ni cupones. Las demás formaciones del catálogo no participan.
+- Si preguntan por promos, ofertas, descuentos o por la campaña, contalo en una o dos frases, recomendá formaciones de la promo del contexto y ofrecé la página: [Ver la promo]({$url}).{$lista}
 TXT;
 	}
 

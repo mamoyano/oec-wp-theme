@@ -249,6 +249,7 @@ function oec_admin_pages(): array {
 			'contenido' => __( 'Encabezado y pie', 'oec-theme' ),
 		] ],
 		'oec-formaciones'     => [ 'title' => __( 'Formaciones', 'oec-theme' ), 'tabs' => [ 'formaciones' => '' ] ],
+		'oec-campanas'        => [ 'title' => __( 'Campañas', 'oec-theme' ), 'tabs' => [] ],
 		'oec-chat-log'        => [ 'title' => __( 'Chat IA', 'oec-theme' ), 'tabs' => [
 			'conversaciones' => __( 'Conversaciones', 'oec-theme' ),
 			'chat'           => __( 'Configuración', 'oec-theme' ),
@@ -302,6 +303,7 @@ function oec_add_admin_menu(): void {
 		$callback = [
 			'oec-newsletter' => 'oec_nl_render_admin',
 			'oec-images'     => [ 'OEC_Images', 'render_page' ],
+			'oec-campanas'   => 'oec_cmp_render_admin',
 		][ $slug ] ?? 'oec_render_settings_page';
 		add_submenu_page( 'oec-settings', $page['title'], $page['title'], 'manage_options', $slug, $callback );
 	}
@@ -350,7 +352,7 @@ add_action( 'admin_init', 'oec_admin_legacy_redirect' );
    ============================================================ */
 function oec_admin_enqueue( string $hook ): void {
 	$page = sanitize_key( $_GET['page'] ?? '' ); // phpcs:ignore WordPress.Security.NonceVerification
-	if ( in_array( $page, [ 'oec-newsletter', 'oec-images' ], true ) || ! array_key_exists( $page, oec_admin_pages() ) ) {
+	if ( in_array( $page, [ 'oec-newsletter', 'oec-images', 'oec-campanas' ], true ) || ! array_key_exists( $page, oec_admin_pages() ) ) {
 		return;
 	}
 
