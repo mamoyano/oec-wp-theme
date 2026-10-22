@@ -225,6 +225,13 @@
   function escText(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
+  // Enlace a la sección de artículos de este mismo sitio (/es/articulos/?q=…)
+  function isArticlesUrl(url) {
+    try {
+      const u = new URL(url, location.href);
+      return u.origin === location.origin && /\/articulos\/?$/.test(u.pathname);
+    } catch (_) { return false; }
+  }
   function scrollBody() {
     const b = document.getElementById('oec-overlay-body');
     if (b) b.scrollTop = b.scrollHeight;
@@ -464,9 +471,12 @@
       (_, figs) => '<div class="oec-md-gallery">' + figs.replace(/\s+(?=<figure)|\s+$/g, '') + '</div>'
     );
     // 3. Markdown links [text](url)
+    //    Los de la sección de artículos del sitio abren en la misma pestaña.
     html = html.replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
-      '<a href="$2" class="oec-md-link" target="_blank" rel="noopener noreferrer">$1</a>'
+      (_, label, url) => isArticlesUrl(url)
+        ? '<a href="' + url + '" class="oec-md-link">' + label + '</a>'
+        : '<a href="' + url + '" class="oec-md-link" target="_blank" rel="noopener noreferrer">' + label + '</a>'
     );
     // 2b. Auto-link bare https:// URLs not already inside an <a> tag
     html = html.replace(
