@@ -220,6 +220,11 @@ const OEC_LIVE_GLOBOS = [
 	21 => 'Julio Calleja',
 	22 => 'Alejandro Gómez Monroy',
 	23 => 'Javier Butragueño',
+	24 => 'Federico Rossi',
+	25 => 'Víctor García Casas',
+	26 => 'Pablo Añón',
+	27 => 'Sebastián Del Rosso',
+	28 => 'Miguel F. Del Olmo',
 ];
 
 /**
