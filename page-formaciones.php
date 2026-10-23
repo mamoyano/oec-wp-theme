@@ -137,7 +137,7 @@ get_header();
 		<?php if ( $tags ) : ?>
 		<div class="art-active-tags">
 			<?php foreach ( $tags as [ $label, $url ] ) : ?>
-			<a href="<?php echo esc_url( $url ); ?>" class="art-active-tag"><?php echo esc_html( $label ); ?> ×</a>
+			<a href="<?php echo esc_url( $url ); ?>" rel="nofollow" class="art-active-tag"><?php echo esc_html( $label ); ?> ×</a>
 			<?php endforeach; ?>
 			<a href="<?php echo esc_url( $clear_url ); ?>" class="art-clear-all"><?php esc_html_e( 'Quitar todos los filtros', 'oec-theme' ); ?></a>
 		</div>
@@ -169,7 +169,7 @@ get_header();
 					?>
 				<li>
 					<a href="<?php echo esc_url( $url ); ?>"
-					   class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_active ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $label ); ?>
 						<span class="art-filter-count"><?php echo esc_html( number_format_i18n( $n ) ); ?></span>

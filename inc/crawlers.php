@@ -89,6 +89,13 @@ add_filter( 'robots_txt', function ( $output, $public ) {
 		'Disallow: /*/formaciones?',
 		'Disallow: /formaciones?',
 		'Disallow: /*formaciones-filtradas',
+		// Paginación con filtros (/formaciones/page/2?oec_…) y filtros de
+		// artículos (/articulos?tematica=…&anio=…): el 22/10/2026 eran el
+		// 80 % de los pedidos que llegaban al servidor (bots probando
+		// combinaciones). Su canonical es el listado sin filtros.
+		'Disallow: /*/formaciones/page/*?',
+		'Disallow: /*/articulos?',
+		'Disallow: /*/articulos/page/*?',
 		// Paginación del tema anterior (Divi): /tag/x/page/65?et_blog
 		'Disallow: /*?et_blog',
 		'Disallow: /*&et_blog',

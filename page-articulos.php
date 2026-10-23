@@ -210,27 +210,27 @@ get_header();
 		<?php if ( $f_tipo || $f_tematica || $f_anio || $f_autor || $f_q !== '' ) : ?>
 		<div class="art-active-tags">
 			<?php if ( $f_tipo ) : ?>
-			<a href="<?php echo esc_url( oec_articulos_url( [ 'tipo' => '' ] ) ); ?>" class="art-active-tag">
+			<a href="<?php echo esc_url( oec_articulos_url( [ 'tipo' => '' ] ) ); ?>" rel="nofollow" class="art-active-tag">
 				<?php echo esc_html( $tipo_labels[ $f_tipo ] ?? $f_tipo ); ?> ×
 			</a>
 			<?php endif; ?>
 			<?php if ( $f_tematica ) : ?>
-			<a href="<?php echo esc_url( oec_articulos_url( [ 'tematica' => '' ] ) ); ?>" class="art-active-tag">
+			<a href="<?php echo esc_url( oec_articulos_url( [ 'tematica' => '' ] ) ); ?>" rel="nofollow" class="art-active-tag">
 				<?php echo esc_html( $tematica_term ? $tematica_term->name : $f_tematica ); ?> ×
 			</a>
 			<?php endif; ?>
 			<?php if ( $f_anio ) : ?>
-			<a href="<?php echo esc_url( oec_articulos_url( [ 'anio' => '' ] ) ); ?>" class="art-active-tag">
+			<a href="<?php echo esc_url( oec_articulos_url( [ 'anio' => '' ] ) ); ?>" rel="nofollow" class="art-active-tag">
 				<?php echo $f_anio === 'antes' ? esc_html__( 'Antes de 2024', 'oec-theme' ) : esc_html( $f_anio ); ?> ×
 			</a>
 			<?php endif; ?>
 			<?php if ( $f_autor ) : ?>
-			<a href="<?php echo esc_url( oec_articulos_url( [ 'autor' => '' ] ) ); ?>" class="art-active-tag">
+			<a href="<?php echo esc_url( oec_articulos_url( [ 'autor' => '' ] ) ); ?>" rel="nofollow" class="art-active-tag">
 				<?php echo esc_html( $autor_user ? $autor_user->display_name : $f_autor ); ?> ×
 			</a>
 			<?php endif; ?>
 			<?php if ( $f_q !== '' ) : ?>
-			<a href="<?php echo esc_url( oec_articulos_url( [ 'q' => '' ] ) ); ?>" class="art-active-tag">
+			<a href="<?php echo esc_url( oec_articulos_url( [ 'q' => '' ] ) ); ?>" rel="nofollow" class="art-active-tag">
 				<?php /* translators: %s: texto buscado */ echo esc_html( sprintf( __( '“%s”', 'oec-theme' ), $f_q ) ); ?> ×
 			</a>
 			<?php endif; ?>
@@ -252,7 +252,7 @@ get_header();
 				?>
 				<li>
 					<a href="<?php echo esc_url( $url ); ?>"
-					   class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_active ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $label ); ?>
 					</a>
@@ -274,7 +274,7 @@ get_header();
 				?>
 				<li>
 					<a href="<?php echo esc_url( $url ); ?>"
-					   class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_active ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $cat->name ); ?>
 						<span class="art-filter-count"><?php echo (int) $cat->count; ?></span>
@@ -298,7 +298,7 @@ get_header();
 				?>
 				<li>
 					<a href="<?php echo esc_url( $url ); ?>"
-					   class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_active ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $autor->display_name ); ?>
 						<span class="art-filter-count"><?php echo (int) $autor->post_count; ?></span>
@@ -321,7 +321,7 @@ get_header();
 				?>
 				<li>
 					<a href="<?php echo esc_url( $url ); ?>"
-					   class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_active ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_active ? 'true' : 'false'; ?>">
 						<?php echo esc_html( $y ); ?>
 					</a>
@@ -335,7 +335,7 @@ get_header();
 				?>
 				<li>
 					<a href="<?php echo esc_url( $url_antes ); ?>"
-					   class="art-filter-link<?php echo $is_antes ? ' is-active' : ''; ?>"
+					   rel="nofollow" class="art-filter-link<?php echo $is_antes ? ' is-active' : ''; ?>"
 					   aria-current="<?php echo $is_antes ? 'true' : 'false'; ?>">
 						<?php esc_html_e( 'Antes de 2024', 'oec-theme' ); ?>
 					</a>

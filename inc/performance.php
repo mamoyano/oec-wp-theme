@@ -514,3 +514,25 @@ add_filter( 'wp_redirect', function ( $location ) {
 if ( ! headers_sent() ) {
 	header_remove( 'X-Powered-By' );
 }
+
+/* ============================================================
+   15. /.well-known/… QUE LLEGA A WORDPRESS — 404 al instante
+       Los archivos reales de /.well-known/ (certificados, etc.) los sirve
+       el servidor web antes de llegar acá. Lo que sí llega son restos del
+       captcha de SiteGround (/.well-known/sgcaptcha/?r=/es/formaciones…)
+       que piden los bots: 12 mil por día en G-SE el 22/10/2026, y cada uno
+       armaba la página 404 completa (~0,5 s). Se responde antes de la
+       consulta, sin plantilla, y Cloudflare lo guarda un día.
+   ============================================================ */
+add_action( 'parse_request', function (): void {
+	$path = (string) wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH );
+	if ( ! preg_match( '#^(/[a-z]{2})?/\.well-known/#', $path ) ) {
+		return;
+	}
+	status_header( 404 );
+	header( 'Content-Type: text/plain; charset=UTF-8' );
+	header( 'Cache-Control: public, max-age=3600, s-maxage=' . DAY_IN_SECONDS );
+	header( 'X-Robots-Tag: noindex' );
+	echo "Not found\n";
+	exit;
+}, 0 );
