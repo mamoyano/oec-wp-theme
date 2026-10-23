@@ -319,7 +319,7 @@ class OEC_AI_Chat {
 
 	/**
 	 * Campaña de descuentos en curso o por empezar (inc/campaign.php): sus
-	 * formaciones, las de mayor descuento primero. Vacío si no hay campaña.
+	 * formaciones, las más relevantes primero. Vacío si no hay campaña.
 	 */
 	private static function campaign_ids(): array {
 		if ( ! function_exists( 'oec_cmp_phase' ) || ! in_array( oec_cmp_phase(), [ 'teaser', 'live' ], true ) ) {
@@ -334,7 +334,7 @@ class OEC_AI_Chat {
 		return (bool) preg_match( '/\bcyber|black|promo|oferta|rebaja|descuento|\boff\b|barat|' . ( $name ?: 'cyber' ) . '/iu', $message );
 	}
 
-	/** En la landing de la campaña: las de la campaña que mejor coinciden; si son pocas, se completa con las de más descuento. */
+	/** En la landing de la campaña: las de la campaña que mejor coinciden; si son pocas, se completa con las más relevantes. */
 	private static function prefilter_campaign( string $query, string $extra ): array {
 		$order = self::campaign_ids();
 		$ids   = array_flip( $order );
@@ -1279,7 +1279,7 @@ class OEC_AI_Chat {
 				if ( self::asks_live( (string) $message ) ) {
 					$formations = self::merge_mentioned( $formations, array_slice( self::live_ids(), 0, 6 ) );
 				}
-				// Pregunta por la campaña, promos o descuentos: van las de la campaña (las de más descuento).
+				// Pregunta por la campaña, promos o descuentos: van las de la campaña (las más relevantes).
 				if ( self::asks_campaign( (string) $message ) ) {
 					$formations = self::merge_mentioned( $formations, array_slice( self::campaign_ids(), 0, 6 ) );
 				}

@@ -157,7 +157,8 @@ function oec_cmp_pct_of( ?array $item, ?array $o = null ): int {
  * secundarios, con el grupo de la campaña y la inscripción abierta al
  * empezar. Cada fila de oec_tira_catalogo() + cmp_pct (0 = sin descuento
  * cargado todavía). En curso, si ya se consultaron los precios, solo las
- * que tienen descuento. Ordenadas por % (mayor primero) y relevancia.
+ * que tienen descuento. Ordenadas por relevancia (2, 1, 0: lo que el
+ * equipo más quiere mostrar, primero) y, dentro de cada una, por %.
  */
 function oec_cmp_formaciones( string $phase = '' ): array {
 	$o   = oec_cmp_opts();
@@ -178,7 +179,7 @@ function oec_cmp_formaciones( string $phase = '' ): array {
 	if ( 'live' === $phase && array_filter( array_column( $rows, 'cmp_pct' ) ) ) {
 		$rows = array_values( array_filter( $rows, fn( $r ) => $r['cmp_pct'] > 0 ) );
 	}
-	usort( $rows, fn( $a, $b ) => [ $b['cmp_pct'], $b['relevance'], $a['title'] ] <=> [ $a['cmp_pct'], $a['relevance'], $b['title'] ] );
+	usort( $rows, fn( $a, $b ) => [ $b['relevance'], $b['cmp_pct'], $a['title'] ] <=> [ $a['relevance'], $a['cmp_pct'], $b['title'] ] );
 	return $rows;
 }
 
@@ -622,7 +623,7 @@ function oec_cmp_nl_subject_prefix( int $at ): string {
 /**
  * Bloque para el newsletter semanal (filas <tr> de la tabla de 600 px, ver
  * inc/newsletter-emails.php): fondo de la campaña, nombre, fechas, el
- * mayor descuento y, en curso, las 4 formaciones con más descuento.
+ * mayor descuento y, en curso, las 4 primeras (las más relevantes).
  * $link: función que arma el link con el redirector y las UTM.
  */
 function oec_cmp_nl_block( int $at, callable $link ): string {
