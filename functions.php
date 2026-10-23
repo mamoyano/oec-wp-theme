@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.200' );
+define( 'OEC_THEME_VERSION', '1.0.201' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -73,16 +73,18 @@ function oec_enqueue_assets(): void {
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
 
-	// País y moneda de los precios (ver assets/js/region.js). En la ficha va en
-	// el <head> y sin defer: tiene que correr antes que el script del plugin. En
-	// el resto, con defer (sigue corriendo antes que el chat y que DOMContentLoaded)
-	// para no bloquear el render.
+	// País y moneda de los precios (ver assets/js/region.js). En el <head> con
+	// defer en todas las páginas, también en la ficha: los scripts con defer
+	// corren en el orden del documento, y los de la ficha del plugin
+	// (oec-frontend.js / oec-formacion.js) también van con defer y más abajo,
+	// así que region.js sigue corriendo antes que ellos (y que el chat) sin
+	// bloquear el render. Hasta 1.0.200 en la ficha iba sin defer.
 	wp_enqueue_script(
 		'oec-region',
 		OEC_THEME_URI . '/assets/js/region.js',
 		[],
 		oec_asset_version( 'assets/js/region.js' ),
-		is_page( 'formacion' ) ? false : [ 'strategy' => 'defer', 'in_footer' => false ]
+		[ 'strategy' => 'defer', 'in_footer' => false ]
 	);
 
 	// Asistente IA — TODO: re-condicionar a oec_anthropic_key tras pruebas de UI

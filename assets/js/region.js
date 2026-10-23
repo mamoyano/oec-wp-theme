@@ -9,9 +9,10 @@
  *
  * Expone window.oecRegion { get(), set(), reset(), open(), current() } y el
  * evento "oec:region" (document). Lo usan el chat con IA y el selector del pie.
- * En la ficha se carga en el <head> sin defer: tiene que correr antes que el
- * script del plugin, que lee el país y la moneda de la URL al iniciar. En el
- * resto de las páginas va con defer (functions.php).
+ * En la ficha tiene que correr antes que el script del plugin, que lee el país
+ * y la moneda de la URL al iniciar: se carga en el <head> con defer, y como los
+ * scripts del plugin también van con defer (y más abajo), corre primero
+ * (functions.php).
  */
 (function () {
   'use strict';
