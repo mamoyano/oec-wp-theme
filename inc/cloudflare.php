@@ -458,8 +458,18 @@ function oec_cf_warm_urls(): array {
 
 /** Precalentar en un par de minutos (después de que salga el borrado de este pedido). */
 function oec_cf_warm_soon( string $motivo ): void {
+	// El tema y el plugin se actualizan desde la administración de la red, que
+	// corre como el sitio raíz: el borrado sale igual (es toda la zona), y el
+	// precalentado se agenda en el sitio de configuración, que es el que lo corre.
+	$cambia = is_multisite() && ! oec_is_config_site();
+	if ( $cambia ) {
+		switch_to_blog( oec_config_blog_id() );
+	}
 	if ( oec_cf_warm_enabled() && ! wp_next_scheduled( 'oec_cf_warm_start', [ $motivo ] ) ) {
 		wp_schedule_single_event( time() + 2 * MINUTE_IN_SECONDS, 'oec_cf_warm_start', [ $motivo ] );
+	}
+	if ( $cambia ) {
+		restore_current_blog();
 	}
 }
 
