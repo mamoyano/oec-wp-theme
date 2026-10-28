@@ -337,6 +337,8 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 			</table>
 
 			<?php if ( count( $by_mode ) > 1 ) : ?>
+			<details style="max-width:900px;margin-bottom:1em">
+			<summary style="cursor:pointer;font-size:1.1em;font-weight:600;margin:0 0 .75em">Por modo</summary>
 			<table class="widefat striped" style="max-width:900px;margin-bottom:1.5em">
 				<thead><tr><th>Modo</th><th>Consultas</th><th>Con tarjetas</th><th>Con clic</th><th>Primer texto</th><th>Respuesta completa</th><th>Errores</th></tr></thead>
 				<tbody>
@@ -353,10 +355,12 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+			</details>
 			<?php endif; ?>
 
 			<?php if ( $closed_demand ) : ?>
-			<h3 style="margin:1.5em 0 .25em">Interés en formaciones con inscripción cerrada</h3>
+			<details style="max-width:900px;margin-bottom:1em">
+			<summary style="cursor:pointer;font-size:1.1em;font-weight:600;margin:0 0 .75em">Interés en formaciones con inscripción cerrada (<?php echo esc_html( number_format_i18n( count( $closed_demand ) ) ); ?>)</summary>
 			<p style="margin:0 0 .75em;max-width:900px">Conversaciones que la gente inició en la ficha de una formación a la que hoy no se puede inscribir, en el período filtrado. Sirve para pedirle al socio educativo que la reabra. Se cuenta desde la versión 1.0.146 del tema.</p>
 			<table class="widefat striped" style="max-width:900px;margin-bottom:1.5em">
 				<thead><tr><th>Formación</th><th>Organización</th><th>Conversaciones</th><th>Consultas</th><th>Países</th><th>Última</th></tr></thead>
@@ -373,9 +377,12 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+			</details>
 			<?php endif; ?>
 
 			<?php if ( count( $by_model ) > 1 ) : ?>
+			<details style="max-width:900px;margin-bottom:1em">
+			<summary style="cursor:pointer;font-size:1.1em;font-weight:600;margin:0 0 .75em">Por modelo</summary>
 			<table class="widefat striped" style="max-width:900px;margin-bottom:1.5em">
 				<thead><tr><th>Modelo</th><th>Consultas</th><th>Con tarjetas</th><th>Con clic</th><th>Primer texto</th><th>Respuesta completa</th><th>Errores</th></tr></thead>
 				<tbody>
@@ -392,6 +399,7 @@ h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin:0 0 20
 				<?php endforeach; ?>
 				</tbody>
 			</table>
+			</details>
 			<?php endif; ?>
 
 			<table class="widefat striped">
