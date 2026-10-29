@@ -3,3 +3,6 @@
 
 # Notas para el desarrollo: fuera del zip del tema
 CLAUDE.md export-ignore
+
+# PDF.js minificado: sin diff
+assets/vendor/** -diff linguist-vendored

@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.203
+Version: 1.0.204
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5706,4 +5706,50 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 @media (max-width: 860px) {
   .oec-cmp-banner { grid-template-columns: minmax(0, 1fr); padding: 22px; }
   .oec-cmp-banner__side { align-items: flex-start; }
+}
+
+/* ── Visor de PDF [oec-pdf] (inc/pdf-viewer.php, assets/js/pdf-viewer.js) ── */
+.oec-pdf { margin: 2rem 0; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-white); overflow: hidden; }
+.oec-pdf__card { display: flex; align-items: center; gap: 16px; padding: 16px 20px; }
+.oec-pdf__icon { flex: 0 0 auto; display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--radius); background: #fdecea; color: #c62828; font-size: 24px; }
+.oec-pdf__info { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.oec-pdf__title { color: var(--color-dark); font-size: 1rem; line-height: 1.3; overflow-wrap: anywhere; }
+.oec-pdf__meta { color: var(--color-muted); font-size: .8125rem; }
+.oec-pdf__actions { flex: 0 0 auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.single-content .oec-pdf a.btn { text-decoration: none; }
+.single-content .oec-pdf a.btn--primary { color: var(--color-white); }
+.single-content .oec-pdf a.btn--ghost { color: var(--color-primary); }
+.oec-pdf.is-open .oec-pdf__card { border-bottom: 1px solid var(--color-border); }
+@media (max-width: 600px) {
+  .oec-pdf__card { flex-wrap: wrap; padding: 14px 16px; }
+  .oec-pdf__info { flex-basis: calc(100% - 64px); }
+  .oec-pdf__actions { width: 100%; }
+  .oec-pdf__actions .btn { flex: 1 1 0; justify-content: center; }
+}
+
+.oec-pdf__viewer { display: flex; flex-direction: column; height: min(80vh, 900px); background: #525659; }
+.oec-pdf__viewer.is-full { height: 100%; }
+.oec-pdf__viewer.is-fake-full { position: fixed; inset: 0; z-index: 100000; height: 100dvh; }
+html.oec-pdf-lock, html.oec-pdf-lock body { overflow: hidden; }
+.oec-pdf__bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 8px; background: #323639; color: #fff; }
+.oec-pdf__group { display: flex; align-items: center; gap: 2px; }
+.oec-pdf__tool { display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #fff !important; font-size: 17px; cursor: pointer; text-decoration: none !important; }
+.oec-pdf__tool:hover:not(:disabled) { background: rgba(255, 255, 255, .14); }
+.oec-pdf__tool:disabled { opacity: .35; cursor: default; }
+.oec-pdf__num { width: 3.2em; height: 30px; margin: 0 4px 0 6px; padding: 0 4px; border: 0; border-radius: 4px; background: rgba(255, 255, 255, .14); color: #fff; font: inherit; font-size: .875rem; text-align: center; -moz-appearance: textfield; }
+.oec-pdf__num::-webkit-inner-spin-button, .oec-pdf__num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.oec-pdf__count { font-size: .875rem; white-space: nowrap; opacity: .85; }
+.oec-pdf__scroll { position: relative; flex: 1 1 auto; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.oec-pdf__pages { display: flex; flex-direction: column; align-items: center; gap: 12px; width: max-content; min-width: 100%; padding: 12px; box-sizing: border-box; }
+.oec-pdf__page { flex: 0 0 auto; background: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.oec-pdf__page canvas { display: block; width: 100%; height: 100%; }
+.oec-pdf__page:empty { display: grid; place-items: center; }
+.oec-pdf__page:empty::after { content: "Cargando…"; color: var(--color-muted); font-size: .875rem; }
+.oec-pdf__status { margin: 0; padding: 2rem 1rem; color: #fff; text-align: center; }
+.single-content .oec-pdf__status a { color: #fff; text-decoration: underline; }
+@media (max-width: 600px) {
+  .oec-pdf__viewer:not(.is-full) { height: 75vh; }
+  .oec-pdf__bar { gap: 4px; padding: 4px; }
+  .oec-pdf__tool { width: 32px; height: 34px; font-size: 16px; }
+  .oec-pdf__num { margin: 0 2px; }
 }
