@@ -68,6 +68,39 @@ $redes = array_filter( [
 	'whatsapp'  => $whatsapp,
 ] );
 
+// Campaña de descuentos por empezar o en curso (inc/campaign.php): va arriba
+// de todo, con cuenta regresiva y sus 4 primeras formaciones. La página se
+// borra de Cloudflare al cambiar de estado; por las dudas, el script de
+// abajo la esconde si ya terminó.
+$cmp_phase = function_exists( 'oec_cmp_view_phase' ) ? oec_cmp_view_phase() : 'off';
+$cmp       = null;
+if ( in_array( $cmp_phase, [ 'teaser', 'live' ], true ) ) {
+	$cmp_rows = oec_cmp_formaciones( $cmp_phase );
+	if ( $cmp_rows ) {
+		$cmp_o   = oec_cmp_opts();
+		$cmp_t   = oec_cmp_times( $cmp_o );
+		$cmp_max = 'live' === $cmp_phase ? oec_cmp_max_pct( $cmp_rows ) : 0;
+		$cmp_n   = sprintf( _n( '%d formación', '%d formaciones', count( $cmp_rows ), 'oec-theme' ), count( $cmp_rows ) );
+		$cmp     = [
+			'name'  => (string) $cmp_o['name'],
+			'url'   => oec_cmp_url( $cmp_o ),
+			'live'  => 'live' === $cmp_phase,
+			'to'    => ( 'live' === $cmp_phase ? $cmp_t['end'] : $cmp_t['start'] ) * 1000,
+			'end'   => $cmp_t['end'] * 1000,
+			'head'  => 'live' === $cmp_phase
+				? ( $cmp_max ? sprintf( 'Hasta %d%% OFF en %s', $cmp_max, $cmp_n ) : sprintf( '%s con descuento', $cmp_n ) )
+				: sprintf( 'Descuentos fuertes en %s', $cmp_n ),
+			'sub'   => 'live' === $cmp_phase
+				? sprintf( 'Promo flash: termina el %s a las %s. Sin códigos.', wp_date( 'l j', $cmp_t['end'] ), wp_date( 'H:i', $cmp_t['end'] ) )
+				: sprintf( 'Se viene: %s.', oec_cmp_dias_texto( $cmp_o ) ),
+			'rows'  => array_slice( $cmp_rows, 0, 4 ),
+			'dark'  => (string) $cmp_o['dark'],
+			'dark2' => (string) $cmp_o['dark_2'],
+			'acc'   => (string) $cmp_o['accent'],
+		];
+	}
+}
+
 $titulo = get_bloginfo( 'name' );
 $desc   = __( 'Formaciones, artículos y novedades en ciencias del ejercicio: todo a un toque.', 'oec-theme' );
 $icons  = OEC_THEME_DIR . '/assets/fonts/bootstrap-icons/bootstrap-icons-subset.css';
@@ -142,6 +175,24 @@ h2{font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;
 .redes{display:flex;justify-content:center;gap:10px;margin:0 0 18px}
 .redes a{width:46px;height:46px;display:grid;place-items:center;border-radius:50%;background:var(--card);border:1px solid var(--line);color:var(--primary);font-size:20px}
 .pie{text-align:center;font-size:12px;color:var(--muted)}
+/* Campaña (Cyber, Black Friday…): arriba de todo, con sus colores */
+.cmp{position:relative;margin:-40px 0 14px;padding:20px 18px 18px;border-radius:20px;color:#fff;background:radial-gradient(circle at 100% 0%,rgba(255,255,255,.12) 0%,rgba(255,255,255,0) 45%),linear-gradient(150deg,var(--cd) 0%,var(--cd2) 100%);box-shadow:0 14px 34px rgba(7,27,45,.3),0 0 0 1px var(--ca)}
+.cmp__eyebrow{display:inline-flex;align-items:center;gap:6px;margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--ca)}
+.cmp__name{margin:0;color:#fff;font-size:38px;font-weight:900;line-height:.95;letter-spacing:-.02em;text-transform:uppercase}
+.cmp__name span{color:var(--ca)}
+.cmp__head{margin:8px 0 2px;font-size:19px;font-weight:800;color:var(--ca)}
+.cmp__sub{margin:0 0 14px;font-size:14px;color:rgba(255,255,255,.8)}
+.cmp__cd{display:flex;gap:6px;margin:0 0 14px}
+.cmp__cd span{flex:1;display:flex;flex-direction:column;align-items:center;padding:8px 0 6px;border-radius:10px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.14)}
+.cmp__cd b{font-size:24px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums}
+.cmp__cd small{margin-top:4px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ca)}
+.cmp__btn{display:flex;align-items:center;justify-content:center;gap:8px;min-height:52px;border-radius:14px;background:var(--ca);color:var(--cd);font-size:16px;font-weight:900}
+.cmp__list{display:grid;gap:8px;margin:14px 0 0}
+.cmp__f{display:flex;gap:10px;align-items:center;padding:8px;border-radius:12px;background:rgba(255,255,255,.08)}
+.cmp__f img{flex:0 0 52px;width:52px;height:52px;border-radius:8px;object-fit:cover;background:rgba(255,255,255,.1)}
+.cmp__f span{flex:1;min-width:0;font-size:14px;font-weight:700;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.cmp__f em{flex:0 0 auto;padding:4px 8px;border-radius:8px;background:var(--ca);color:var(--cd);font-style:normal;font-size:14px;font-weight:900}
+.cmp+.search{margin-top:0}
 .pie a{text-decoration:underline}
 </style>
 <?php
@@ -163,6 +214,34 @@ if ( function_exists( 'oec_output_trackers_head' ) ) {
 </header>
 
 <main class="wrap">
+
+	<?php if ( $cmp ) :
+		$cmp_words = preg_split( '/\s+/', trim( $cmp['name'] ), 2 );
+		?>
+	<section class="cmp" data-end="<?php echo esc_attr( (string) $cmp['end'] ); ?>" style="--cd:<?php echo esc_attr( $cmp['dark'] ); ?>;--cd2:<?php echo esc_attr( $cmp['dark2'] ); ?>;--ca:<?php echo esc_attr( $cmp['acc'] ); ?>">
+		<p class="cmp__eyebrow"><i class="bi bi-lightning-charge-fill" aria-hidden="true"></i><?php echo esc_html( $cmp['live'] ? 'Promo flash · Ya empezó' : 'Se viene' ); ?></p>
+		<h2 class="cmp__name"><?php echo esc_html( $cmp_words[0] ); ?><?php echo ! empty( $cmp_words[1] ) ? ' <span>' . esc_html( $cmp_words[1] ) . '</span>' : ''; ?></h2>
+		<p class="cmp__head"><?php echo esc_html( $cmp['head'] ); ?></p>
+		<p class="cmp__sub"><?php echo esc_html( $cmp['sub'] ); ?></p>
+		<div class="cmp__cd" data-to="<?php echo esc_attr( (string) $cmp['to'] ); ?>" role="timer" aria-label="<?php echo esc_attr( $cmp['live'] ? 'Termina en' : 'Empieza en' ); ?>">
+			<span><b data-u="d">00</b><small>días</small></span><span><b data-u="h">00</b><small>hs</small></span><span><b data-u="m">00</b><small>min</small></span><span><b data-u="s">00</b><small>seg</small></span>
+		</div>
+		<a class="cmp__btn" href="<?php echo esc_url( $cmp['url'] ); ?>"><?php echo esc_html( $cmp['live'] ? 'Ver las ofertas' : 'Ver cuáles participan' ); ?> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+		<div class="cmp__list">
+			<?php foreach ( $cmp['rows'] as $r ) :
+				$href = oec_formation_url( $r );
+				?>
+			<a class="cmp__f" href="<?php echo esc_url( $href ); ?>"<?php echo str_starts_with( $href, home_url() ) ? '' : ' target="_blank" rel="noopener"'; ?>>
+				<?php if ( ! empty( $r['image'] ) ) : ?>
+				<img src="<?php echo esc_url( oec_cdn_resize( $r['image'], 104, 75 ) ); ?>" alt="" width="52" height="52" loading="lazy" decoding="async">
+				<?php endif; ?>
+				<span><?php echo esc_html( $r['title'] ); ?></span>
+				<?php if ( $cmp['live'] && $r['cmp_pct'] ) : ?><em>−<?php echo (int) $r['cmp_pct']; ?>%</em><?php endif; ?>
+			</a>
+			<?php endforeach; ?>
+		</div>
+	</section>
+	<?php endif; ?>
 
 	<form class="search" role="search" method="get" action="<?php echo esc_url( oec_formaciones_url() ); ?>">
 		<i class="bi bi-search" aria-hidden="true"></i>
@@ -214,6 +293,16 @@ if ( function_exists( 'oec_output_trackers_head' ) ) {
 
 </main>
 
+<?php if ( $cmp ) : ?>
+<script>
+/* Cuenta regresiva de la campaña; si ya terminó (copia vieja en caché), el bloque se va. */
+(function(){var s=document.querySelector('.cmp');if(!s)return;var c=s.querySelector('.cmp__cd'),to=+c.dataset.to,end=+s.dataset.end;
+function p(n){return(n<10?'0':'')+n}
+function t(){var n=Date.now();if(n>end){s.remove();return}var x=Math.max(0,Math.floor((to-n)/1e3)),v={d:Math.floor(x/86400),h:Math.floor(x%86400/3600),m:Math.floor(x%3600/60),s:x%60};
+c.querySelectorAll('[data-u]').forEach(function(b){b.textContent=p(v[b.dataset.u])})}
+t();setInterval(t,1e3)})();
+</script>
+<?php endif; ?>
 <?php
 if ( function_exists( 'oec_output_fbclid_links' ) ) {
 	oec_output_fbclid_links();
