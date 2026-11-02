@@ -416,6 +416,14 @@ class OEC_AI_Chat {
 	/** Precio de una formación por país/moneda: se guarda 1 hora (PRICE_TTL). */
 	const PRICE_TTL = HOUR_IN_SECONDS;
 
+	/**
+	 * Precios y medios de pago de las mismas APIs que usa la ficha (plugin):
+	 * así el chat nunca da un número distinto del que ve la persona. Si la API
+	 * de precios falla, la formación queda sin precio (el chat no lo inventa).
+	 */
+	const PRICES_API   = 'https://api.onlineeducation.center/api-oas/v1/trainings/%s/prices?country=%s&currency=%s';
+	const PAY_OPTS_API = 'https://api.onlineeducation.center/campus/api/trainings/%s/currentEdition/payment-methods-locale?country=%s';
+
 	private static function fetch_prices( array $ids, string $country, string $currency ): array {
 		$prices   = [];
 		$requests = [];
@@ -425,13 +433,15 @@ class OEC_AI_Chat {
 				$prices[ $id ] = $cached;
 				continue;
 			}
-			$requests[ $id ] = [
-				'url'  => sprintf(
-					'https://api.g-se.com/v2/content/trainings/%s/price/%s/%s',
-					$id, $country, $currency
-				),
-				'type' => 'GET',
-				'options' => [ 'timeout' => 10 ],
+			$requests[ $id . '|p' ] = [
+				'url'     => sprintf( self::PRICES_API, rawurlencode( $id ), rawurlencode( $country ), rawurlencode( $currency ) ),
+				'headers' => [ 'Accept' => 'application/json' ],
+				'type'    => 'GET',
+			];
+			$requests[ $id . '|m' ] = [
+				'url'     => sprintf( self::PAY_OPTS_API, rawurlencode( $id ), rawurlencode( $country ) ),
+				'headers' => [ 'Accept' => 'application/json' ],
+				'type'    => 'GET',
 			];
 		}
 
@@ -442,12 +452,19 @@ class OEC_AI_Chat {
 			$class     = class_exists( '\WpOrg\Requests\Requests' ) ? '\WpOrg\Requests\Requests' : 'Requests';
 			$exc_class = class_exists( '\WpOrg\Requests\Exception' ) ? '\WpOrg\Requests\Exception' : 'Requests_Exception';
 			$responses = $class::request_multiple( $requests, [ 'timeout' => 10 ] );
-			foreach ( $responses as $id => $resp ) {
-				if ( $resp instanceof $exc_class ) {
-					continue;
+			$body      = static function ( $resp ) use ( $exc_class ) {
+				if ( $resp instanceof $exc_class || (int) ( $resp->status_code ?? 0 ) !== 200 ) {
+					return null;
 				}
 				$data = json_decode( $resp->body, true );
-				if ( ! empty( $data['price'] ) ) {
+				return is_array( $data ) ? $data : null;
+			};
+			foreach ( $ids as $id ) {
+				if ( ! isset( $requests[ $id . '|p' ] ) ) {
+					continue;
+				}
+				$data = self::normalize_price( $body( $responses[ $id . '|p' ] ?? null ), $body( $responses[ $id . '|m' ] ?? null ) );
+				if ( $data ) {
 					$prices[ $id ] = $data;
 					set_transient( self::price_key( $id, $country, $currency ), $data, self::PRICE_TTL );
 				}
@@ -459,8 +476,52 @@ class OEC_AI_Chat {
 		return $prices;
 	}
 
+	/**
+	 * Respuesta de la API de precios (+ medios de pago) → la forma que usa
+	 * format_formation(): price, discount (con vencimiento = pago anticipado),
+	 * first_module_price y payment_methods.
+	 */
+	private static function normalize_price( ?array $p, ?array $pay ): ?array {
+		if ( ! $p || ! isset( $p['total'] ) || empty( $p['currency'] ) ) {
+			return null;
+		}
+		$cur  = (string) $p['currency'];
+		$data = [ 'price' => [ 'total' => (float) $p['total'], 'currency' => $cur ] ];
+
+		$pct = (int) ( $p['discountPercent'] ?? 0 );
+		if ( $pct > 0 && isset( $p['toPriceDiscount'] ) ) {
+			$exp              = (string) ( $p['expiration'] ?? '' );
+			$data['discount'] = [
+				'type'       => '' !== $exp ? 'early_payment' : 'full_payment',
+				'percentage' => $pct,
+				'expiration' => $exp,
+				'total'      => (float) $p['toPriceDiscount'],
+			];
+		}
+
+		// Cantidad de módulos según la API de precios (la del catálogo puede estar vieja)
+		if ( ! empty( $p['modules'] ) && is_array( $p['modules'] ) ) {
+			$data['modules_count'] = count( $p['modules'] );
+		}
+		if ( isset( $p['modules']['1']['amount'] ) ) {
+			$data['first_module_price'] = [ 'price' => [ 'total' => (float) $p['modules']['1']['amount'], 'currency' => $cur ] ];
+		}
+
+		$methods = [];
+		foreach ( $pay['data'] ?? [] as $m ) {
+			$name = $m['es']['name'] ?? $m['name'] ?? '';
+			if ( '' !== $name ) {
+				$methods[] = [ 'name' => (string) $name ];
+			}
+		}
+		if ( $methods ) {
+			$data['payment_methods'] = $methods;
+		}
+		return $data;
+	}
+
 	private static function price_key( string $id, string $country, string $currency ): string {
-		return 'oec_chat_price_' . md5( $id . '|' . $country . '|' . $currency );
+		return 'oec_chat_price2_' . md5( $id . '|' . $country . '|' . $currency );
 	}
 
 	/* ── Context builder ────────────────────────────────────── */
@@ -499,6 +560,9 @@ class OEC_AI_Chat {
 
 		return implode( "\n\n---\n\n", $parts );
 	}
+
+	/** Alternativas en una ficha: van sin precio, con la línea que manda a su ficha. */
+	private static bool $price_in_ficha = false;
 
 	private static function format_formation( array $f, ?array $price_data, bool $detailed_modules = false ): string {
 		$lines = [];
@@ -632,7 +696,7 @@ class OEC_AI_Chat {
 			}
 
 			// Module 1 option for multi-module formations
-			if ( count( $f['modules'] ?? [] ) > 1 ) {
+			if ( ( $price_data['modules_count'] ?? count( $f['modules'] ?? [] ) ) > 1 ) {
 				$m1_total = $price_data['first_module_price']['price']['total'] ?? null;
 				if ( $m1_total ) {
 					$m1_price = number_format( (float) $m1_total, 0, ',', '.' );
@@ -641,6 +705,8 @@ class OEC_AI_Chat {
 					$lines[]  = "Opción de inicio: también puede inscribirse SOLO al Módulo 1 (precio disponible al consultar)";
 				}
 			}
+		} elseif ( self::$price_in_ficha ) {
+			$lines[] = "\nPrecio: no lo das acá; está actualizado en su ficha: " . ( $f['url'] ?? '' );
 		}
 
 		if ( ! empty( $f['reviews'] ) ) {
@@ -1293,7 +1359,10 @@ class OEC_AI_Chat {
 		$prices = [];
 		if ( $country && $currency && ! empty( $formations ) ) {
 			self::sse_status( 'Consultando precios actualizados...' );
-			$prices = self::fetch_prices( array_column( $formations, 'id' ), $country, $currency );
+			// En una ficha solo se cotiza la formación de la página: con precios
+			// de las alternativas a la vista, el modelo los mezclaba (p. ej. dos
+			// cursos de voley del mismo docente).
+			$prices = self::fetch_prices( $focus ? [ $focus['id'] ] : array_column( $formations, 'id' ), $country, $currency );
 		}
 
 		self::sse_status( 'Preparando la respuesta...' );
@@ -1302,8 +1371,10 @@ class OEC_AI_Chat {
 		if ( $focus ) {
 			$context = "FORMACIÓN DE ESTA PÁGINA:\n" . self::format_focus( $focus, $prices[ $focus['id'] ] ?? null, $open );
 			if ( $others ) {
+				self::$price_in_ficha = true;
 				$context .= "\n\n---\n\nOTRAS FORMACIONES (alternativas: ofrecelas solo si la de esta página no es lo que busca o está cerrada):\n\n"
-					. self::build_context( $others, $prices, false, [] );
+					. self::build_context( $others, [], false, [] );
+				self::$price_in_ficha = false;
 			}
 		} else {
 			// Las fichas que ya miró van aparte y primero: mezcladas con el resto,
@@ -2440,7 +2511,7 @@ class OEC_AI_Chat {
 				: '';
 			$out[] = "Descuento vigente del {$disc['percentage']}%{$until}.";
 		}
-		if ( count( $f['modules'] ?? [] ) > 1 ) {
+		if ( ( $price['modules_count'] ?? count( $f['modules'] ?? [] ) ) > 1 ) {
 			$out[] = 'Se puede empezar pagando solo el Módulo 1 y seguir módulo por módulo.';
 		}
 		if ( ! empty( $f['teachers'] ) ) {
@@ -2510,7 +2581,7 @@ La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte s
 - El mensaje 2 va SIEMPRE, aunque la pregunta haya sido corta. Excepciones: si la persona ya es alumna, pide hablar con alguien o la inscripción está cerrada.
 - No presiones ni exageres: solo datos reales de la ficha.
 - Si solo saluda o pide "info": vendele ESTA formación, no le preguntes qué quiere saber ni qué área le interesa. En 3 mensajes: 1) qué es y para quién, en una frase; 2) lo MÁS FUERTE que tenga, con datos concretos de "ARGUMENTOS DE VENTA" y de sus flags: docentes destacados (nombralos, con su cargo), aval o certificación, alumnos y opiniones, próxima clase en vivo, cierre de inscripción cercano; 3) el precio con el descuento vigente y una invitación concreta (inscribirse o una pregunta puntual). En el saludo solo existe la formación de esta página: no nombres otras ni las pongas en <<IDS:…>> (única excepción: las que la incluyen, si más abajo se indica).{$incl}
-- Precio: usá los valores del contexto (ya están en su moneda). Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1.
+- Precio: usá SOLO los valores de "FORMACIÓN DE ESTA PÁGINA" (ya están en su moneda). Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1. Si ahí no figura "Precio:", no des montos: decí que el precio actualizado está en esta misma página y en el checkout. Si pregunta por el precio de una de las "OTRAS FORMACIONES", respondé en una frase que lo ve actualizado en su ficha, con su enlace; no uses [Inscribirme](INSCRIPCION) para ella (es solo para la formación de esta página). Si la persona dice un precio que coincide con el del contexto (con o sin descuento), confirmáselo.
 - Si el contexto trae "CONSEJO DE PAGO" y pregunta por precio, cuotas o cómo pagar, recomendá ESO primero y con convicción (pago completo con descuento + cuotas con tarjeta, con el monto y el ahorro); el pago módulo por módulo va después, como alternativa. No inventes tasas, cantidad de cuotas ni digas "sin interés".
 - No repitas el título completo en cada mensaje: decí "esta formación" o "el curso".
 - Si pregunta cómo pagar o pide datos para pagar (transferencia, CBU, link de pago): la respuesta es inscribirse por el checkout, y en ese mismo mensaje va SIEMPRE la línea "Para inscribirse" del contexto (el enlace [Inscribirme](INSCRIPCION) si figura).
@@ -2777,6 +2848,7 @@ ESTILO DE COMUNICACIÓN:
 - Usá voseo rioplatense: "podés", "tenés", "necesitás" — nunca "usted" ni tuteo español
 - Sé cálido y cercano, pero profesional y directo
 - Respuestas concretas con información exacta del catálogo; nunca inventes datos
+- Nunca menciones "el contexto" ni cómo te llega la información
 
 FORMATO DE RESPUESTA — MUY IMPORTANTE:
 - Dividí tu respuesta en 2 o 3 mensajes cortos separados EXACTAMENTE por |||
