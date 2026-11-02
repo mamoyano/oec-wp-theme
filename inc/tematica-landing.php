@@ -694,13 +694,13 @@ function oec_chat_ia_available(): bool {
 // en la ficha (si no hay tema o no hay chat, ofrece WhatsApp).
 add_filter( 'oec_chat_ia_available', static fn( $v ) => $v || oec_chat_ia_available() );
 
-/** Globo flotante "¿Alguna pregunta?": home, landings de temática y listado de formaciones. */
+/** Globo flotante "¿Alguna pregunta?": home, listado de formaciones y landings (temática, promo y LIVE). */
 function oec_chat_bubble(): void {
 	if ( ! oec_chat_ia_available() ) {
 		return;
 	}
 	$show = is_front_page() || is_page( 'formaciones' )
-		|| 'tematica' === ( OEC_AI_Chat::page_context()['mode'] ?? '' );
+		|| in_array( OEC_AI_Chat::page_context()['mode'] ?? '', [ 'tematica', 'campana', 'live' ], true );
 	if ( ! apply_filters( 'oec_chat_bubble', $show ) ) {
 		return;
 	}
