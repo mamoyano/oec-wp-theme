@@ -1530,8 +1530,12 @@ class OEC_AI_Chat {
 		//   recomendar otras. En una ficha cerrada, nunca: ahí se ofrecen alternativas, y
 		//   nombrar a un docente o un aval de la alternativa traía las fotos de la cerrada.
 		// - Fuera de una ficha: solo si la respuesta trata de una única formación.
-		$about_focus = $focus && $open && ! $source;
-		$with_photos = $focus ? ( $about_focus ? [ $focus ] : [] ) : ( 1 === count( $source ) ? $source : [] );
+		// - Una comparación en tabla nunca trata de una sola: como la IA acorta los
+		//   títulos en el encabezado, las otras no quedaban "nombradas" y salían las
+		//   fotos del docente y los avales de la ficha debajo de la tabla.
+		$table       = (bool) preg_match( '/^\|\s*:?-{2,}/m', $reply );
+		$about_focus = $focus && $open && ! $source && ! $table;
+		$with_photos = $table ? [] : ( $focus ? ( $about_focus ? [ $focus ] : [] ) : ( 1 === count( $source ) ? $source : [] ) );
 		if ( $media = self::reply_media( $reply, (string) $message, $with_photos, $about_focus ? $focus : null ) ) {
 			$done['media'] = $media;
 		}
