@@ -418,6 +418,7 @@
         return b;
       }).filter(Boolean);
       if (m.m && m.m.length) renderMedia(m.m, bubbles);
+      addTableThumbs(bubbles, m.t);
       if (m.f && m.f.length) {
         upgradeFormationLinks(bubbles, m.f);
         renderCards(m.f);
@@ -501,6 +502,19 @@
     html = html
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g,     '<em>$1</em>');
+    // 7b. Tablas (comparaciones): líneas seguidas que empiezan con "|" y tienen la
+    //     fila separadora "|---|". Mientras se escribe, la fila a medio llegar y una
+    //     tabla sin separadora todavía no se muestran (serían barras sueltas).
+    if (streaming) html = html.replace(/(^|\n)\|[^\n]*$/, '$1');
+    html = html.replace(/(^|\n)((?:\|[^\n]*(?:\n|$))+)/g, (all, pre, block) => {
+      const rows = block.replace(/\n$/, '').split('\n');
+      if (rows.length < 2 || !/^\|?\s*:?-{2,}/.test(rows[1])) return streaming ? pre : all;
+      const cells = r => r.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim().replace(/&lt;br\s*\/?&gt;/gi, '<br>'));
+      const head = cells(rows[0]).map((c, i) => '<th' + (i ? '' : ' class="oec-md-table__corner"') + '>' + (c === '—' ? '' : c) + '</th>').join('');
+      const body = rows.slice(2).map(r => '<tr>' + cells(r).map((c, i) => i ? '<td>' + c + '</td>' : '<th scope="row">' + c + '</th>').join('') + '</tr>').join('');
+      return pre + '<div class="oec-md-table-wrap"><table class="oec-md-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table></div>' + (/\n$/.test(block) ? '\n' : '');
+    });
+    html = html.replace(/(<\/table><\/div>)\n/g, '$1');
     // 7c. Collapse \n between consecutive list items so they don't get a <br> between them
     html = html.replace(/<\/span>\n(<span class="oec-md-(?:li|ol)")/g, '</span>$1');
     // 8. Line breaks
@@ -727,6 +741,7 @@
     if (!formations || !formations.length || !bubbles.length) return;
     bubbles.forEach(function (bubble) {
       bubble.querySelectorAll('a.oec-md-link').forEach(function (link) {
+        if (link.closest('.oec-md-table')) return; // en una tabla queda el enlace (con su foto: addTableThumbs)
         const href = (link.getAttribute('href') || '').trim();
         const f = formations.find(function (f) { return f.url && f.url.trim() === href; });
         if (!f) return;
@@ -742,6 +757,27 @@
                        + '</span>'
                        + communityBadge(f);
         link.replaceWith(card);
+      });
+    });
+  }
+
+  /* Comparación en tabla: cada formación del encabezado lleva su foto chiquita
+     arriba del título, para asociar uno con otra. Las fotos las manda el servidor
+     (también la de la formación de la ficha, que no tiene tarjeta). */
+  function addTableThumbs(bubbles, thumbs) {
+    if (!thumbs || !thumbs.length) return;
+    bubbles.forEach(function (bubble) {
+      bubble.querySelectorAll('.oec-md-table thead a.oec-md-link').forEach(function (link) {
+        const href = (link.getAttribute('href') || '').trim();
+        const f = thumbs.find(function (t) { return t.url && t.url.trim() === href; });
+        if (!f) return;
+        link.href = f.path || f.url;
+        if (f.external) { link.target = '_blank'; link.rel = 'noopener'; }
+        else { link.removeAttribute('target'); link.removeAttribute('rel'); }
+        if (f.image && !link.querySelector('img')) {
+          link.classList.add('oec-md-table__formation');
+          link.insertAdjacentHTML('afterbegin', '<img src="' + escAttr(f.image) + '" class="oec-md-table__img" alt="" loading="lazy">');
+        }
       });
     });
   }
@@ -934,6 +970,7 @@
     saved.forEach(m => (m.m || []).forEach(x => shown.add(x.src)));
     const media = (doneData.media || []).filter(x => x && x.src && !shown.has(x.src) && fullText.indexOf(x.src) === -1);
     if (media.length) renderMedia(media, allBubbles.filter(b => b && b.textContent.trim()));
+    addTableThumbs(allBubbles, doneData.thumbs);
 
     // Upgrade formation URLs inside bubbles to inline cards, then show card strip
     const formations = doneData.formations;
@@ -962,7 +999,7 @@
     if (history.length > 20) history = history.slice(-20); // varias páginas: el servidor usa solo las de la actual
 
     // Guardar para seguirla en otra página
-    saved.push({ u: message }, { a: fullText.trim(), f: formations || [], h: doneData.help || null, m: media, p: { k: pageTopic.k, t: pageTopic.t, u: pageTopic.u } });
+    saved.push({ u: message }, { a: fullText.trim(), f: formations || [], h: doneData.help || null, m: media, t: doneData.thumbs || [], p: { k: pageTopic.k, t: pageTopic.t, u: pageTopic.u } });
     saveConversation();
   }
 

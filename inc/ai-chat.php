@@ -663,7 +663,8 @@ class OEC_AI_Chat {
 		if ( $price_data ) {
 			$total    = number_format( $price_data['price']['total'] ?? 0, 0, ',', '.' );
 			$cur      = $price_data['price']['currency'] ?? '';
-			$lines[]  = "\nPrecio: {$cur} {$total}" . self::approx( (float) ( $price_data['price']['total'] ?? 0 ), $cur );
+			// Con el nombre pegado: con varios precios a la vista, cada uno es de su formación.
+			$lines[]  = "\nPrecio de «{$f['title']}»: {$cur} {$total}" . self::approx( (float) ( $price_data['price']['total'] ?? 0 ), $cur );
 
 			if ( ! empty( $price_data['discount'] ) ) {
 				$disc       = $price_data['discount'];
@@ -1179,6 +1180,14 @@ class OEC_AI_Chat {
 		return (bool) preg_match( '/(?<![\p{L}])(vi|ví|viste|vimos|mir[eé]|miraba|anterior(es)?|las? otras?|el otro|fichas?|esas|esa otra|compar\p{L}+)(?![\p{L}])/iu', $message );
 	}
 
+	/** ¿Pide comparar formaciones? ("comparame", "diferencias", "cuál conviene", "en una tabla") */
+	private static function asks_comparison( string $message ): bool {
+		return (bool) preg_match( '/(?<![\p{L}])(compar\p{L}*|diferencias?|vs\.?|versus|tabla|cu[aá]l (me )?conviene|cu[aá]l es mejor)(?![\p{L}])/iu', $message );
+	}
+
+	/** La respuesta es una comparación en tabla: necesita más largo (stream_anthropic()). */
+	private static bool $comparing = false;
+
 	/** ¿Va la lista de derivaciones a una persona en esta consulta? (ver wants_human()) */
 	private static bool $derive = true;
 
@@ -1288,6 +1297,7 @@ class OEC_AI_Chat {
 		// ("las que vi", "la anterior", "compará"): si no, la IA las recomendaba de
 		// más. Y cuando habla de ellas van solas, sin relleno del buscador.
 		$recall = $visited && ! $focus && self::refers_to_seen( (string) $message );
+		$compare = self::$comparing = self::asks_comparison( (string) $message );
 		if ( ! $focus && ! $recall ) {
 			$visited = [];
 		}
@@ -1313,8 +1323,10 @@ class OEC_AI_Chat {
 			foreach ( $visited as $vid ) {
 				$picked[ $vid ] = [ 'id' => $vid ]; // fichas que miró antes: para comparar con datos reales
 			}
-			foreach ( array_merge( array_slice( array_values( $asked ), 0, 2 ), $similar ) as $e ) {
-				if ( $e['id'] !== $focus['id'] && count( $picked ) < max( 3, count( $visited ) + count( $focus['parents'] ) + 1 ) ) {
+			// Si pide comparar ("todos los cursos de voley"), van todas las que nombra.
+			$cap = $compare ? self::MAX_RESULTS - 1 : max( 3, count( $visited ) + count( $focus['parents'] ) + 1 );
+			foreach ( array_merge( array_slice( array_values( $asked ), 0, $compare ? $cap : 2 ), $similar ) as $e ) {
+				if ( $e['id'] !== $focus['id'] && count( $picked ) < $cap ) {
 					$picked[ $e['id'] ] ??= $e;
 				}
 			}
@@ -1359,10 +1371,21 @@ class OEC_AI_Chat {
 		$prices = [];
 		if ( $country && $currency && ! empty( $formations ) ) {
 			self::sse_status( 'Consultando precios actualizados...' );
-			// En una ficha solo se cotiza la formación de la página: con precios
-			// de las alternativas a la vista, el modelo los mezclaba (p. ej. dos
-			// cursos de voley del mismo docente).
-			$prices = self::fetch_prices( $focus ? [ $focus['id'] ] : array_column( $formations, 'id' ), $country, $currency );
+			// En una ficha se cotiza la formación de la página y, de las otras, solo
+			// las que hacen falta: si pide comparar, las que ya miró y las que la
+			// incluyen. Con precios de alternativas sueltas a la vista, el modelo los
+			// mezclaba (p. ej. dos cursos de voley del mismo docente).
+			$ids = array_column( $formations, 'id' );
+			if ( $focus && ! $compare ) {
+				$keep = array_merge( [ $focus['id'] ], $visited, array_column( $focus['parents'], 'id' ) );
+				$ids  = array_values( array_intersect( $ids, $keep ) );
+			}
+			$prices = self::fetch_prices( $ids, $country, $currency );
+			// Sin el precio de la formación de la página no va ninguno: con el de otra
+			// a la vista, lo daba como si fuera el de esta (así salieron los 420.000).
+			if ( $focus && empty( $prices[ $focus['id'] ] ) ) {
+				$prices = [];
+			}
 		}
 
 		self::sse_status( 'Preparando la respuesta...' );
@@ -1373,7 +1396,7 @@ class OEC_AI_Chat {
 			if ( $others ) {
 				self::$price_in_ficha = true;
 				$context .= "\n\n---\n\nOTRAS FORMACIONES (alternativas: ofrecelas solo si la de esta página no es lo que busca o está cerrada):\n\n"
-					. self::build_context( $others, [], false, [] );
+					. self::build_context( $others, $prices, false, [] );
 				self::$price_in_ficha = false;
 			}
 		} else {
@@ -1450,6 +1473,14 @@ class OEC_AI_Chat {
 			$last = count( $messages ) - 1;
 			$messages[ $last ]['content'] .= "\n\n" . $note;
 		}
+		// En una ficha, la estructura de tres mensajes (respuesta, punto fuerte, cierre)
+		// le ganaba a la tabla: el pedido de comparar va pegado a la pregunta.
+		if ( $focus && $compare ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: pidió comparar. Respondé con la tabla de COMPARACIONES:"
+				. " la formación de esta página en la primera columna y, al lado, las de \"OTRAS FORMACIONES\" que correspondan a lo que pide."
+				. ' Una frase antes de la tabla y, en otro mensaje, cuál le conviene; sin el punto fuerte de la estructura de la ficha.]';
+		}
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, $mode );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
@@ -1506,6 +1537,20 @@ class OEC_AI_Chat {
 		}
 		if ( $credits_done ) {
 			$done['credits'] = $credits_done; // el navegador lo guarda: queda identificado en todo el sitio
+		}
+		// Comparación en tabla: la foto de cada formación del encabezado (también la de
+		// la ficha, que no lleva tarjeta). Se reconoce por su enlace en la respuesta.
+		if ( str_contains( $reply, '|' ) ) {
+			$thumbs = [];
+			foreach ( $formations as $f ) {
+				$c = self::card( $f );
+				if ( str_contains( $reply, '](' . $c['url'] . ')' ) ) {
+					$thumbs[] = [ 'image' => self::cdn_image( $f['image'] ?? '', 280 ) ] + array_intersect_key( $c, array_flip( [ 'url', 'path', 'external' ] ) );
+				}
+			}
+			if ( $thumbs ) {
+				$done['thumbs'] = $thumbs;
+			}
 		}
 		self::sse_data( $done );
 
@@ -1772,7 +1817,7 @@ class OEC_AI_Chat {
 		$system = self::system_blocks( $context, $total, $mode );
 
 		$body = wp_json_encode( self::request_body( [
-			'max_tokens' => 1024,
+			'max_tokens' => self::$comparing ? 2500 : 1024,
 			'stream'     => true,
 			'system'     => $system,
 			'messages'   => $messages,
@@ -2581,7 +2626,7 @@ La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte s
 - El mensaje 2 va SIEMPRE, aunque la pregunta haya sido corta. Excepciones: si la persona ya es alumna, pide hablar con alguien o la inscripción está cerrada.
 - No presiones ni exageres: solo datos reales de la ficha.
 - Si solo saluda o pide "info": vendele ESTA formación, no le preguntes qué quiere saber ni qué área le interesa. En 3 mensajes: 1) qué es y para quién, en una frase; 2) lo MÁS FUERTE que tenga, con datos concretos de "ARGUMENTOS DE VENTA" y de sus flags: docentes destacados (nombralos, con su cargo), aval o certificación, alumnos y opiniones, próxima clase en vivo, cierre de inscripción cercano; 3) el precio con el descuento vigente y una invitación concreta (inscribirse o una pregunta puntual). En el saludo solo existe la formación de esta página: no nombres otras ni las pongas en <<IDS:…>> (única excepción: las que la incluyen, si más abajo se indica).{$incl}
-- Precio: usá SOLO los valores de "FORMACIÓN DE ESTA PÁGINA" (ya están en su moneda). Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1. Si ahí no figura "Precio:", no des montos: decí que el precio actualizado está en esta misma página y en el checkout. Si pregunta por el precio de una de las "OTRAS FORMACIONES", respondé en una frase que lo ve actualizado en su ficha, con su enlace; no uses [Inscribirme](INSCRIPCION) para ella (es solo para la formación de esta página). Si la persona dice un precio que coincide con el del contexto (con o sin descuento), confirmáselo.
+- Precio: el de esta formación es el de "FORMACIÓN DE ESTA PÁGINA" (ya está en su moneda). Cada precio del contexto dice de qué formación es ("Precio de «…»"): nunca uses el de una formación para otra. Nombrá el descuento vigente y, si existe, la opción de empezar solo con el Módulo 1. Si en "FORMACIÓN DE ESTA PÁGINA" no figura "Precio", no des montos: decí que el precio actualizado está en esta misma página y en el checkout. Si pregunta por el precio de una de las "OTRAS FORMACIONES" que no trae "Precio de «…»", respondé en una frase que lo ve actualizado en su ficha, con su enlace; no uses [Inscribirme](INSCRIPCION) para ella (es solo para la formación de esta página). Si la persona dice un precio que coincide con el del contexto (con o sin descuento), confirmáselo.
 - Si el contexto trae "CONSEJO DE PAGO" y pregunta por precio, cuotas o cómo pagar, recomendá ESO primero y con convicción (pago completo con descuento + cuotas con tarjeta, con el monto y el ahorro); el pago módulo por módulo va después, como alternativa. No inventes tasas, cantidad de cuotas ni digas "sin interés".
 - No repitas el título completo en cada mensaje: decí "esta formación" o "el curso".
 - Si pregunta cómo pagar o pide datos para pagar (transferencia, CBU, link de pago): la respuesta es inscribirse por el checkout, y en ese mismo mensaje va SIEMPRE la línea "Para inscribirse" del contexto (el enlace [Inscribirme](INSCRIPCION) si figura).
@@ -2866,6 +2911,7 @@ COMPORTAMIENTO:
 - Usá opiniones de alumnos para reforzar recomendaciones cuando preguntan sobre calidad o docentes
 - Si pregunta por contenidos específicos, respondé con los datos exactos del módulo
 - Si pregunta por precios, mostralos con descuentos y formas de pago disponibles
+- COMPARACIONES: si pide comparar formaciones (o "todas las de X" lado a lado), armá UNA tabla markdown, entera en un mismo mensaje, con una COLUMNA por formación (hasta 6, las más pertinentes) y estas filas, en este orden: Horas, Módulos, Docentes, Certificado, Avales, Contenidos, Precio. Encabezado: la primera celda es "—" y cada columna lleva el nombre de la formación como enlace a su URL del contexto, [Nombre](URL), tal cual. Celdas cortas: Docentes solo nombres; Certificado en una o dos palabras ("Aprobación", "Asistencia"); Avales con sus siglas cuando las tienen (ACSM, ASEP); Contenidos en 4 a 8 palabras clave; Precio con el descuento vigente (p. ej. "ARS 168.000 con 30% off hasta el 5/11"); si una formación no trae "Precio de «…»", poné "Ver en su ficha". Solo datos del contexto; nunca dejes una celda vacía (poné "—") ni escribas dos barras seguidas. En el mismo mensaje que la tabla, una sola frase antes de ella (sin explicar cómo está armada); después, en otro mensaje, cuál conviene según lo que busca la persona
 - Si la formación trae "CONSEJO DE PAGO" y pregunta por cuotas o cómo pagar, recomendá eso primero (pago completo con descuento + cuotas con tarjeta) y dejá el pago módulo por módulo como alternativa. No inventes tasas ni cantidad de cuotas
 - Si no hay formación que coincida exactamente, decilo con honestidad y ofrecé la alternativa más cercana
 - Algunas formaciones son de otras comunidades de OEC (campo "Comunidad:", p. ej. swimming.science): recomendalas igual que las demás cuando encajen, aclarando en pocas palabras que se cursan en ese sitio, y usá su URL tal cual{$articulos}

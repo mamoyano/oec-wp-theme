@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.205
+Version: 1.0.206
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -1607,6 +1607,67 @@ body.oec-chat-open { overflow: hidden; }
   text-underline-offset: 2px;
 }
 .oec-msg--assistant .oec-md-link:hover { opacity: .8; }
+
+/* ── Tabla de comparación: una columna por formación (foto + título) ──
+   La burbuja toma todo el ancho y la tabla se desliza de costado, con la
+   columna de los rubros fija a la izquierda. */
+.oec-msg--assistant:has(.oec-md-table-wrap) { max-width: 100%; width: 100%; }
+.oec-msg--assistant .oec-md-table-wrap {
+  overflow-x: auto;
+  margin: .5rem -.25rem .25rem;
+  -webkit-overflow-scrolling: touch;
+}
+.oec-msg--assistant .oec-md-table {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .8125rem;
+  line-height: 1.45;
+  word-break: normal;
+}
+.oec-msg--assistant .oec-md-table th,
+.oec-msg--assistant .oec-md-table td {
+  min-width: 150px;
+  max-width: 220px;
+  padding: .5rem .625rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(var(--color-white-rgb),.1);
+}
+.oec-msg--assistant .oec-md-table thead th {
+  font-weight: 600;
+  border-bottom-color: rgba(var(--color-white-rgb),.22);
+}
+.oec-msg--assistant .oec-md-table tbody tr:last-child > * { border-bottom: 0; }
+.oec-msg--assistant .oec-md-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 92px;
+  max-width: 110px;
+  /* Opaco (las columnas pasan por debajo) y del mismo tono que la burbuja sobre el overlay */
+  background: linear-gradient(rgba(var(--color-white-rgb),.135), rgba(var(--color-white-rgb),.135)), rgb(var(--color-dark-rgb));
+  color: var(--bot-accent);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.oec-msg--assistant .oec-md-table__formation {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  color: rgba(var(--color-white-rgb),.95);
+  text-decoration: none;
+}
+.oec-msg--assistant .oec-md-table__formation:hover { color: var(--bot-accent); opacity: 1; }
+.oec-msg--assistant .oec-md-table__img {
+  width: 100%;
+  max-width: 140px;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: rgba(var(--color-white-rgb),.07);
+}
 
 /* ── Inline formation card (URL replaced by card in bubble) ── */
 .oec-msg--assistant .oec-inline-card {
