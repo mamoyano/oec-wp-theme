@@ -334,35 +334,34 @@ class OEC_AI_Chat {
 		return (bool) preg_match( '/\bcyber|black|promo|oferta|rebaja|descuento|\boff\b|barat|' . ( $name ?: 'cyber' ) . '/iu', $message );
 	}
 
-	/** En la landing de la campaña: las de la campaña que mejor coinciden; si son pocas, se completa con las más relevantes. */
+	/** En la landing de la campaña: ver prefilter_page(). */
 	private static function prefilter_campaign( string $query, string $extra ): array {
-		$order = self::campaign_ids();
-		$ids   = array_flip( $order );
-		$in    = array_values( array_filter( OEC_AI_Catalog::get_index( true ), static fn( $e ) => isset( $ids[ $e['id'] ] ) ) );
-		usort( $in, static fn( $a, $b ) => $ids[ $a['id'] ] <=> $ids[ $b['id'] ] );
-		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
-		if ( count( $top ) < 3 ) {
-			$seen = array_flip( array_column( $top, 'id' ) );
-			foreach ( $in as $e ) {
-				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < 3 ) {
-					$top[] = $e;
-				}
-			}
-		}
-		return self::load_formations( $top );
+		return self::prefilter_page( self::campaign_ids(), $query, $extra );
 	}
 
-	/** En la página LIVE: las LIVE que mejor coinciden; si son pocas, se completa con otras LIVE. */
+	/** En la página LIVE: ver prefilter_page(). */
 	private static function prefilter_live( string $query, string $extra ): array {
-		$ids = array_flip( self::live_ids() );
-		$in  = array_values( array_filter( OEC_AI_Catalog::get_index( true ), static fn( $e ) => isset( $ids[ $e['id'] ] ) ) );
-		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
-		if ( count( $top ) < 3 ) {
-			$seen = array_flip( array_column( $top, 'id' ) );
-			foreach ( $in as $e ) {
-				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < 3 ) {
-					$top[] = $e;
-				}
+		return self::prefilter_page( self::live_ids(), $query, $extra );
+	}
+
+	/**
+	 * Landing de la promo o LIVE: primero las de la página que coinciden con la
+	 * consulta y después las del resto del catálogo que coinciden. La página se
+	 * favorece, pero no esconde nada: buscando solo adentro, a "Javier Butragueño"
+	 * le decía que no había nada abierto y tenía un curso fuera de la promo.
+	 * Si quedan pocas, se completa con las primeras de la página.
+	 */
+	private static function prefilter_page( array $order, string $query, string $extra ): array {
+		$pos = array_flip( $order );
+		$all = OEC_AI_Catalog::get_index( true );
+		$in  = array_values( array_filter( $all, static fn( $e ) => isset( $pos[ $e['id'] ] ) ) );
+		usort( $in, static fn( $a, $b ) => $pos[ $a['id'] ] <=> $pos[ $b['id'] ] );
+		$top  = self::rank( $in, $query, $extra, 5 );
+		$seen = array_flip( array_column( $top, 'id' ) );
+		foreach ( array_merge( self::rank( $all, $query, $extra, self::MAX_RESULTS ), $in ) as $e ) {
+			if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < ( isset( $pos[ $e['id'] ] ) ? 3 : self::MAX_RESULTS ) ) {
+				$top[]               = $e;
+				$seen[ $e['id'] ]    = true;
 			}
 		}
 		return self::load_formations( $top );
@@ -564,6 +563,9 @@ class OEC_AI_Chat {
 	/** Alternativas en una ficha: van sin precio, con la línea que manda a su ficha. */
 	private static bool $price_in_ficha = false;
 
+	/** En la landing de la promo o LIVE: qué formaciones son de la página y cómo se marcan (format_formation()). */
+	private static array $page_tag = [];
+
 	private static function format_formation( array $f, ?array $price_data, bool $detailed_modules = false ): string {
 		$lines = [];
 
@@ -601,6 +603,9 @@ class OEC_AI_Chat {
 		$enroll = self::format_date_human( $f['enrollment_end'] ?? '' );
 		$lines[] = "Período: {$start} → {$end} | Inscripción hasta: {$enroll}";
 		$lines[] = 'URL: ' . self::link( $f );
+		if ( self::$page_tag ) {
+			$lines[] = isset( self::$page_tag['ids'][ $f['id'] ] ) ? self::$page_tag['in'] : self::$page_tag['out'];
+		}
 		if ( oec_formation_is_external( $f ) ) {
 			$host    = oec_community_host( $f['community'] );
 			$lines[] = "Comunidad: {$host} (formación de otra comunidad de OEC: se cursa e inscribe en {$host})";
@@ -1389,6 +1394,12 @@ class OEC_AI_Chat {
 		}
 
 		self::sse_status( 'Preparando la respuesta...' );
+		// En la promo y en LIVE también van formaciones de afuera: cada una dice si es de la página.
+		if ( 'campana' === $ctx['mode'] ) {
+			self::$page_tag = [ 'ids' => array_flip( self::campaign_ids() ), 'in' => "Promo «{$ctx['title']}»: participa", 'out' => "Promo «{$ctx['title']}»: NO participa (precio normal)" ];
+		} elseif ( 'live' === $ctx['mode'] ) {
+			self::$page_tag = [ 'ids' => array_flip( self::live_ids() ), 'in' => 'LIVE: sí', 'out' => 'LIVE: no (fuera de la selección LIVE)' ];
+		}
 		$total            = count( OEC_AI_Catalog::get_index( true ) );
 		$detailed_modules = self::asks_about_content( $message );
 		if ( $focus ) {
@@ -2644,21 +2655,21 @@ TXT;
 		if ( 'live' === $ctx['mode'] ) {
 			return <<<TXT
 MODO DE ESTA CONVERSACIÓN: ASESOR DE LIVE
-La persona está en la página LIVE: las mejores formaciones en vivo del sitio (ver "LIVE" en el conocimiento). Las formaciones de abajo son de LIVE (salvo que haya preguntado por otra cosa).
+La persona está en la página LIVE: las mejores formaciones en vivo del sitio (ver "LIVE" en el conocimiento). Cada formación de abajo dice si es LIVE ("LIVE: sí"); también van las del resto del catálogo que coinciden con lo que pregunta.
 - Tu objetivo es ayudarla a elegir una formación LIVE e inscribirse.
 - Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones LIVE de la lista, con una frase sobre para quién es cada una y quién la dicta, y preguntá por su perfil u objetivo para afinar.
 - Lo distintivo de LIVE es el contacto en vivo con docentes de la élite: preguntas, casos reales y experiencia que todavía no está escrita. Usalo con naturalidad cuando sume, sin exagerar ni repetirlo en cada mensaje.
-- Si pregunta por un área sin formaciones LIVE, decilo y ofrecé lo que haya en el contexto.{$before}
+- Favorecé las LIVE cuando encajen, pero no escondas el resto del catálogo: si pregunta por un docente, un tema o una formación que no es LIVE y figura abajo, respondé con ella. Nunca digas que no hay algo que está en el contexto.{$before}
 TXT;
 		}
 		if ( 'campana' === $ctx['mode'] ) {
 			return <<<TXT
 MODO DE ESTA CONVERSACIÓN: ASESOR DE LA PROMO «{$ctx['title']}»
-La persona está en la página de la promo «{$ctx['title']}» (ver "CAMPAÑA DE DESCUENTOS" en el conocimiento). Las formaciones de abajo participan de la promo (salvo que haya preguntado por otra cosa).
+La persona está en la página de la promo «{$ctx['title']}» (ver "CAMPAÑA DE DESCUENTOS" en el conocimiento). Cada formación de abajo dice si participa de la promo; también van las del resto del catálogo que coinciden con lo que pregunta.
 - Tu objetivo es ayudarla a elegir una formación de la promo e inscribirse antes de que termine.
 - Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones de la promo de áreas distintas, cada una con su descuento y para quién es, y preguntá por su perfil u objetivo para afinar.
 - Nombrá el descuento de cada formación y el precio con descuento si está en el contexto. Recordá que se aplica solo al inscribirse, sin códigos, y cuándo termina la promo. Urgencia real, sin exagerar ni repetirla en cada mensaje.
-- Si busca algo que no está en la promo, decilo y ofrecé lo más parecido de la promo; si no hay nada, lo que haya en el contexto.{$before}
+- Favorecé y destacá las de la promo, pero no escondas el resto del catálogo: si pregunta por un docente, un tema o una formación que no participa y figura abajo, mostrásela igual, aclarando en pocas palabras que no tiene el descuento de la promo, y si hay algo parecido en la promo, sugerilo también. Nunca digas que no hay algo que está en el contexto.{$before}
 TXT;
 		}
 		if ( 'tematica' === $ctx['mode'] ) {
