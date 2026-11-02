@@ -769,7 +769,8 @@
     bubbles.forEach(function (bubble) {
       bubble.querySelectorAll('.oec-md-table thead a.oec-md-link').forEach(function (link) {
         const href = (link.getAttribute('href') || '').trim();
-        const f = thumbs.find(function (t) { return t.url && t.url.trim() === href; });
+        // Por el ID de la formación: la IA a veces arma la URL de otra forma.
+        const f = thumbs.find(function (t) { return t.id ? href.indexOf(t.id) !== -1 : t.url && t.url.trim() === href; });
         if (!f) return;
         link.href = f.path || f.url;
         if (f.external) { link.target = '_blank'; link.rel = 'noopener'; }

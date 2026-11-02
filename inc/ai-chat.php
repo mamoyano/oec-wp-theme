@@ -1190,6 +1190,31 @@ class OEC_AI_Chat {
 		return (bool) preg_match( '/(?<![\p{L}])(compar\p{L}*|diferencias?|vs\.?|versus|tabla|cu[aá]l (me )?conviene|cu[aá]l es mejor)(?![\p{L}])/iu', $message );
 	}
 
+	/**
+	 * Formaciones de las últimas respuestas del chat (por su enlace o por su título).
+	 * "Comparalas" se refiere a ellas: si no venían en el contexto, la tabla salía sin
+	 * fotos ni precios, o con un precio de otra formación tomado de la conversación.
+	 */
+	private static function history_ids( array $history ): array {
+		$text = '';
+		foreach ( array_slice( $history, -6 ) as $m ) {
+			if ( 'assistant' === ( $m['role'] ?? '' ) ) {
+				$text .= "\n" . (string) ( $m['content'] ?? '' );
+			}
+		}
+		if ( '' === trim( $text ) ) {
+			return [];
+		}
+		preg_match_all( '/t-[A-Za-z0-9]{14}/', $text, $m );
+		$ids = $m[0];
+		foreach ( OEC_AI_Catalog::get_index( true ) as $e ) {
+			if ( self::title_named( (string) $e['title'], $text ) ) {
+				$ids[] = $e['id'];
+			}
+		}
+		return array_slice( array_values( array_unique( $ids ) ), 0, 6 );
+	}
+
 	/** La respuesta es una comparación en tabla: necesita más largo (stream_anthropic()). */
 	private static bool $comparing = false;
 
@@ -1328,6 +1353,11 @@ class OEC_AI_Chat {
 			foreach ( $visited as $vid ) {
 				$picked[ $vid ] = [ 'id' => $vid ]; // fichas que miró antes: para comparar con datos reales
 			}
+			foreach ( $compare ? self::history_ids( (array) $history ) : [] as $hid ) {
+				if ( $hid !== $focus['id'] ) {
+					$picked[ $hid ] = [ 'id' => $hid ]; // las que ya le nombró el chat ("comparalas")
+				}
+			}
 			// Si pide comparar ("todos los cursos de voley"), van todas las que nombra.
 			$cap = $compare ? self::MAX_RESULTS - 1 : max( 3, count( $visited ) + count( $focus['parents'] ) + 1 );
 			foreach ( array_merge( array_slice( array_values( $asked ), 0, $compare ? $cap : 2 ), $similar ) as $e ) {
@@ -1370,6 +1400,10 @@ class OEC_AI_Chat {
 			$formations = $recall
 				? self::merge_mentioned( [], $visited )
 				: self::merge_mentioned( $formations, (array) $mentioned_ids );
+			if ( $compare ) {
+				// Primero las que ya le nombró el chat ("comparalas"), después las de la búsqueda.
+				$formations = self::merge_mentioned( self::merge_mentioned( [], self::history_ids( (array) $history ) ), array_column( $formations, 'id' ) );
+			}
 			$closed     = self::prefilter_closed( $message, $formations, $extra );
 		}
 
@@ -1525,7 +1559,8 @@ class OEC_AI_Chat {
 			// En una ficha se vende ESA formación: la tarjeta de otra solo aparece si la
 			// IA la nombró en el texto. Declararla en <<IDS:…>> no alcanza (a un "Hola"
 			// respondía solo sobre la ficha y aun así salían tres tarjetas de otros cursos).
-			$source = array_filter( $source, static fn( $f ) => self::title_named( (string) $f['title'], $reply ) );
+			// En una tabla la IA acorta los títulos: ahí vale el enlace (con su ID).
+			$source = array_filter( $source, static fn( $f ) => self::title_named( (string) $f['title'], $reply ) || str_contains( $reply, $f['id'] . ')' ) );
 		}
 		$source = array_values( $source );
 
@@ -1555,16 +1590,27 @@ class OEC_AI_Chat {
 		}
 		// Comparación en tabla: la foto de cada formación del encabezado (también la de
 		// la ficha, que no lleva tarjeta). Se reconoce por su enlace en la respuesta.
-		if ( str_contains( $reply, '|' ) ) {
+		// Por el ID del enlace (la IA a veces arma la URL de otra forma) y aunque la
+		// formación no haya venido en el contexto.
+		if ( preg_match_all( '/^\|.*$/m', $reply, $rows ) && preg_match_all( '/\]\([^)\s]*?(t-[A-Za-z0-9]{14})[^)\s]*\)/', implode( "\n", $rows[0] ), $m ) ) {
+			$by_id  = array_column( $formations, null, 'id' );
 			$thumbs = [];
-			foreach ( $formations as $f ) {
-				$c = self::card( $f );
-				if ( str_contains( $reply, '](' . $c['url'] . ')' ) ) {
-					$thumbs[] = [ 'image' => self::cdn_image( $f['image'] ?? '', 280 ) ] + array_intersect_key( $c, array_flip( [ 'url', 'path', 'external' ] ) );
+			$table  = [];
+			foreach ( array_unique( $m[1] ) as $tid ) {
+				$f = $by_id[ $tid ] ?? OEC_AI_Catalog::get_formation( $tid );
+				if ( $f ) {
+					$c        = self::card( $f );
+					$thumbs[] = [ 'image' => self::cdn_image( $f['image'] ?? '', 280 ) ] + array_intersect_key( $c, array_flip( [ 'id', 'url', 'path', 'external' ] ) );
+					if ( ! $focus || $tid !== $focus['id'] ) {
+						$table[] = $c;
+					}
 				}
 			}
 			if ( $thumbs ) {
 				$done['thumbs'] = $thumbs;
+				// Las tarjetas de abajo: las de la tabla, en su orden (por los títulos
+				// sueltos salían formaciones que no estaban en la comparación).
+				$done['formations'] = $table;
 			}
 		}
 		self::sse_data( $done );
@@ -2926,7 +2972,7 @@ COMPORTAMIENTO:
 - Usá opiniones de alumnos para reforzar recomendaciones cuando preguntan sobre calidad o docentes
 - Si pregunta por contenidos específicos, respondé con los datos exactos del módulo
 - Si pregunta por precios, mostralos con descuentos y formas de pago disponibles
-- COMPARACIONES: si pide comparar formaciones (o "todas las de X" lado a lado), armá UNA tabla markdown, entera en un mismo mensaje, con una COLUMNA por formación (hasta 6, las más pertinentes) y estas filas, en este orden: Horas, Módulos, Docentes, Certificado, Avales, Contenidos, Precio. Encabezado: la primera celda es "—" y cada columna lleva el nombre de la formación como enlace a su URL del contexto, [Nombre](URL), tal cual. Celdas cortas: Docentes solo nombres; Certificado en una o dos palabras ("Aprobación", "Asistencia"); Avales con sus siglas cuando las tienen (ACSM, ASEP); Contenidos en 4 a 8 palabras clave; Precio con el descuento vigente (p. ej. "ARS 168.000 con 30% off hasta el 5/11"); si una formación no trae "Precio de «…»", poné "Ver en su ficha". Solo datos del contexto; nunca dejes una celda vacía (poné "—") ni escribas dos barras seguidas. En el mismo mensaje que la tabla, una sola frase antes de ella (sin explicar cómo está armada); después, en otro mensaje, cuál conviene según lo que busca la persona
+- COMPARACIONES: si pide comparar formaciones (o "todas las de X" lado a lado), armá UNA tabla markdown, entera en un mismo mensaje, con una COLUMNA por formación (hasta 6, las más pertinentes) y estas filas, en este orden: Horas, Módulos, Docentes, Certificado, Avales, Contenidos, Precio. Encabezado: la primera celda es "—" y cada columna lleva el nombre de la formación como enlace a su URL del contexto, [Nombre](URL), tal cual. Celdas cortas: Docentes solo nombres; Certificado en una o dos palabras ("Aprobación", "Asistencia"); Avales con sus siglas cuando las tienen (ACSM, ASEP); Contenidos en 4 a 8 palabras clave; Precio: primero el que se paga con el descuento vigente y después el de lista, con este formato: "ARS 168.000 (30% off hasta el 5/11; lista ARS 240.000)"; sin descuento, solo el precio; si una formación no trae "Precio de «…»", poné "Ver en su ficha". Solo datos del contexto de esta consulta: los precios salen únicamente de las líneas "Precio de «…»", nunca de mensajes anteriores de la conversación; nunca dejes una celda vacía (poné "—") ni escribas dos barras seguidas. En el mismo mensaje que la tabla, una sola frase antes de ella (sin explicar cómo está armada); después, en otro mensaje, cuál conviene según lo que busca la persona
 - Si la formación trae "CONSEJO DE PAGO" y pregunta por cuotas o cómo pagar, recomendá eso primero (pago completo con descuento + cuotas con tarjeta) y dejá el pago módulo por módulo como alternativa. No inventes tasas ni cantidad de cuotas
 - Si no hay formación que coincida exactamente, decilo con honestidad y ofrecé la alternativa más cercana
 - Algunas formaciones son de otras comunidades de OEC (campo "Comunidad:", p. ej. swimming.science): recomendalas igual que las demás cuando encajen, aclarando en pocas palabras que se cursan en ese sitio, y usá su URL tal cual{$articulos}
