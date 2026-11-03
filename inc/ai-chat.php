@@ -1191,6 +1191,27 @@ class OEC_AI_Chat {
 	}
 
 	/**
+	 * En una ficha, ¿usa el chat como buscador de OTRAS formaciones? ("Vbt",
+	 * "cursos de natación", "¿tienen algo de nutrición?"). Tiene que nombrar algo
+	 * que está en el título o los docentes de otras ($asked) y no de esta, y pedirlo
+	 * como búsqueda: con palabras de búsqueda o en pocas palabras sin preguntar por
+	 * la formación de la página ("¿sirve para fútbol?" es sobre esta, no una búsqueda).
+	 */
+	private static function browses_catalog( string $message, array $focus, array $asked ): bool {
+		$here = [ 'title' => $focus['title'] ?? '', 'teachers' => array_column( (array) ( $focus['teachers'] ?? [] ), 'name' ) ];
+		if ( ! $asked || self::names_entry( $message, $here, 3 ) ) {
+			return false;
+		}
+		$m = mb_strtolower( $message );
+		if ( preg_match( '/(?<![\p{L}])(busc\p{L}*|otr[oa]s (cursos?|formaci\p{L}+|opciones)|cursos? (de|sobre|en)|formaci\p{L}+ (de|sobre|en)|capacitaci\p{L}+ (de|sobre|en)|ten[eé]s algo|tienen (algo|alg[uú]n|cursos?|formaci\p{L}+)|hay (algo|alg[uú]n|cursos?|formaci\p{L}+)|qu[eé] (hay|tienen) (de|sobre)|recomend\p{L}*)(?![\p{L}])/u', $m ) ) {
+			return true;
+		}
+		$words = preg_split( '/\s+/u', trim( preg_replace( '/[^\p{L}\p{N}\s]+/u', ' ', $m ) ) );
+		return count( $words ) <= 3
+			&& ! preg_match( '/(?<![\p{L}])(est[ea]|esto|ac[aá]|aqu[ií]|sirve|incluye|tiene|es|est[aá]|cu[aá]ndo|cu[aá]nto|precio|dura|dicta|certific\p{L}*|inscrib\p{L}*|pag\p{L}*|cuotas?|empieza|horarios?|vale|cuesta|grabad\p{L}*|m[oó]dulos?|docentes?|requisitos?)(?![\p{L}])/u', $m );
+	}
+
+	/**
 	 * Formaciones de las últimas respuestas del chat (por su enlace o por su título).
 	 * "Comparalas" se refiere a ellas: si no venían en el contexto, la tabla salía sin
 	 * fotos ni precios, o con un precio de otra formación tomado de la conversación.
@@ -1323,11 +1344,24 @@ class OEC_AI_Chat {
 		$closed = [];
 		$others = [];
 		$visited = self::visited_fichas( (array) $history, $focus['id'] ?? '' );
+		$compare = self::$comparing = self::asks_comparison( (string) $message );
+		// En una ficha, una búsqueda de otras formaciones ("Vbt") se responde como en
+		// el home: buscador completo y tarjetas. Antes la IA las nombraba sin enlace ni
+		// tarjeta y volvía a vender la de la página.
+		$browsing = null;
+		if ( $focus && ! $launch && ! $compare && ! self::is_greeting( (string) $message ) ) {
+			$asked = array_filter(
+				self::rank( OEC_AI_Catalog::get_index( true ), $message, '', self::MAX_RESULTS ),
+				static fn( $e ) => $e['id'] !== $focus['id'] && self::names_entry( $message, $e, 3 ) // también siglas: "VBT"
+			);
+			if ( self::browses_catalog( (string) $message, $focus, $asked ) ) {
+				[ $browsing, $focus, $visited ] = [ $focus, null, [] ];
+			}
+		}
 		// Fuera de una ficha, las ya vistas solo entran si el mensaje habla de ellas
 		// ("las que vi", "la anterior", "compará"): si no, la IA las recomendaba de
 		// más. Y cuando habla de ellas van solas, sin relleno del buscador.
 		$recall = $visited && ! $focus && self::refers_to_seen( (string) $message );
-		$compare = self::$comparing = self::asks_comparison( (string) $message );
 		if ( ! $focus && ! $recall ) {
 			$visited = [];
 		}
@@ -1458,7 +1492,7 @@ class OEC_AI_Chat {
 
 		$by_id_all = array_column( $formations, 'title', 'id' );
 		$seen      = array_values( array_filter( array_map( static fn( $id ) => $by_id_all[ $id ] ?? '', $visited ) ) );
-		$mode = self::mode_prompt( $ctx, $open, $seen, $focus['parents'] ?? [] );
+		$mode = self::mode_prompt( $browsing ? [ 'mode' => 'catalogo' ] : $ctx, $open, $seen, $focus['parents'] ?? [] );
 		// El contacto por WhatsApp no se ofrece "por las dudas". Con la regla sola la
 		// IA lo agregaba igual ("si te da error, escribinos…"), así que la lista de
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
@@ -1526,6 +1560,12 @@ class OEC_AI_Chat {
 				. " la formación de esta página en la primera columna y, al lado, las de \"OTRAS FORMACIONES\" que correspondan a lo que pide."
 				. ' Una frase antes de la tabla y, en otro mensaje, cuál le conviene; sin el punto fuerte de la estructura de la ficha.]';
 		}
+		if ( $browsing ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: está en la ficha de «{$browsing['title']}», pero busca otras formaciones."
+				. ' Respondé como el buscador del catálogo: las del contexto que correspondan a lo que pide, cada una con su nombre y su porqué.'
+				. ' La de esta página nombrala solo si está en el contexto y tiene que ver, en una frase y sin venderla.]';
+		}
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, $mode );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
@@ -1561,6 +1601,9 @@ class OEC_AI_Chat {
 			// respondía solo sobre la ficha y aun así salían tres tarjetas de otros cursos).
 			// En una tabla la IA acorta los títulos: ahí vale el enlace (con su ID).
 			$source = array_filter( $source, static fn( $f ) => self::title_named( (string) $f['title'], $reply ) || str_contains( $reply, $f['id'] . ')' ) );
+		}
+		if ( $browsing ) {
+			unset( $source[ $browsing['id'] ] ); // ya está en esa página
 		}
 		$source = array_values( $source );
 
@@ -2581,10 +2624,10 @@ class OEC_AI_Chat {
 		'compara', 'comparar', 'comparada', 'comparado', 'diferencia', 'diferencias', 'conviene', 'vale', 'sale', 'cuesta',
 	];
 
-	private static function names_entry( string $message, array $entry ): bool {
+	private static function names_entry( string $message, array $entry, int $min = 4 ): bool {
 		$hay = ' ' . self::title_norm( ( $entry['title'] ?? '' ) . ' ' . implode( ' ', $entry['teachers'] ?? [] ) ) . ' ';
 		foreach ( explode( ' ', self::title_norm( $message ) ) as $w ) {
-			if ( strlen( $w ) >= 4 && ! in_array( $w, self::SEARCH_STOPWORDS, true ) && ! in_array( $w, self::REFERENCE_WORDS, true )
+			if ( strlen( $w ) >= $min && ! in_array( $w, self::SEARCH_STOPWORDS, true ) && ! in_array( $w, self::REFERENCE_WORDS, true )
 				&& str_contains( $hay, ' ' . $w . ' ' ) ) {
 				return true;
 			}
