@@ -598,10 +598,20 @@ class OEC_AI_Chat {
 		// se equivoca (dijo 3 en un curso de 4 y después se "corrigió" sola).
 		$n_mod   = count( $f['modules'] ?? [] );
 		$lines[] = "Horas: {$f['lecture_hours']}h" . ( $n_mod ? " | Cantidad de módulos: {$n_mod}" : '' ) . " | Alumnos históricos: {$f['total_students']}";
-		$start  = self::format_date_human( $f['start'] ?? '' );
-		$end    = self::format_date_human( $f['end'] ?? '' );
-		$enroll = self::format_date_human( $f['enrollment_end'] ?? '' );
-		$lines[] = "Período: {$start} → {$end} | Inscripción hasta: {$enroll}";
+		// Asincrónica: todo está grabado y se empieza el día que se inscribe. Las
+		// fechas de la edición no le sirven a nadie (con ellas la IA decía "las clases
+		// son en vivo los jueves"): solo va el cierre de inscripción si está cerca.
+		if ( self::is_async( $f ) ) {
+			$days    = self::days_to_enrollment_end( $f );
+			$lines[] = null !== $days && $days <= 15
+				? 'Inscripción: cierra el ' . self::format_date_human( $f['enrollment_end'] ) . ' (' . ( 0 === $days ? 'HOY' : "en {$days} días" ) . '). Todo está grabado: se empieza el mismo día que se inscribe.'
+				: 'Inscripción: abierta, se puede inscribir cuando quiera. Todo está grabado: se empieza el mismo día que se inscribe y no hay fecha de inicio.';
+		} else {
+			$start  = self::format_date_human( $f['start'] ?? '' );
+			$end    = self::format_date_human( $f['end'] ?? '' );
+			$enroll = self::format_date_human( $f['enrollment_end'] ?? '' );
+			$lines[] = "Período: {$start} → {$end} | Inscripción hasta: {$enroll}";
+		}
 		$lines[] = 'URL: ' . self::link( $f );
 		if ( self::$page_tag ) {
 			$lines[] = isset( self::$page_tag['ids'][ $f['id'] ] ) ? self::$page_tag['in'] : self::$page_tag['out'];
@@ -2537,7 +2547,12 @@ class OEC_AI_Chat {
 		$lines[] = $open
 			? 'ESTADO: inscripción ABIERTA.'
 			: 'ESTADO: INSCRIPCIÓN CERRADA. No se puede inscribir ahora y no hay fecha de una próxima edición (la decide el organizador).';
-		if ( ! empty( $f['methodology'] ) ) {
+		if ( self::is_async( $f ) ) {
+			// El texto de "Cómo se cursa" y el auditorio a veces son de una edición en
+			// vivo anterior: en una asincrónica no van.
+			$lines[] = 'Cómo se cursa: ASINCRÓNICA. Todas las clases YA ESTÁN GRABADAS; no hay clases en vivo, días ni horarios, ni fecha de inicio: empieza el mismo día que se inscribe y avanza a su ritmo.'
+				. ( 'ASYNC-F' === $f['synchronicity'] ? ' Tiene foros para dejar preguntas.' : ' No hay consultas con docentes ni foros.' );
+		} elseif ( ! empty( $f['methodology'] ) ) {
 			$lines[] = 'Cómo se cursa (días, horarios, clases): ' . mb_substr( $f['methodology'], 0, 900 );
 		}
 		if ( ! empty( $f['exams_description'] ) ) {
@@ -2562,7 +2577,7 @@ class OEC_AI_Chat {
 		if ( $year ) {
 			$lines[] = "Esta edición se publicó en {$year}.";
 		}
-		if ( ! empty( $f['sessions'] ) ) {
+		if ( ! empty( $f['sessions'] ) && ! self::is_async( $f ) ) {
 			// La hora del país del usuario la calcula el servidor: la IA se equivoca
 			// al convertir husos (dio 12:00 para México cuando eran las 11:00).
 			$local   = self::country_timezone( (string) ( $f['user_country'] ?? '' ) );
@@ -2635,21 +2650,33 @@ class OEC_AI_Chat {
 		return false;
 	}
 
+	/** ASYNC y ASYNC-F: todo grabado, sin fecha de inicio. */
+	private static function is_async( array $f ): bool {
+		return str_starts_with( (string) ( $f['synchronicity'] ?? '' ), 'ASYNC' );
+	}
+
+	/** Días que faltan para el cierre de inscripción (null si no hay fecha o ya pasó). */
+	private static function days_to_enrollment_end( array $f ): ?int {
+		$end = substr( (string) ( $f['enrollment_end'] ?? '' ), 0, 10 );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $end ) ) {
+			return null;
+		}
+		$days = (int) floor( ( strtotime( $end ) - strtotime( current_time( 'Y-m-d' ) ) ) / DAY_IN_SECONDS );
+		return $days >= 0 ? $days : null;
+	}
+
 	/** Lo más vendible de una formación, armado con sus datos (nada inventado). */
 	private static function selling_points( array $f, ?array $price ): array {
 		$out = [];
-		$async = str_starts_with( (string) ( $f['synchronicity'] ?? '' ), 'ASYNC' );
-		$end   = substr( (string) ( $f['enrollment_end'] ?? '' ), 0, 10 );
-		if ( ! $async && preg_match( '/^\d{4}-\d{2}-\d{2}$/', $end ) ) {
-			$days = (int) floor( ( strtotime( $end ) - strtotime( current_time( 'Y-m-d' ) ) ) / DAY_IN_SECONDS );
-			if ( $days >= 0 && $days <= 15 ) {
-				$out[] = 0 === $days ? 'La inscripción cierra HOY.' : ( 1 === $days ? 'La inscripción cierra mañana.' : "Quedan {$days} días para el cierre de inscripción." );
-			}
+		$async = self::is_async( $f );
+		$days  = self::days_to_enrollment_end( $f );
+		if ( null !== $days && $days <= 15 ) {
+			$out[] = 0 === $days ? 'La inscripción cierra HOY.' : ( 1 === $days ? 'La inscripción cierra mañana.' : "Quedan {$days} días para el cierre de inscripción." );
 		}
 		if ( $async ) {
 			$out[] = 'Se puede empezar hoy mismo y cursar a su ritmo, sin horarios fijos.';
 		}
-		if ( ! empty( $f['sessions'] ) ) {
+		if ( ! empty( $f['sessions'] ) && ! $async ) {
 			$next  = $f['sessions'][0];
 			$out[] = 'Próxima clase en vivo: ' . wp_date( 'l j \\d\\e F, H:i', $next['start'] ) . ' hs (hora de Argentina), "' . $next['name'] . '". Ya hay ' . count( $f['sessions'] ) . ' clase(s) en vivo programada(s).';
 		}
@@ -3022,7 +3049,7 @@ COMPORTAMIENTO:
 
 REGLAS SEGÚN DATOS DEL CATÁLOGO — seguí estas reglas según los flags que figuran en cada formación:
 - Campo "Relevance": indica la importancia de la formación para OEC. Valor 2 = formación MUY DESTACADA (priorizala en recomendaciones, resaltá sus puntos fuertes). Valor 1 = promedio (recomendalas normalmente). Valor 0 = relleno (mencionala SOLO si es la única opción disponible o el usuario pregunta específicamente; nunca la pongas primero).
-- Sincronicidad ASYNC: NUNCA menciones fechas de inicio, fin ni de inscripción. Destacá que se puede "cursarlo a su ritmo", "empezarlo cuando quiera", "sin horarios fijos". Omití completamente el período y el enrollment_end.
+- Sincronicidad ASYNC o ASYNC-F (asincrónica): todo YA ESTÁ GRABADO. No tiene clases en vivo, días, horarios ni fecha de inicio: se empieza el mismo día que se inscribe y se cursa a su ritmo. Si pregunta cuándo empieza, si está grabado o si puede empezar hoy: "sí, todo está grabado; te inscribís y empezás hoy mismo". NUNCA menciones fechas de inicio ni de fin. La única fecha que podés nombrar es el cierre de inscripción, y solo si su línea "Inscripción:" dice que cierra pronto; si no, "inscribite cuando quieras".
 - Flag docentes_destacados: hacé énfasis en el equipo docente — nombralos, mencioná sus cargos y trayectoria. Nombralos con nombre y apellido: el sitio muestra solo la foto de cada docente que nombres (no pongas imágenes vos).
 - Flag tema_destacado: destacá la relevancia, actualidad e impacto del temario en el campo profesional.
 - Flag certificacion_destacada: destacá el valor del certificado o aval para la carrera del alumno.
