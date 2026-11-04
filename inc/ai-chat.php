@@ -1763,12 +1763,20 @@ class OEC_AI_Chat {
 		if ( '' === $m ) {
 			return '';
 		}
-		// Copia de una respuesta del chat (pegaba lo que el asistente acababa de decir)
+		// Copia de una respuesta del chat (pegaba lo que el asistente acababa de decir).
+		// Solo cuenta si pega un mensaje entero o casi: pegar un pedazo, como el nombre
+		// de un curso que le ofreció, es pedir más información de eso.
 		$norm = self::title_norm( $m );
 		if ( strlen( $norm ) >= 40 ) {
 			foreach ( array_slice( $history, -6 ) as $turn ) {
-				if ( 'assistant' === ( $turn['role'] ?? '' ) && str_contains( ' ' . self::title_norm( (string) ( $turn['content'] ?? '' ) ) . ' ', ' ' . substr( $norm, 0, 60 ) ) ) {
-					return 'copia de la respuesta';
+				if ( 'assistant' !== ( $turn['role'] ?? '' ) ) {
+					continue;
+				}
+				foreach ( explode( '|||', (string) ( $turn['content'] ?? '' ) ) as $bubble ) {
+					$b = self::title_norm( $bubble );
+					if ( strlen( $norm ) >= 0.8 * strlen( $b ) && str_contains( ' ' . $b . ' ', ' ' . substr( $norm, 0, 60 ) ) ) {
+						return 'copia de la respuesta';
+					}
 				}
 			}
 		}
