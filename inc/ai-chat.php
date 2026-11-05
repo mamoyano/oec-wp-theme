@@ -1206,14 +1206,19 @@ class OEC_AI_Chat {
 	 * que está en el título o los docentes de otras ($asked) y no de esta, y pedirlo
 	 * como búsqueda: con palabras de búsqueda o en pocas palabras sin preguntar por
 	 * la formación de la página ("¿sirve para fútbol?" es sobre esta, no una búsqueda).
+	 * Pedir un listado ("todos los de VBT", "¿cuáles hay de simposios?", "¿hay otras
+	 * formaciones?") o escribir el nombre de otra formación ($named) también es buscar.
 	 */
-	private static function browses_catalog( string $message, array $focus, array $asked ): bool {
+	private static function browses_catalog( string $message, array $focus, array $asked, bool $named = false ): bool {
+		$m = mb_strtolower( $message );
+		if ( $named || preg_match( '/(?<![\p{L}])(otr[oa]s (cursos?|formaci\p{L}+|opciones|capacitaci\p{L}+)|hay otr[oa]s|tod[oa]s l[oa]s (de|que|cursos?|formaci\p{L}+|webinars?|talleres|simposios?|congresos?)|cu[aá]les hay|(cursos?|formaci\p{L}+|webinars?|algo) (gratis|gratuit\p{L}*))(?![\p{L}])/u', $m ) ) {
+			return true;
+		}
 		$here = [ 'title' => $focus['title'] ?? '', 'teachers' => array_column( (array) ( $focus['teachers'] ?? [] ), 'name' ) ];
 		if ( ! $asked || self::names_entry( $message, $here, 3 ) ) {
 			return false;
 		}
-		$m = mb_strtolower( $message );
-		if ( preg_match( '/(?<![\p{L}])(busc\p{L}*|otr[oa]s (cursos?|formaci\p{L}+|opciones)|cursos? (de|sobre|en)|formaci\p{L}+ (de|sobre|en)|capacitaci\p{L}+ (de|sobre|en)|ten[eé]s algo|tienen (algo|alg[uú]n|cursos?|formaci\p{L}+)|hay (algo|alg[uú]n|cursos?|formaci\p{L}+)|qu[eé] (hay|tienen) (de|sobre)|recomend\p{L}*)(?![\p{L}])/u', $m ) ) {
+		if ( preg_match( '/(?<![\p{L}])(busc\p{L}*|cursos? (de|sobre|en)|formaci\p{L}+ (de|sobre|en)|capacitaci\p{L}+ (de|sobre|en)|ten[eé]s algo|tienen (algo|alg[uú]n|cursos?|formaci\p{L}+)|hay (algo|alg[uú]n|cursos?|formaci\p{L}+)|qu[eé] (hay|tienen) (de|sobre)|recomend\p{L}*)(?![\p{L}])/u', $m ) ) {
 			return true;
 		}
 		$words = preg_split( '/\s+/u', trim( preg_replace( '/[^\p{L}\p{N}\s]+/u', ' ', $m ) ) );
@@ -1364,7 +1369,11 @@ class OEC_AI_Chat {
 				self::rank( OEC_AI_Catalog::get_index( true ), $message, '', self::MAX_RESULTS ),
 				static fn( $e ) => $e['id'] !== $focus['id'] && self::names_entry( $message, $e, 3 ) // también siglas: "VBT"
 			);
-			if ( self::browses_catalog( (string) $message, $focus, $asked ) ) {
+			// Escribió el nombre de otra formación: va a buscarla, no a preguntar por esta
+			// (con "ejercicio físico en patologías metabólicas" la presentaba como la de la página).
+			$named = (bool) array_filter( OEC_AI_Catalog::get_index( true ), static fn( $e ) => $e['id'] !== $focus['id'] && mb_strlen( (string) $e['title'] ) >= 15
+				&& self::title_named( (string) $e['title'], (string) $message ) && ! self::title_named( (string) $e['title'], (string) $focus['title'] ) );
+			if ( self::browses_catalog( (string) $message, $focus, $asked, $named ) ) {
 				[ $browsing, $focus, $visited ] = [ $focus, null, [] ];
 			}
 		}
@@ -2726,14 +2735,16 @@ class OEC_AI_Chat {
 	private static function prefilter_tematica( string $query, string $extra, string $slug ): array {
 		$all = OEC_AI_Catalog::get_index( true );
 		$in  = array_values( array_filter( $all, static fn( $e ) => in_array( $slug, $e['tags'] ?? [], true ) ) );
-		$top = self::rank( $in, $query, $extra, self::MAX_RESULTS );
-		if ( count( $top ) < 3 ) {
-			// Pregunta por otra área: se responde igual, con lo que haya en todo el catálogo
-			$seen = array_flip( array_column( $top, 'id' ) );
-			foreach ( self::rank( $all, $query, $extra, self::MAX_RESULTS ) as $e ) {
-				if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < self::MAX_RESULTS ) {
-					$top[] = $e;
-				}
+		// Primero las de la temática y después las mejores de todo el catálogo: con
+		// solo completar cuando la temática traía menos de 3, en Deportes "natación"
+		// daba tres flojas de la temática y el chat decía que no había ninguna abierta
+		// (las de natación están en otra temática).
+		$top  = self::rank( $in, $query, $extra, 5 );
+		$seen = array_flip( array_column( $top, 'id' ) );
+		foreach ( self::rank( $all, $query, $extra, self::MAX_RESULTS ) as $e ) {
+			if ( ! isset( $seen[ $e['id'] ] ) && count( $top ) < self::MAX_RESULTS ) {
+				$top[]            = $e;
+				$seen[ $e['id'] ] = true;
 			}
 		}
 		if ( ! $top ) {
@@ -2799,8 +2810,9 @@ TXT;
 		if ( 'tematica' === $ctx['mode'] ) {
 			return <<<TXT
 MODO DE ESTA CONVERSACIÓN: ASESOR DE LA TEMÁTICA «{$ctx['title']}»
-La persona está en la página de {$ctx['title']}. Las formaciones de abajo son de esa área (salvo que haya preguntado por otra cosa).
+La persona está en la página de {$ctx['title']}. Abajo van primero las formaciones de esa área y después las del resto del catálogo que coinciden con lo que pregunta.
 - Tu objetivo es ayudarla a elegir una formación de esta área e inscribirse.
+- Favorecé las de esta área, pero no escondas el resto del catálogo: si lo que pide está mejor cubierto por otra formación del contexto, recomendala igual. Nunca digas que no hay algo que está en el contexto.
 - Si solo saluda o pide "info", no le preguntes qué área le interesa: presentale 2 o 3 formaciones destacadas de la lista, con una frase sobre para quién es cada una, y preguntá por su perfil u objetivo para afinar.
 - Si pregunta por otra área, respondé igual con lo que haya en el contexto.{$before}
 TXT;
@@ -3052,6 +3064,7 @@ COMPORTAMIENTO:
 - Si pregunta por precios, mostralos con descuentos y formas de pago disponibles
 - COMPARACIONES: si pide comparar formaciones (o "todas las de X" lado a lado), armá UNA tabla markdown, entera en un mismo mensaje, con una COLUMNA por formación (hasta 6, las más pertinentes) y estas filas, en este orden: Horas, Módulos, Docentes, Certificado, Avales, Contenidos, Precio. Encabezado: la primera celda es "—" y cada columna lleva el nombre de la formación como enlace a su URL del contexto, [Nombre](URL), tal cual. Celdas cortas: Docentes solo nombres; Certificado en una o dos palabras ("Aprobación", "Asistencia"); Avales con sus siglas cuando las tienen (ACSM, ASEP); Contenidos en 4 a 8 palabras clave; Precio: primero el que se paga con el descuento vigente y después el de lista, con este formato: "ARS 168.000 (30% off hasta el 5/11; lista ARS 240.000)"; sin descuento, solo el precio; si una formación no trae "Precio de «…»", poné "Ver en su ficha". Solo datos del contexto de esta consulta: los precios salen únicamente de las líneas "Precio de «…»", nunca de mensajes anteriores de la conversación; nunca dejes una celda vacía (poné "—") ni escribas dos barras seguidas. En el mismo mensaje que la tabla, una sola frase antes de ella (sin explicar cómo está armada); después, en otro mensaje, cuál conviene según lo que busca la persona
 - Si la formación trae "CONSEJO DE PAGO" y pregunta por cuotas o cómo pagar, recomendá eso primero (pago completo con descuento + cuotas con tarjeta) y dejá el pago módulo por módulo como alternativa. No inventes tasas ni cantidad de cuotas
+- Un mensaje que es solo un nombre y apellido ("diego munguia", "ariel couceiro") es un docente, autor o persona que busca, NO el nombre de quien escribe: no lo saludes con ese nombre ("¡Hola Diego!"); respondé qué formaciones dicta o, si no figura, decilo.
 - Si no hay formación que coincida exactamente, decilo con honestidad y ofrecé la alternativa más cercana
 - Algunas formaciones son de otras comunidades de OEC (campo "Comunidad:", p. ej. swimming.science): recomendalas igual que las demás cuando encajen, aclarando en pocas palabras que se cursan en ese sitio, y usá su URL tal cual{$articulos}
 
