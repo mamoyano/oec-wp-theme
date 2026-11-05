@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.214
+Version: 1.0.215
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5706,7 +5706,7 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 
 /* ── Barra arriba de todo (todas las páginas, menos landing y fichas) ── */
 .oec-cmp-bar { position: relative; z-index: 210; display: flex; align-items: stretch; background: var(--cmp-dark); color: var(--color-white); border-bottom: 1px solid rgba(var(--cmp-accent-rgb), .35); font-size: 14px; }
-.oec-cmp-bar__link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; padding: 9px 12px 9px 6%; color: var(--color-white) !important; text-decoration: none !important; overflow: hidden; }
+.oec-cmp-bar__link { flex: 1; min-width: 0; display: flex; align-items: center; gap: 16px; padding: 9px 6%; color: var(--color-white) !important; text-decoration: none !important; overflow: hidden; }
 .oec-cmp-bar__track { display: flex; align-items: center; gap: 22px; min-width: 0; }
 .oec-cmp-bar__track > .bi { color: var(--cmp-accent); }
 .oec-cmp-bar__track > :nth-child(n+2) { display: none; } /* en escritorio, una sola vez y quieta */
@@ -5715,15 +5715,14 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 .oec-cmp-bar__left { color: var(--cmp-accent); font-weight: 700; font-variant-numeric: tabular-nums; }
 .oec-cmp-bar__cta { margin-left: auto; flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; border: 1px solid var(--cmp-accent); color: var(--cmp-accent); font-weight: 800; white-space: nowrap; transition: background .15s, color .15s; }
 .oec-cmp-bar__link:hover .oec-cmp-bar__cta { background: var(--cmp-accent); color: var(--cmp-dark); }
-.oec-cmp-bar__close { flex-shrink: 0; width: 44px; padding: 0 6% 0 0; border: 0; background: none; color: rgba(var(--color-white-rgb), .6); cursor: pointer; font-size: 14px; box-sizing: content-box; }
-.oec-cmp-bar__close:hover { color: var(--color-white); }
 @media (max-width: 760px) {
   /* En el celular: marquesina que corre + "Ver" */
-  .oec-cmp-bar__link { padding: 8px 0 8px 0; gap: 10px; }
+  /* El margen derecho va en la barra: con overflow hidden, el del link dejaba asomar el texto que corre. */
+  .oec-cmp-bar { padding-right: 12px; }
+  .oec-cmp-bar__link { padding: 8px 0; gap: 10px; }
   .oec-cmp-bar__track { animation: oec-cmp-tape 16s linear infinite; padding-left: 12px; }
   .oec-cmp-bar__track > :nth-child(n+2) { display: inline-flex; }
   .oec-cmp-bar__cta { position: relative; z-index: 1; margin-left: 0; padding: 5px 10px; background: var(--cmp-dark); box-shadow: -14px 0 14px var(--cmp-dark); font-size: 13px; }
-  .oec-cmp-bar__close { width: 36px; padding: 0; }
 }
 
 /* ── Marca en las cards (abajo a la izquierda de la foto, como la de pago anticipado) ── */

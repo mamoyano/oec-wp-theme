@@ -136,12 +136,12 @@
   }
   if (C.page === 'landing') return;
 
-  /* ── Barra arriba de todo ───────────────────────────────────── */
+  /* ── Barra arriba de todo (fija: sin botón de cerrar, pedido de Mario) ── */
   const storeKey = (k) => 'oec_cmp_' + k + '_' + C.key + '_' + phase;
   const seen = (k) => { try { return !!sessionStorage.getItem(storeKey(k)); } catch (e) { return false; } };
   const remember = (k) => { try { sessionStorage.setItem(storeKey(k), '1'); } catch (e) { /* sin storage */ } };
 
-  if (!seen('bar')) {
+  {
     const head = live
       ? (C.max ? `Hasta ${C.max}% OFF en ${C.n} formaciones` : `${C.n} formaciones con descuento`)
       : `Se viene · ${esc(C.days)}`;
@@ -154,11 +154,9 @@
     bar.setAttribute('aria-label', C.name);
     bar.innerHTML = `<a class="oec-cmp-bar__link" href="${esc(C.url)}">`
       + `<span class="oec-cmp-bar__track">${item}<i class="bi bi-lightning-charge-fill" aria-hidden="true"></i>${item.replace('<span class="oec-cmp-bar__item">', '<span class="oec-cmp-bar__item" aria-hidden="true">')}<i class="bi bi-lightning-charge-fill" aria-hidden="true"></i></span>`
-      + `<span class="oec-cmp-bar__cta">${cta} <i class="bi bi-arrow-right" aria-hidden="true"></i></span></a>`
-      + '<button type="button" class="oec-cmp-bar__close" aria-label="Cerrar"><i class="bi bi-x-lg" aria-hidden="true"></i></button>';
+      + `<span class="oec-cmp-bar__cta">${cta} <i class="bi bi-arrow-right" aria-hidden="true"></i></span></a>`;
     document.body.insertBefore(bar, document.body.firstChild);
     bar.querySelector('.oec-cmp-bar__link').addEventListener('click', () => track('bar_click'));
-    bar.querySelector('.oec-cmp-bar__close').addEventListener('click', () => { bar.remove(); remember('bar'); track('bar_close'); });
     tick();
   }
 
