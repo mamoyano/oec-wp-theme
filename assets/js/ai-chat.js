@@ -112,9 +112,34 @@
     return 'https://wa.me/' + cfg.waNumber + '?text=' + enc(lines.join('\n'));
   }
 
+  // Fuera de Argentina, Uruguay y Paraguay el chat tutea (inc/ai-chat.php, uses_vos()),
+  // pero a la IA se le escapa alguna forma de vos ("¿querés…?", "para vos"): se cambian
+  // las más comunes. Solo formas que no existen en el tuteo.
+  const VOS_TU = {
+    'querés': 'quieres', 'podés': 'puedes', 'tenés': 'tienes', 'sabés': 'sabes', 'buscás': 'buscas',
+    'necesitás': 'necesitas', 'preferís': 'prefieres', 'prescribís': 'prescribes', 'trabajás': 'trabajas',
+    'entrenás': 'entrenas', 'contás': 'cuentas', 'pensás': 'piensas', 'decís': 'dices', 'venís': 'vienes',
+    'hacés': 'haces', 'dedicás': 'dedicas', 'elegís': 'eliges', 'pagás': 'pagas', 'empezás': 'empiezas',
+    'cursás': 'cursas', 'sos': 'eres', 'tocá': 'toca', 'mirá': 'mira',
+    'fijate': 'fíjate', 'contame': 'cuéntame', 'contanos': 'cuéntanos', 'decime': 'dime', 'decinos': 'dinos',
+    'avisame': 'avísame', 'pasame': 'pásame', 'escribime': 'escríbeme', 'escribinos': 'escríbenos',
+    'inscribite': 'inscríbete', 'animate': 'anímate', 'probá': 'prueba', 'aprovechá': 'aprovecha',
+    'consultá': 'consulta', 'revisá': 'revisa', 'dejá': 'deja', 'ingresá': 'ingresa', 'entrá': 'entra',
+    'hacé': 'haz', 'completá': 'completa', 'cargá': 'carga', 'seleccioná': 'selecciona',
+  };
+  const VOS_RE = new RegExp('(?<![\\p{L}])(' + Object.keys(VOS_TU).join('|') + '|(?:para|con|a|de|sin) vos)(?![\\p{L}])', 'giu');
+  function toTuteo(text) {
+    if (!country || ['AR', 'UY', 'PY'].includes(country.toUpperCase())) return text;
+    return text.replace(VOS_RE, (w) => {
+      const lw = w.toLowerCase();
+      const tu = lw === 'con vos' ? 'contigo' : lw.endsWith(' vos') ? lw.replace(/vos$/, 'ti') : VOS_TU[lw];
+      return w[0] !== lw[0] ? tu[0].toUpperCase() + tu.slice(1) : tu;
+    });
+  }
+
   // Cambia cada clave por su URL real; si esta página no la tiene, deja solo el texto.
   function resolveLinks(text) {
-    return String(text)
+    return toTuteo(String(text))
       // A veces la IA escribe una dirección de WhatsApp inventada ("https://wa.me/") en vez
       // de la clave: cualquier enlace a WhatsApp pasa a ser el oficial del sitio.
       .replace(/\[([^\]\n]+)\]\((?:https?:\/\/)?(?:wa\.me|(?:[a-z]+\.)?whatsapp\.com)[^)\s]*\)/gi, '[$1](WHATSAPP)')

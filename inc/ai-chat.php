@@ -799,6 +799,20 @@ class OEC_AI_Chat {
 	 * la persona los quiere en otra: no se convierte a mano, se cambia la selección
 	 * del sitio (el enlace REGION abre el selector; solo si el navegador lo tiene).
 	 */
+	/**
+	 * Voseo en Argentina, Uruguay y Paraguay (y si no se sabe el país: casi todo el
+	 * tráfico es de Argentina); tuteo en el resto. En España y México el 90% de las
+	 * respuestas iban de vos, mientras los botones del sitio tutean.
+	 */
+	private static function uses_vos( string $country ): bool {
+		return '' === $country || in_array( strtoupper( $country ), [ 'AR', 'UY', 'PY' ], true );
+	}
+
+	/** Texto fijo (sin IA) en voseo o tuteo según el país. */
+	private static function by_country( WP_REST_Request $request, string $vos, string $tu ): string {
+		return self::uses_vos( (string) $request->get_param( 'country' ) ) ? $vos : $tu;
+	}
+
 	private static function region_note( string $country, string $currency, bool $selector ): string {
 		if ( ! $country ) {
 			return '';
@@ -1517,6 +1531,9 @@ class OEC_AI_Chat {
 		// derivaciones solo viaja cuando la persona plantea un problema o pide contacto.
 		self::$derive = self::wants_human( (string) $message );
 		$mode .= self::region_note( $country, $currency, (bool) $request->get_param( 'region' ) );
+		$mode .= self::uses_vos( $country )
+			? "\nTRATAMIENTO: voseo rioplatense (\"podés\", \"tenés\", \"contame\", \"inscribite\")."
+			: "\nTRATAMIENTO: tuteo neutro de Latinoamérica y España (\"puedes\", \"tienes\", \"cuéntame\", \"inscríbete\", \"escríbenos\"), aunque los mensajes anteriores del chat estén en voseo. Nunca voseo (\"podés\", \"tenés\", \"querés\", \"contame\") ni \"usted\" ni \"vosotros\".";
 		// Saludo en una ficha ("Hola" del globo o del botón de contacto): la regla sola
 		// daba una presentación tibia que terminaba en "¿qué querés saber?". La
 		// indicación va pegada al saludo, con lo que tiene que decir.
@@ -1585,6 +1602,12 @@ class OEC_AI_Chat {
 				. ' Respondé como el buscador del catálogo: las del contexto que correspondan a lo que pide, cada una con su nombre y su porqué.'
 				. ' La de esta página nombrala solo si está en el contexto y tiene que ver, en una frase y sin venderla.]';
 		}
+		// Tuteo: con la regla sola seguía en voseo (todo el prompt y los mensajes
+		// anteriores lo están). Va pegado a la pregunta, escrito en tuteo.
+		if ( ! self::uses_vos( $country ) ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: responde con TUTEO en todos los mensajes (puedes, tienes, quieres, buscas, prefieres, toca, cuéntame, inscríbete, escríbenos), nunca con voseo (podés, tenés, querés, buscás, preferís, tocá, contame, inscribite, escribinos).]";
+		}
 		$full_reply = self::stream_anthropic( $api_key, $context, $messages, $total, $mode );
 		[ $reply, $ids ] = self::split_ids( $full_reply );
 
@@ -1593,7 +1616,7 @@ class OEC_AI_Chat {
 		$error = '';
 		if ( '' === trim( $reply ) ) {
 			$error = 'refusal' === self::$stop_reason ? 'Consulta rechazada por el modelo' : 'Sin respuesta de la IA';
-			self::sse_data( [ 't' => 'No pude responder esa consulta. ¿Podés escribirla de otra forma?' ] );
+			self::sse_data( [ 't' => 'No pude responder esa consulta. ¿' . ( self::uses_vos( $country ) ? 'Podés' : 'Puedes' ) . ' escribirla de otra forma?' ] );
 		}
 
 		// Tarjetas: las formaciones que la IA declaró en <<IDS:…>> (en ese
@@ -1745,14 +1768,18 @@ class OEC_AI_Chat {
 		set_transient( $day, $n, DAY_IN_SECONDS );
 		if ( $n > self::DAILY_LIMIT ) {
 			self::canned_reply( $request, $message, $t0, 'tope diario',
-				'Por hoy llegaste al máximo de consultas con el asistente.' . ( self::whatsapp_number() ? ' Si necesitás algo más, [escribinos por WhatsApp](WHATSAPP) y te responde una persona del equipo.' : ' Volvé a escribirnos mañana.' ) );
+				self::by_country( $request,
+					'Por hoy llegaste al máximo de consultas con el asistente.' . ( self::whatsapp_number() ? ' Si necesitás algo más, [escribinos por WhatsApp](WHATSAPP) y te responde una persona del equipo.' : ' Volvé a escribirnos mañana.' ),
+					'Por hoy llegaste al máximo de consultas con el asistente.' . ( self::whatsapp_number() ? ' Si necesitas algo más, [escríbenos por WhatsApp](WHATSAPP) y te responde una persona del equipo.' : ' Vuelve a escribirnos mañana.' ) ) );
 		}
 
 		$pause = 'oec_chat_junk_' . md5( $cid ?: $ip );
 		$junk  = (int) get_transient( $pause );
 		if ( $junk >= self::JUNK_PAUSE ) {
 			self::canned_reply( $request, $message, $t0, 'pausa por basura',
-				'Mejor sigamos en unos minutos. Cuando quieras, contame qué formación o tema estás buscando y te ayudo.' );
+				self::by_country( $request,
+					'Mejor sigamos en unos minutos. Cuando quieras, contame qué formación o tema estás buscando y te ayudo.',
+					'Mejor sigamos en unos minutos. Cuando quieras, cuéntame qué formación o tema estás buscando y te ayudo.' ) );
 		}
 		$reason = self::junk_reason( $message, $history );
 		if ( '' === $reason ) {
@@ -1763,7 +1790,9 @@ class OEC_AI_Chat {
 		}
 		set_transient( $pause, $junk + 1, self::JUNK_WAIT );
 		self::canned_reply( $request, $message, $t0, $reason,
-			'No te entendí. ¿Me contás qué formación o tema estás buscando? Por ejemplo: "nutrición deportiva", "fuerza" o "un posgrado en fútbol".' );
+			self::by_country( $request,
+				'No te entendí. ¿Me contás qué formación o tema estás buscando? Por ejemplo: "nutrición deportiva", "fuerza" o "un posgrado en fútbol".',
+				'No te entendí. ¿Me cuentas qué formación o tema estás buscando? Por ejemplo: "nutrición deportiva", "fuerza" o "un posgrado en fútbol".' ) );
 	}
 
 	/** Motivo por el que un mensaje es basura, o '' si es un mensaje normal. */
@@ -3041,7 +3070,7 @@ Eres un asesor académico de {$site}, especializado en formaciones de ciencias d
 Fecha de hoy: {$today}
 
 ESTILO DE COMUNICACIÓN:
-- Usá voseo rioplatense: "podés", "tenés", "necesitás" — nunca "usted" ni tuteo español
+- Tratamiento: el que indica la línea TRATAMIENTO de las instrucciones de cada consulta (voseo o tuteo), nunca "usted". Los ejemplos entre comillas de estas reglas están en voseo: con tuteo, adaptalos
 - Sé cálido y cercano, pero profesional y directo
 - Respuestas concretas con información exacta del catálogo; nunca inventes datos
 - Nunca menciones "el contexto" ni cómo te llega la información
