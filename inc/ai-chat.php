@@ -1215,6 +1215,16 @@ class OEC_AI_Chat {
 	}
 
 	/**
+	 * ¿Pide el precio de varias a la vez? ("¿cuánto sale cada uno?", "precio de
+	 * los tres", "¿y esos cuánto cuestan?"). En una ficha las alternativas van sin
+	 * precio: sin esto, la IA anunciaba "los precios son estos" y no daba ninguno.
+	 */
+	private static function asks_many_prices( string $message ): bool {
+		return (bool) preg_match( '/(?<![\p{L}])(cu[aá]nto|precios?|sale[n]?|cuesta[n]?|vale[n]?|valores?|costos?)(?![\p{L}])/iu', $message )
+			&& (bool) preg_match( '/(?<![\p{L}])(cada (uno|una)|c\/u|ambos|ambas|los (dos|tres|cuatro)|las (dos|tres|cuatro)|est[oa]s|es[oa]s|ell[oa]s|tod[oa]s|precios|salen|cuestan|valen)(?![\p{L}])/iu', $message );
+	}
+
+	/**
 	 * En una ficha, ¿usa el chat como buscador de OTRAS formaciones? ("Vbt",
 	 * "cursos de natación", "¿tienen algo de nutrición?"). Tiene que nombrar algo
 	 * que está en el título o los docentes de otras ($asked) y no de esta, y pedirlo
@@ -1374,11 +1384,12 @@ class OEC_AI_Chat {
 		$others = [];
 		$visited = self::visited_fichas( (array) $history, $focus['id'] ?? '' );
 		$compare = self::$comparing = self::asks_comparison( (string) $message );
+		$many    = ! $compare && self::asks_many_prices( (string) $message ); // precios de las que ya nombró el chat
 		// En una ficha, una búsqueda de otras formaciones ("Vbt") se responde como en
 		// el home: buscador completo y tarjetas. Antes la IA las nombraba sin enlace ni
 		// tarjeta y volvía a vender la de la página.
 		$browsing = null;
-		if ( $focus && ! $launch && ! $compare && ! self::is_greeting( (string) $message ) ) {
+		if ( $focus && ! $launch && ! $compare && ! $many && ! self::is_greeting( (string) $message ) ) {
 			$asked = array_filter(
 				self::rank( OEC_AI_Catalog::get_index( true ), $message, '', self::MAX_RESULTS ),
 				static fn( $e ) => $e['id'] !== $focus['id'] && self::names_entry( $message, $e, 3 ) // también siglas: "VBT"
@@ -1420,14 +1431,15 @@ class OEC_AI_Chat {
 			foreach ( $visited as $vid ) {
 				$picked[ $vid ] = [ 'id' => $vid ]; // fichas que miró antes: para comparar con datos reales
 			}
-			foreach ( $compare ? self::history_ids( (array) $history ) : [] as $hid ) {
+			foreach ( $compare || $many ? self::history_ids( (array) $history ) : [] as $hid ) {
 				if ( $hid !== $focus['id'] ) {
 					$picked[ $hid ] = [ 'id' => $hid ]; // las que ya le nombró el chat ("comparalas")
 				}
 			}
 			// Si pide comparar ("todos los cursos de voley"), van todas las que nombra.
-			$cap = $compare ? self::MAX_RESULTS - 1 : max( 3, count( $visited ) + count( $focus['parents'] ) + 1 );
-			foreach ( array_merge( array_slice( array_values( $asked ), 0, $compare ? $cap : 2 ), $similar ) as $e ) {
+			$cap = $compare || $many ? self::MAX_RESULTS - 1 : max( 3, count( $visited ) + count( $focus['parents'] ) + 1 );
+			// "¿Cuánto sale cada uno?": solo las que ya nombró, sin sumar parecidas.
+			foreach ( $many && count( $picked ) ? [] : array_merge( array_slice( array_values( $asked ), 0, $compare ? $cap : 2 ), $similar ) as $e ) {
 				if ( $e['id'] !== $focus['id'] && count( $picked ) < $cap ) {
 					$picked[ $e['id'] ] ??= $e;
 				}
@@ -1483,7 +1495,7 @@ class OEC_AI_Chat {
 			// mezclaba (p. ej. dos cursos de voley del mismo docente).
 			$ids = array_column( $formations, 'id' );
 			if ( $focus && ! $compare ) {
-				$keep = array_merge( [ $focus['id'] ], $visited, array_column( $focus['parents'], 'id' ) );
+				$keep = array_merge( [ $focus['id'] ], $visited, array_column( $focus['parents'], 'id' ), $many ? self::history_ids( (array) $history ) : [] );
 				$ids  = array_values( array_intersect( $ids, $keep ) );
 			}
 			$prices = self::fetch_prices( $ids, $country, $currency );
