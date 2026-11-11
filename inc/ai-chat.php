@@ -962,6 +962,28 @@ class OEC_AI_Chat {
 	}
 
 	/**
+	 * Oferta del brochure pegada a la pregunta. Con la regla sola en el prompt la IA no
+	 * lo ofrecía (le ganaba su propio cierre "¿Querés que te cuente…?"), igual que pasó
+	 * con el tuteo y las comparaciones. Va en la primera respuesta a una pregunta real
+	 * (no en el saludo) y nunca si ya se ofreció en la conversación.
+	 */
+	private static function brochure_offer( ?array $focus, bool $open, array $history, array $stored ): string {
+		if ( ! $focus || ! $open || ! self::journey_token() ) {
+			return '';
+		}
+		foreach ( $history as $turn ) {
+			if ( 'assistant' === ( $turn['role'] ?? '' ) && preg_match( '/brochure/iu', (string) ( $turn['content'] ?? '' ) ) ) {
+				return '';
+			}
+		}
+		$known = is_email( (string) ( $stored['email'] ?? '' ) ) ? self::mask_email( sanitize_email( $stored['email'] ) ) : '';
+		$ask   = $known
+			? "«¿Te envío el brochure a {$known}?»"
+			: '«¿Querés que te envíe el brochure en PDF con el programa completo? Decime tu email y te lo mando.»';
+		return "[Dato del sitio, no lo escribió la persona: respondé lo que preguntó y cerrá tu respuesta ofreciendo el brochure en PDF, con esta pregunta como ÚLTIMA línea y en lugar de cualquier otra pregunta de cierre: {$ask}]";
+	}
+
+	/**
 	 * ¿Toca enviar el brochure en este mensaje? Si sí, lo pide al Worker.
 	 *
 	 * @return array{0:string,1:?array} [ nota para la IA, { email } a guardar en el navegador o null ]
@@ -1684,6 +1706,10 @@ class OEC_AI_Chat {
 		$mode .= self::brochure_rule( $focus, $open, $journey_stored );
 		[ $brochure_note, $brochure_done ] = self::brochure_note( (string) $message, (array) $history, $focus, $open, $journey_stored, substr( preg_replace( '/[^A-Za-z0-9-]/', '', (string) $request->get_param( 'cid' ) ), 0, 40 ), $country );
 		$mode .= $brochure_note;
+		if ( ! $brochure_note && ! $launch && ! self::is_greeting( (string) $message ) && ( $offer = self::brochure_offer( $focus, $open, (array) $history, $journey_stored ) ) ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n" . $offer;
+		}
 		// Tras cambiar la moneda, la IA seguía diciendo "no tengo el precio en dólares"
 		// (lo había dicho ella misma dos mensajes antes, con la selección anterior). Si
 		// se venía hablando de moneda o precio, la selección vigente va pegada a la pregunta.
