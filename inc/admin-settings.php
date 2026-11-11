@@ -28,6 +28,7 @@ function oec_get_defaults(): array {
 		'oec_ai_model'       => 'haiku-4-5',
 		'oec_chat_kb'        => '', // vacío = OEC_AI_Chat::default_kb()
 		'oec_chat_whatsapp'  => '', // vacío = OEC_NL_WHATSAPP
+		'oec_journey_token'  => '', // token de journey.oe.center (brochure por email); vacío = no se ofrece
 		'credits_api_key'    => '',
 		'vimeo_token'        => '', // clases de [oec-clases] desde la cuenta de Vimeo (inc/vimeo.php)
 		'vimeo_category'     => 'Educativo',
@@ -213,6 +214,8 @@ function oec_sanitize_options( $raw ): array {
 	}
 	$wa                         = preg_replace( '/\D+/', '', $wa );
 	$clean['oec_chat_whatsapp'] = strlen( $wa ) >= 8 && strlen( $wa ) <= 15 ? $wa : '';
+	$jt                         = trim( (string) ( $raw['oec_journey_token'] ?? '' ) );
+	$clean['oec_journey_token'] = preg_match( '/^[A-Za-z0-9_-]{16,200}$/', $jt ) ? $jt : '';
 
 	// Revisor de contenidos
 	$mode                    = sanitize_key( $raw['reviewer_mode'] ?? '' );
@@ -275,7 +278,7 @@ function oec_admin_section_keys(): array {
 		'identidad'       => array_merge( [ 'logo_id', 'logo_url', 'logo_height' ], oec_color_keys() ),
 		'contenido'       => [ 'campus_virtual_url', 'footer_desc', 'footer_landings', 'footer_legal', 'footer_cta_url', 'social_linkedin', 'social_instagram', 'social_facebook', 'social_youtube', 'social_x' ],
 		'formaciones'     => [ 'oec_api_token', 'oec_api_tokens', 'catalog_sync_time' ],
-		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp' ],
+		'chat'            => [ 'oec_anthropic_key', 'oec_ai_model', 'oec_chat_kb', 'oec_chat_whatsapp', 'oec_journey_token' ],
 		'revisor'         => [ 'reviewer_mode', 'reviewer_time', 'reviewer_email' ],
 		// vimeo_token no va acá: en Integraciones se carga por vimeo_token_nuevo
 		// (ver oec_sanitize_options) y viaja como hidden desde las demás secciones.
@@ -1160,6 +1163,15 @@ function oec_render_settings_page(): void {
 								       placeholder="5493512584960">
 								<p class="description">
 									<?php esc_html_e( 'Solo el número, con código de país y sin +, espacios ni guiones. El mensaje lo arma el chat: incluye la consulta de la persona y un enlace para que el asesor lea la conversación completa, sin entrar a WordPress. Vacío = el WhatsApp general del sitio.', 'oec-theme' ); ?>
+								</p>
+							</div>
+							<div class="oec-tracker-row__field">
+								<label for="oec-journey-token"><?php esc_html_e( 'Token de Lead Journey (brochure por email)', 'oec-theme' ); ?></label>
+								<input type="password" id="oec-journey-token" class="regular-text" autocomplete="off"
+								       name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_journey_token]"
+								       value="<?php echo esc_attr( (string) ( $opts['oec_journey_token'] ?? '' ) ); ?>">
+								<p class="description">
+									<?php esc_html_e( 'Con el token, en la ficha de una formación abierta el chat ofrece enviar el brochure en PDF por email: registra a la persona en journey.oe.center y arranca su seguimiento. Vacío = el chat no ofrece el brochure. También se puede definir la constante OEC_JOURNEY_TOKEN en wp-config.php.', 'oec-theme' ); ?>
 								</p>
 							</div>
 							<div class="oec-tracker-row__field">

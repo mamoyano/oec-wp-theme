@@ -923,6 +923,105 @@ class OEC_AI_Chat {
 		return [ "\n\n" . implode( "\n", $lines ), $save ];
 	}
 
+	/* ── Brochure por email (Lead Journey, journey.oe.center) ──────────────
+	   En una ficha abierta, la IA ofrece el brochure en PDF una vez por conversación y
+	   pide el email. Cuando la persona lo da (o acepta el que el sitio ya conoce), el
+	   servidor le pide al Worker que lo mande: el Worker registra a la persona, manda el
+	   email firmado por la comunidad y abre el seguimiento. Mismo patrón que los
+	   créditos: la IA recibe una nota con lo que pasó y el navegador guarda el email.
+	   Sin token configurado no se ofrece nada. */
+
+	const JOURNEY_URL = 'https://journey.oe.center';
+
+	/** Token del Worker: constante OEC_JOURNEY_TOKEN (wp-config) o Tema OEC → Chat IA. */
+	private static function journey_token(): string {
+		if ( defined( 'OEC_JOURNEY_TOKEN' ) && OEC_JOURNEY_TOKEN ) {
+			return (string) OEC_JOURNEY_TOKEN;
+		}
+		return trim( (string) ( oec_get_options()['oec_journey_token'] ?? '' ) );
+	}
+
+	/** "mamoyano@gmail.com" → "m***@gmail.com" (para que la IA pregunte sin repetir el email entero). */
+	private static function mask_email( string $email ): string {
+		[ $user, $domain ] = array_pad( explode( '@', $email, 2 ), 2, '' );
+		return mb_substr( $user, 0, 1 ) . '***@' . $domain;
+	}
+
+	/** Regla del prompt en una ficha abierta: cuándo y cómo ofrecer el brochure. */
+	private static function brochure_rule( ?array $focus, bool $open, array $stored ): string {
+		if ( ! $focus || ! $open || ! self::journey_token() ) {
+			return '';
+		}
+		$known = is_email( (string) ( $stored['email'] ?? '' ) ) ? self::mask_email( sanitize_email( $stored['email'] ) ) : '';
+		return "\n\nBROCHURE: esta formación tiene un brochure en PDF con el programa completo, los docentes y toda la información."
+			. ' Ofrecelo UNA sola vez por conversación, en una frase al final de una respuesta: cuando pida el programa, el temario, "más información" o un PDF, o después de responder su primera pregunta concreta. Nunca en el saludo ni si ya lo ofreciste antes.'
+			. ( $known
+				? " El sitio ya conoce su email ({$known}): preguntá \"¿Te envío el brochure a {$known}?\". Si dice que sí, se envía solo; si da otro email, se usa ese."
+				: ' Para enviarlo necesitás su email: pedíselo en la misma frase ("¿Te envío el brochure? Decime tu email").' )
+			. ' Nunca digas que lo enviaste si un "Dato del sitio" no lo confirma.';
+	}
+
+	/**
+	 * ¿Toca enviar el brochure en este mensaje? Si sí, lo pide al Worker.
+	 *
+	 * @return array{0:string,1:?array} [ nota para la IA, { email } a guardar en el navegador o null ]
+	 */
+	private static function brochure_note( string $message, array $history, ?array $focus, bool $open, array $stored, string $cid, string $country ): array {
+		$token = self::journey_token();
+		if ( ! $focus || ! $open || ! $token ) {
+			return [ '', null ];
+		}
+		$typed  = preg_match( '/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i', $message, $m ) ? sanitize_email( $m[0] ) : '';
+		$known  = is_email( (string) ( $stored['email'] ?? '' ) ) ? sanitize_email( $stored['email'] ) : '';
+		$asked  = (bool) preg_match( '/brochure|folleto|programa completo|temario|plan de estudios?|\bpdf\b/iu', $message );
+		$last_bot = '';
+		$offered  = false;
+		foreach ( array_slice( $history, -6 ) as $turn ) {
+			if ( 'assistant' === ( $turn['role'] ?? '' ) ) {
+				$last_bot = (string) ( $turn['content'] ?? '' );
+				if ( preg_match( '/brochure/iu', $last_bot ) ) {
+					$offered = true;
+				}
+			}
+		}
+		$yes   = (bool) preg_match( '/^\W*(s[ií]|sip|dale|ok|okey|okay|claro|perfecto|genial|bueno|por favor|porfa|env[ií]a(lo|melo)|m[aá]nda(lo|melo)|mandalo)\b/iu', $message );
+		$email = '';
+		if ( $typed && ( $asked || $offered ) ) {
+			$email = $typed;
+		} elseif ( $yes && $known && preg_match( '/brochure/iu', $last_bot ) ) {
+			$email = $known;
+		}
+		if ( ! $email ) {
+			return [ '', null ];
+		}
+
+		$res  = wp_remote_post( apply_filters( 'oec_journey_url', self::JOURNEY_URL ) . '/v1/brochure', [
+			'timeout' => 20,
+			'headers' => [ 'Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json' ],
+			'body'    => wp_json_encode( [
+				'email'       => $email,
+				'chat_cid'    => $cid,
+				'training_uid'=> (string) $focus['id'],
+				'country'     => $country,
+				'locale'      => 'es',
+			] ),
+		] );
+		$code = is_wp_error( $res ) ? 0 : (int) wp_remote_retrieve_response_code( $res );
+		$data = 200 === $code ? json_decode( (string) wp_remote_retrieve_body( $res ), true ) : null;
+		$pdf  = is_array( $data ) ? (string) ( $data['pdf_url'] ?? '' ) : '';
+		$mail = is_array( $data ) && in_array( $data['mode'] ?? '', [ 'live', 'test' ], true );
+
+		if ( ! $data ) {
+			$why = 429 === $code ? 'ya se le enviaron varios brochures hoy' : 'no se pudo enviar en este momento';
+			return [ "\n\n[Dato del sitio: el brochure NO se envió ({$why}). Decíselo en una frase y contale que el programa completo también está en esta misma página. No ofrezcas el brochure de nuevo.]", null ];
+		}
+		$link = $pdf ? " Poné también este enlace para que lo descargue ahora mismo: [Descargar el brochure]({$pdf})." : '';
+		$note = $mail
+			? "\n\n[Dato del sitio: el brochure de «{$focus['title']}» se acaba de enviar a {$email}. Confirmalo en una frase: le llega en unos minutos (que revise también Promociones o Spam).{$link} Después respondé lo que haya preguntado, si preguntó algo. No ofrezcas el brochure de nuevo.]"
+			: "\n\n[Dato del sitio: el email quedó registrado ({$email}).{$link} No digas que se lo enviaste por email. No ofrezcas el brochure de nuevo.]";
+		return [ $note, [ 'email' => $email ] ];
+	}
+
 	/** Saldo de créditos de un email (API de créditos, con la clave del servidor). null = no se pudo. */
 	private static function credits_balance( string $email ): ?int {
 		$res = wp_remote_get(
@@ -1581,6 +1680,10 @@ class OEC_AI_Chat {
 		}
 		[ $credits_note, $credits_done ] = self::credits_note( (string) $message, (array) $history, $focus, (array) $request->get_param( 'credits' ) );
 		$mode .= $credits_note;
+		$journey_stored = (array) $request->get_param( 'credits' );
+		$mode .= self::brochure_rule( $focus, $open, $journey_stored );
+		[ $brochure_note, $brochure_done ] = self::brochure_note( (string) $message, (array) $history, $focus, $open, $journey_stored, substr( preg_replace( '/[^A-Za-z0-9-]/', '', (string) $request->get_param( 'cid' ) ), 0, 40 ), $country );
+		$mode .= $brochure_note;
 		// Tras cambiar la moneda, la IA seguía diciendo "no tengo el precio en dólares"
 		// (lo había dicho ella misma dos mensajes antes, con la selección anterior). Si
 		// se venía hablando de moneda o precio, la selección vigente va pegada a la pregunta.
@@ -1684,6 +1787,9 @@ class OEC_AI_Chat {
 		}
 		if ( $credits_done ) {
 			$done['credits'] = $credits_done; // el navegador lo guarda: queda identificado en todo el sitio
+		}
+		if ( $brochure_done ) {
+			$done['identity'] = $brochure_done; // email dado para el brochure: el navegador lo guarda (mismo "userEmail" de los créditos)
 		}
 		// Comparación en tabla: la foto de cada formación del encabezado (también la de
 		// la ficha, que no lleva tarjeta). Se reconoce por su enlace en la respuesta.

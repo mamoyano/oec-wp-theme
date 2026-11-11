@@ -1015,6 +1015,10 @@
     if (doneData.help && lastBot && lastBot.h) doneData.help = null;
     if (doneData.help) renderHelp(doneData.help);
     if (doneData.credits) saveCredits(doneData.credits);
+    if (doneData.identity && doneData.identity.email) {
+      // Email que dio para recibir el brochure: queda identificada en todo el sitio.
+      try { localStorage.setItem('userEmail', doneData.identity.email); } catch (_) {}
+    }
 
     // Update conversation history
     // Con los enlaces ya resueltos: en otra página las claves apuntarían a otra cosa
