@@ -592,3 +592,37 @@ function oec_nl_render_email( array $d ): string {
 		'subscribed' => true,
 	] );
 }
+
+/* ============================================================
+   MARCA DEL SITIO PARA EMAILS DE OTROS SISTEMAS
+   GET /wp-json/oec/v1/brand → { name, logo, colors, site }
+   La usa journey.oe.center (Lead Journey) para armar sus emails con el
+   logo y los colores de cada comunidad: la misma fuente que el newsletter,
+   así un cambio en Tema OEC → Identidad llega solo. Datos públicos (los
+   mismos que se ven en el sitio); se cachea 1 h en Cloudflare.
+   ============================================================ */
+add_action( 'rest_api_init', function () {
+	register_rest_route( 'oec/v1', '/brand', [
+		'methods'             => 'GET',
+		'permission_callback' => '__return_true',
+		'callback'            => 'oec_brand_rest',
+	] );
+} );
+
+function oec_brand_rest(): WP_REST_Response {
+	$c   = oec_nl_colors();
+	$res = new WP_REST_Response( [
+		'name'   => OEC_NL_BRAND,
+		// PNG o JPG (Outlook no muestra WebP); vacío = el email usa el nombre en texto.
+		'logo'   => (string) OEC_NL_LOGO,
+		'colors' => [
+			'dark'    => $c['dark'],
+			'primary' => $c['primary'],
+			'accent'  => $c['accent'],
+			'text'    => $c['text'],
+		],
+		'site'   => network_home_url( '/' ),
+	], 200 );
+	$res->header( 'Cache-Control', 'public, max-age=3600' );
+	return $res;
+}
