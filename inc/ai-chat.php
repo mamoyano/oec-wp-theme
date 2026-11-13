@@ -101,6 +101,18 @@ class OEC_AI_Chat {
 			'args'                => $args,
 		] );
 
+		// Datos del sitio para el chat de journey.oe.center (migración del chat, docs del Lead Journey):
+		// conocimiento de ventas, redes, WhatsApp, LIVE y campaña. Solo con el token de Lead Journey.
+		register_rest_route( self::NAMESPACE, '/chat-site', [
+			'methods'             => 'GET',
+			'callback'            => static fn() => new WP_REST_Response( self::site_payload() ),
+			'permission_callback' => static function ( WP_REST_Request $r ): bool {
+				$token = self::journey_token();
+				$auth  = (string) $r->get_header( 'authorization' );
+				return '' !== $token && hash_equals( 'Bearer ' . $token, $auth );
+			},
+		] );
+
 		register_rest_route( self::NAMESPACE, '/chat-stream', [
 			'methods'             => 'POST',
 			'callback'            => [ __CLASS__, 'handle_stream' ],
@@ -1869,6 +1881,7 @@ class OEC_AI_Chat {
 				'ctx'        => 'formacion' === $ctx['mode'] ? ( $open ? 'formacion:' : 'cerrada:' ) . $ctx['id'] : ( 'tematica' === $ctx['mode'] ? 'tematica:' . $ctx['tematica'] : ( in_array( $ctx['mode'], [ 'live', 'campana' ], true ) ? $ctx['mode'] : '' ) ),
 			] );
 		}
+		self::shadow( $request, $reply, $focus ?? $browsing, $launch );
 		exit;
 	}
 
@@ -3195,6 +3208,93 @@ CONFIANZA
 - No hay atención por teléfono ni por videollamada.{$history}
 - Direcciones: 1901 60th Place, Suite L2389, Bradenton, FL 34203, USA; y Juan Antonio de Bárcena 121, Torre 1 – 3D, Villasol, Córdoba (5003), Argentina. Presencia administrativa en España, México, Chile y Colombia.
 TXT;
+	}
+
+	/* ── Chat de journey.oe.center (migración) ───────────────── */
+
+	/**
+	 * Lo que el chat del Worker necesita de este sitio y que solo sabe el tema
+	 * (GET /oec/v1/chat-site). El conocimiento de ventas va con {CREDITOS_URL} y
+	 * {CAMPUS_URL} ya reemplazados.
+	 */
+	public static function site_payload(): array {
+		$opts = oec_get_options();
+		$kb   = trim( (string) ( $opts['oec_chat_kb'] ?? '' ) );
+		$cmp  = function_exists( 'oec_cmp_phase' ) ? oec_cmp_phase() : 'off';
+		$art  = get_page_by_path( 'articulos' );
+		return [
+			'name'          => get_bloginfo( 'name' ),
+			'home'          => home_url( '/' ),
+			'kb'            => $kb,
+			'credits_url'   => home_url( '/creditos-por-descuentos' ),
+			'campus_url'    => function_exists( 'oec_campus_url' ) ? oec_campus_url() : '',
+			'articles_url'  => $art ? get_permalink( $art ) : '',
+			'whatsapp'      => self::whatsapp_number(),
+			'socials'       => array_filter( [
+				'Instagram' => $opts['social_instagram'] ?? '',
+				'Facebook'  => $opts['social_facebook'] ?? '',
+				'YouTube'   => $opts['social_youtube'] ?? '',
+				'LinkedIn'  => $opts['social_linkedin'] ?? '',
+			] ),
+			'model'         => self::model_key(),
+			'credits'       => function_exists( 'oec_credits_api_key' ) && (bool) oec_credits_api_key(),
+			'live'          => [
+				'ids'       => self::live_ids(),
+				'url'       => function_exists( 'oec_live_url' ) ? oec_live_url() : '',
+				'knowledge' => self::live_knowledge(),
+			],
+			'campaign'      => [
+				'phase'     => $cmp,
+				'name'      => function_exists( 'oec_cmp_opts' ) ? (string) oec_cmp_opts()['name'] : '',
+				'slug'      => function_exists( 'oec_cmp_opts' ) ? (string) oec_cmp_opts()['slug'] : '',
+				'ids'       => self::campaign_ids(),
+				'knowledge' => self::campaign_knowledge(),
+			],
+			'tematicas'     => function_exists( 'oec_especiales_registradas' )
+				? array_map( static fn( $e ) => [ 'tematica' => $e['tematica'], 'title' => $e['title'], 'url' => $e['url'] ], oec_especiales_registradas() )
+				: [],
+		];
+	}
+
+	/**
+	 * Modo sombra: con "Chat IA → Chat nuevo" en "En sombra", cada consulta se manda
+	 * también al chat del Worker, que responde solo para su registro (nadie lo ve) y
+	 * guarda al lado la respuesta de este chat, para compararlas. Corre después de
+	 * cerrar la respuesta a la persona: no le suma espera.
+	 */
+	private static function shadow( WP_REST_Request $request, string $reply, ?array $focus, bool $launch ): void {
+		$token = self::journey_token();
+		if ( ! $token || 'shadow' !== ( oec_get_options()['oec_chat_mode'] ?? 'theme' ) ) {
+			return;
+		}
+		$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$site = [ 'g-se.com' => 'g-se', 'fisio.one' => 'fisio', 'swimming.science' => 'swimming', 'traumato.site' => 'traumato', 'voley.org' => 'voley', 'is.fitness' => 'isfitness', 'isfitness.com' => 'isfitness' ][ $host ] ?? '';
+		if ( '' === $site ) {
+			return;
+		}
+		wp_remote_post( apply_filters( 'oec_journey_url', self::JOURNEY_URL ) . '/v1/chat', [
+			'timeout'  => 3,
+			'blocking' => false,
+			'headers'  => [ 'Authorization' => 'Bearer ' . $token, 'Content-Type' => 'application/json' ],
+			'body'     => wp_json_encode( [
+				'site'          => $site,
+				'mode'          => 'shadow',
+				'message'       => (string) $request->get_param( 'message' ),
+				'history'       => array_slice( (array) $request->get_param( 'history' ), -12 ),
+				'context'       => (array) $request->get_param( 'context' ),
+				'country'       => (string) $request->get_param( 'country' ),
+				'currency'      => (string) $request->get_param( 'currency' ),
+				'mentioned_ids' => (array) $request->get_param( 'mentioned_ids' ),
+				'region'        => (bool) $request->get_param( 'region' ),
+				'launch'        => $launch,
+				'credits'       => (array) $request->get_param( 'credits' ),
+				'parents'       => $focus['parents'] ?? [],
+				'cid'           => (string) $request->get_param( 'cid' ),
+				'turn'          => (int) $request->get_param( 'turn' ),
+				'page'          => (string) $request->get_param( 'page' ),
+				'reference'     => $reply,
+			] ),
+		] );
 	}
 
 	/* ── System prompt ──────────────────────────────────────── */
