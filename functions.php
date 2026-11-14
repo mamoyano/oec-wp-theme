@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.222' );
+define( 'OEC_THEME_VERSION', '1.0.223' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -95,11 +95,15 @@ function oec_enqueue_assets(): void {
 		oec_asset_version( 'assets/js/ai-chat.js' ),
 		[ 'strategy' => 'defer', 'in_footer' => true ]
 	);
+	// "Chat nuevo: Atendiendo" (Chat IA): la misma interfaz pide las respuestas al chat de
+	// journey.oe.center y el asesor de WhatsApp ve la conversación allá.
+	$oec_chat_live = OEC_AI_Chat::journey_live();
 	wp_localize_script( 'oec-ai-chat', 'oecAiChat', array_merge( [
 		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
-		'streamEndpoint' => esc_url( rest_url( 'oec/v1/chat-stream' ) ),
+		'streamEndpoint' => $oec_chat_live ? 'https://journey.oe.center/v1/chat' : esc_url( rest_url( 'oec/v1/chat-stream' ) ),
 		'clickEndpoint'  => esc_url( rest_url( 'oec/v1/chat-click' ) ),
-	], OEC_AI_Chat::script_config() ) ); // + context (ficha / temática / catálogo) y links
+		'site'           => OEC_AI_Chat::journey_site(),
+	], OEC_AI_Chat::script_config(), $oec_chat_live ? [ 'convUrl' => 'https://journey.oe.center/conversacion/' ] : [] ) ); // + context (ficha / temática / catálogo) y links
 
 	// Barra de compartir — solo en artículos/blogs individuales.
 	if ( is_singular( 'post' ) ) {

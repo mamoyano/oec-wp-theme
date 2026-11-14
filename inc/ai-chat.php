@@ -3256,6 +3256,21 @@ TXT;
 		];
 	}
 
+	/** Clave de esta comunidad en journey.oe.center (g-se, fisio…); '' si no es una comunidad. */
+	public static function journey_site(): string {
+		$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
+		$map  = [ 'g-se.com' => 'g-se', 'fisio.one' => 'fisio', 'swimming.science' => 'swimming', 'traumato.site' => 'traumato', 'voley.org' => 'voley', 'is.fitness' => 'isfitness', 'isfitness.com' => 'isfitness', 'oec-test.local' => 'g-se' ];
+		return $map[ $host ] ?? '';
+	}
+
+	/**
+	 * ¿Atiende el chat de journey.oe.center? ("Chat IA → Chat nuevo" en "Atendiendo"). La
+	 * interfaz es la misma (ai-chat.js): solo cambia a dónde pide las respuestas.
+	 */
+	public static function journey_live(): bool {
+		return 'live' === ( oec_get_options()['oec_chat_mode'] ?? 'theme' ) && '' !== self::journey_site();
+	}
+
 	/**
 	 * Modo sombra: con "Chat IA → Chat nuevo" en "En sombra", cada consulta se manda
 	 * también al chat del Worker, que responde solo para su registro (nadie lo ve) y
@@ -3267,8 +3282,7 @@ TXT;
 		if ( ! $token || 'shadow' !== ( oec_get_options()['oec_chat_mode'] ?? 'theme' ) ) {
 			return;
 		}
-		$host = preg_replace( '/^(www|nuevo)\./', '', (string) wp_parse_url( home_url(), PHP_URL_HOST ) );
-		$site = [ 'g-se.com' => 'g-se', 'fisio.one' => 'fisio', 'swimming.science' => 'swimming', 'traumato.site' => 'traumato', 'voley.org' => 'voley', 'is.fitness' => 'isfitness', 'isfitness.com' => 'isfitness' ][ $host ] ?? '';
+		$site = self::journey_site();
 		if ( '' === $site ) {
 			return;
 		}

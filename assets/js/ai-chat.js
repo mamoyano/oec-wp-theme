@@ -907,6 +907,8 @@
           region: window.oecRegion ? 1 : 0, // este navegador tiene el selector de país y moneda
           credits: storedCredits(),          // email y saldo de créditos, si ya se identificó en el sitio
           launch: launchNext ? 1 : 0,
+          site: cfg.site || '',              // chat de journey.oe.center (si el sitio lo usa): qué comunidad es
+          stream: 1,
         }),
       };
       launchNext = false;

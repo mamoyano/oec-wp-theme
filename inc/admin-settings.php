@@ -217,7 +217,7 @@ function oec_sanitize_options( $raw ): array {
 	$clean['oec_chat_whatsapp'] = strlen( $wa ) >= 8 && strlen( $wa ) <= 15 ? $wa : '';
 	$jt                         = trim( (string) ( $raw['oec_journey_token'] ?? '' ) );
 	$clean['oec_journey_token'] = preg_match( '/^[A-Za-z0-9_-]{16,200}$/', $jt ) ? $jt : '';
-	$clean['oec_chat_mode']     = in_array( $raw['oec_chat_mode'] ?? '', [ 'theme', 'shadow' ], true ) ? $raw['oec_chat_mode'] : 'theme';
+	$clean['oec_chat_mode']     = in_array( $raw['oec_chat_mode'] ?? '', [ 'theme', 'shadow', 'live' ], true ) ? $raw['oec_chat_mode'] : 'theme';
 
 	// Revisor de contenidos
 	$mode                    = sanitize_key( $raw['reviewer_mode'] ?? '' );
@@ -1181,9 +1181,10 @@ function oec_render_settings_page(): void {
 								<select id="oec-chat-mode" name="<?php echo esc_attr( OEC_OPTION ); ?>[oec_chat_mode]">
 									<option value="theme" <?php selected( $opts['oec_chat_mode'] ?? 'theme', 'theme' ); ?>><?php esc_html_e( 'Apagado', 'oec-theme' ); ?></option>
 									<option value="shadow" <?php selected( $opts['oec_chat_mode'] ?? 'theme', 'shadow' ); ?>><?php esc_html_e( 'En sombra (responde en paralelo, nadie lo ve)', 'oec-theme' ); ?></option>
+									<option value="live" <?php selected( $opts['oec_chat_mode'] ?? 'theme', 'live' ); ?>><?php esc_html_e( 'Atendiendo (el chat nuevo responde a las personas)', 'oec-theme' ); ?></option>
 								</select>
 								<p class="description">
-									<?php esc_html_e( 'En sombra, cada consulta se manda también al chat nuevo del Worker, que la responde solo para comparar (necesita el token de Lead Journey). Las personas siguen viendo este chat. No envía emails ni otorga nada.', 'oec-theme' ); ?>
+									<?php esc_html_e( 'En sombra, cada consulta se manda también al chat nuevo del Worker, que la responde solo para comparar (necesita el token de Lead Journey). Las personas siguen viendo este chat. No envía emails ni otorga nada. Atendiendo, la misma ventana del chat pide las respuestas al chat nuevo (y ahí sí envía el brochure); se vuelve atrás eligiendo otra opción. Las conversaciones se ven en journey.oe.center/panel → Chat.', 'oec-theme' ); ?>
 								</p>
 							</div>
 							<div class="oec-tracker-row__field">
