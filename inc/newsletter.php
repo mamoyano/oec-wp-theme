@@ -1564,6 +1564,19 @@ function oec_nl_create_pages(): void {
 	}
 }
 add_action( 'after_switch_theme', 'oec_nl_create_pages' );
+
+/*
+ * El link de créditos del newsletter trae la firma en ?s=, que para
+ * WordPress es la búsqueda: buscaba la firma dentro de la página y daba 404.
+ * En /otorgar-creditos/ se descarta como búsqueda (newsletter.js la sigue
+ * leyendo de la URL). Los emails ya enviados usan ?s=, así que no se renombra.
+ */
+add_filter( 'request', function ( array $qv ): array {
+	if ( isset( $qv['s'] ) && preg_match( '#/otorgar-creditos/?$#', (string) wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH ) ) ) {
+		unset( $qv['s'] );
+	}
+	return $qv;
+} );
 add_action( 'admin_init', function () {
 	// La marca incluye la versión de la lista de páginas: al sumar una
 	// (p. ej. mis-suscripciones) se vuelve a revisar sin esperar un año.
