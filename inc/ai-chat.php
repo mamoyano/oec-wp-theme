@@ -1719,6 +1719,14 @@ class OEC_AI_Chat {
 				. ' 3) el precio con el descuento vigente (y el Módulo 1 si existe) y una invitación concreta a inscribirse.'
 				. ' No termines con "¿qué querés saber?" ni con un menú de temas, y no nombres otras formaciones' . ( empty( $focus['parents'] ) ? '' : ' (salvo las que la incluyen)' ) . '.]';
 		}
+		// Con otras formaciones en el contexto, la IA a veces describía una de ellas como si fuera la de la
+		// página ("¿el curso sirve para chicos?" en Pádel → contestaba con el de vóley infantil).
+		if ( $focus && $others && ! $launch && ! self::is_greeting( (string) $message ) && ! $compare && ! $many ) {
+			$last = count( $messages ) - 1;
+			$messages[ $last ]['content'] .= "\n\n[Dato del sitio, no lo escribió la persona: está en la ficha de «{$focus['title']}». \"El curso\", \"este curso\" o \"la formación\" es ESA."
+				. ' Respondé primero sobre ella, solo con los datos de "FORMACIÓN DE ESTA PÁGINA", y decí con honestidad si cubre o no lo que pregunta.'
+				. ' Si una de las "OTRAS FORMACIONES" encaja mejor, ofrecela después aclarando que es OTRA formación, con su nombre y su enlace.]';
+		}
 		[ $credits_note, $credits_done ] = self::credits_note( (string) $message, (array) $history, $focus, (array) $request->get_param( 'credits' ) );
 		$mode .= $credits_note;
 		$journey_stored = (array) $request->get_param( 'credits' );
