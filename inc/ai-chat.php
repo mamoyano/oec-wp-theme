@@ -1659,7 +1659,7 @@ class OEC_AI_Chat {
 			$context = "FORMACIÓN DE ESTA PÁGINA:\n" . self::format_focus( $focus, $prices[ $focus['id'] ] ?? null, $open );
 			if ( $others ) {
 				self::$price_in_ficha = true;
-				$context .= "\n\n---\n\nOTRAS FORMACIONES (alternativas: ofrecelas solo si la de esta página no es lo que busca o está cerrada):\n\n"
+				$context .= "\n\n---\n\nOTRAS FORMACIONES (NO son la de esta página: sus datos nunca se usan para describir la de esta página; ofrecelas, nombrándolas, solo si la de esta página no es lo que busca o está cerrada):\n\n"
 					. self::build_context( $others, $prices, false, [] );
 				self::$price_in_ficha = false;
 			}
@@ -2975,7 +2975,8 @@ La persona está mirando la ficha de «{$ctx['title']}». Todo lo que pregunte s
 - Si pregunta cómo pagar o pide datos para pagar (transferencia, CBU, link de pago): la respuesta es inscribirse por el checkout, y en ese mismo mensaje va SIEMPRE la línea "Para inscribirse" del contexto (el enlace [Inscribirme](INSCRIPCION) si figura).
 - "Empezar solo con el Módulo 1" se ofrece únicamente si el contexto trae "Opción de inicio"; si la formación tiene un solo módulo, no lo nombres.
 - Datos (cantidad de módulos, horas, fechas, precios): tomalos tal cual del contexto y decilos una sola vez, con seguridad. Nunca dudes en voz alta, te contradigas ni te rectifiques dentro de la respuesta, y no digas que vas a confirmar un dato que ya está en el contexto.
-- Si esta formación no es lo que busca, ofrecele una de las "OTRAS FORMACIONES".
+- "¿Me sirve para…?", "¿sirve para…?", "¿es para…?": respondé con honestidad sobre ESTA formación, solo con lo que dice SU ficha (destinatarios, objetivos, temario). Si no está pensada para eso o lo cubre solo en parte, decilo claro ("Este curso está orientado a…; no trabaja específicamente…"). Si una de las "OTRAS FORMACIONES" encaja mejor, ofrecésela DESPUÉS, siempre con su nombre y su enlace ("Para eso te conviene [Nombre](URL), que…").
+- NUNCA mezcles formaciones: docentes, módulos, contenidos, avales, modalidad y precio que digas sin nombrar otra formación tienen que ser de la de esta página. Los datos de las "OTRAS FORMACIONES" van solo junto a su nombre. "Este curso" o "el curso" es siempre el de esta página.
 - Si el contexto trae "PRÓXIMAS CLASES EN VIVO", usalas cuando pregunte por fechas, horarios, cronograma o cómo se cursa, y como punto fuerte ("la próxima clase en vivo es el…"). Aclará siempre que el horario es de Argentina y que quedan grabadas. Si la lista trae entre paréntesis la hora de su país, dá esa también. NUNCA conviertas vos el horario a otro país o ciudad (te equivocás con los husos): si pide otra zona, dale la hora de Argentina (GMT-3) para que la convierta, y no te ofrezcas a convertirla. No inventes clases que no estén en la lista.{$closed}
 - En la línea <<IDS:…>> poné SOLO las otras formaciones que nombres; nunca la de esta ficha (la persona ya está en su página).{$before}
 TXT;
