@@ -1010,10 +1010,17 @@ class OEC_AI_Chat {
 		$asked  = (bool) preg_match( '/brochure|folleto|programa completo|temario|plan de estudios?|\bpdf\b/iu', $message );
 		$last_bot = '';
 		$offered  = false;
+		// Ofrecido = la IA lo nombró o pidió el email ("te lo puedo enviar en PDF… necesito tu email"),
+		// o la persona lo pidió hace poco (la respuesta no siempre dice la palabra "brochure").
 		foreach ( array_slice( $history, -6 ) as $turn ) {
-			if ( 'assistant' === ( $turn['role'] ?? '' ) ) {
-				$last_bot = (string) ( $turn['content'] ?? '' );
-				if ( preg_match( '/brochure/iu', $last_bot ) ) {
+			$text = (string) ( $turn['content'] ?? '' );
+			if ( 'user' === ( $turn['role'] ?? '' ) ) {
+				if ( preg_match( '/brochure|folleto|programa completo|temario|plan de estudios?|\bpdf\b/iu', $text ) ) {
+					$offered = true;
+				}
+			} elseif ( 'assistant' === ( $turn['role'] ?? '' ) ) {
+				$last_bot = $text;
+				if ( preg_match( '/brochure|\bpdf\b|tu (e-?mail|correo)/iu', $last_bot ) ) {
 					$offered = true;
 				}
 			}
@@ -1022,7 +1029,7 @@ class OEC_AI_Chat {
 		$email = '';
 		if ( $typed && ( $asked || $offered ) ) {
 			$email = $typed;
-		} elseif ( $yes && $known && preg_match( '/brochure/iu', $last_bot ) ) {
+		} elseif ( $yes && $known && preg_match( '/brochure|\bpdf\b|tu (e-?mail|correo)/iu', $last_bot ) ) {
 			$email = $known;
 		}
 		if ( ! $email ) {
