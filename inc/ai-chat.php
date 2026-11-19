@@ -2559,6 +2559,10 @@ class OEC_AI_Chat {
 			// WhatsApp con mensaje armado en el navegador: número, nombre del sitio y la
 			// página donde el asesor ve la conversación completa (sin entrar a WordPress).
 			'waNumber'     => self::whatsapp_number(),
+			// Pase a WhatsApp por Lead Journey (decisión de Mario, 19/11/2026): el enlace lleva la conversación y la
+			// formación, y en WhatsApp la sigue la IA con todo lo que se habló acá (la ve el equipo en la Bandeja).
+			// Solo si el sitio tiene el token de Lead Journey; si no, el WhatsApp de siempre.
+			'waHandoff'    => self::journey_token() ? apply_filters( 'oec_journey_url', self::JOURNEY_URL ) . '/wa/chat' : '',
 			'siteName'     => get_bloginfo( 'name' ),
 			'convUrl'      => home_url( '/?conversacion=' ),
 		];

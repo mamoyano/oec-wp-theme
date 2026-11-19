@@ -99,6 +99,11 @@
   // enlace a la conversación completa, que se lee sin entrar a WordPress.
   let lastQuestion = '';
   function whatsappLink() {
+    // Pase por Lead Journey: abre el WhatsApp de la bandeja con un código unido a esta conversación.
+    if (cfg.waHandoff && cid) {
+      const f = pageContext && pageContext.id && /^t-[A-Za-z0-9]{14}$/.test(pageContext.id) ? '&f=' + encodeURIComponent(pageContext.id) : '';
+      return cfg.waHandoff + '?cid=' + encodeURIComponent(cid) + f;
+    }
     if (!cfg.waNumber) return chatLinks.WHATSAPP || '';
     const lines = ['Hola! Vengo del chat de ' + (cfg.siteName || 'la web') + '.'];
     const t = pageTopic && pageTopic.k !== 'catalogo' ? pageTopic.t : '';
