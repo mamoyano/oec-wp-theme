@@ -1,7 +1,7 @@
 <?php
 defined( 'ABSPATH' ) || exit;
 
-define( 'OEC_THEME_VERSION', '1.0.228' );
+define( 'OEC_THEME_VERSION', '1.0.229' );
 define( 'OEC_THEME_DIR',     get_template_directory() );
 define( 'OEC_THEME_URI',     get_template_directory_uri() );
 
@@ -101,7 +101,8 @@ function oec_enqueue_assets(): void {
 	wp_localize_script( 'oec-ai-chat', 'oecAiChat', array_merge( [
 		'endpoint'       => esc_url( rest_url( 'oec/v1/chat' ) ),
 		'streamEndpoint' => $oec_chat_live ? 'https://journey.oe.center/v1/chat' : esc_url( rest_url( 'oec/v1/chat-stream' ) ),
-		'clickEndpoint'  => esc_url( rest_url( 'oec/v1/chat-click' ) ),
+		// Atendiendo: los clics (tarjetas, inscribirme, WhatsApp) se anotan junto a la respuesta en journey.oe.center.
+		'clickEndpoint'  => $oec_chat_live ? 'https://journey.oe.center/v1/chat/click' : esc_url( rest_url( 'oec/v1/chat-click' ) ),
 		'site'           => OEC_AI_Chat::journey_site(),
 	], OEC_AI_Chat::script_config(), $oec_chat_live ? [ 'convUrl' => 'https://journey.oe.center/conversacion/' ] : [] ) ); // + context (ficha / temática / catálogo) y links
 

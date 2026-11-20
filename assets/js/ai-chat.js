@@ -245,7 +245,8 @@
   function trackClick(id) {
     if (!clickEndpoint || !id || !navigator.sendBeacon) return;
     try {
-      navigator.sendBeacon(clickEndpoint, new Blob([JSON.stringify({ cid, id })], { type: 'application/json' }));
+      // text/plain: el registro de Lead Journey está en otro dominio y así no hace falta preflight.
+      navigator.sendBeacon(clickEndpoint, new Blob([JSON.stringify({ cid, id })], { type: 'text/plain' }));
     } catch (_) {}
   }
 
@@ -1186,7 +1187,15 @@
       if (e.target.closest('#oec-overlay-send'))  { sendOverlayMessage(); return; }
       if (e.target.closest('#oec-overlay-new'))   { if (!busy) resetConversation(); return; }
       const card = e.target.closest('.oec-course-card[data-id], .oec-inline-card[data-id]');
-      if (card) trackClick(card.dataset.id);
+      if (card) { trackClick(card.dataset.id); return; }
+      // Enlaces de la respuesta: inscribirse (checkout) y WhatsApp.
+      const a = e.target.closest('#oec-overlay-messages a[href]');
+      if (a) {
+        const base = (u) => { try { const x = new URL(u, location.href); return x.origin + x.pathname; } catch (_) { return ''; } };
+        const href = base(a.href);
+        if (chatLinks.INSCRIPCION && href === base(chatLinks.INSCRIPCION)) trackClick('INSCRIPCION');
+        else if ((cfg.waHandoff && href === base(cfg.waHandoff)) || /^https:\/\/(wa\.me|api\.whatsapp\.com)\//.test(a.href)) trackClick('WHATSAPP');
+      }
     });
 
     document.addEventListener('input', (e) => {
