@@ -1092,7 +1092,8 @@
     openChat(t.dataset.msg);
   });
 
-  /* ── Hero "¿Qué quieres aprender?" → tipea "Hola" y abre el chat ── */
+  /* ── Hero "¿Qué quieres aprender?" → tipea el saludo de la página (cfg.launch; en la home,
+     "Hola, ¿qué es lo mejor que tiene hoy {sitio}?", el mismo que manda el globo flotante) y abre el chat ── */
   let helloRunning = false;
 
   function typeInto(inputEl, text, done) {
@@ -1170,7 +1171,8 @@
     document.addEventListener('click', (e) => {
       const hero = e.target.closest('#oec-ai-hero-trigger');
       if (hero) {
-        startHello(hero.dataset.aiText || 'Hola');
+        const t = hero.dataset.aiText || '';
+        startHello((!t || /^hola$/i.test(t)) ? (cfg.launch || 'Hola') : t);
         return;
       }
       if (e.target.closest('#oec-ai-header-send')) {

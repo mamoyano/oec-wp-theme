@@ -136,7 +136,7 @@ get_header();
 				<?php if ( 'teaser' === $oec_cmp_phase ) : ?>
 				<a class="oec-cmp-btn oec-cmp-btn--ghost" href="#cmp-aviso"><i class="bi bi-bell" aria-hidden="true"></i> <?php esc_html_e( 'Avisame cuando empiece', 'oec-theme' ); ?></a>
 				<?php else : ?>
-				<button type="button" class="oec-cmp-btn oec-cmp-btn--ghost oec-chat-ia-trigger" data-msg="<?php echo esc_attr( $oec_cmp_chat ); ?>"><i class="bi bi-stars" aria-hidden="true"></i> <?php esc_html_e( 'Ayudame a elegir', 'oec-theme' ); ?></button>
+				<button type="button" class="oec-cmp-btn oec-cmp-btn--ghost oec-chat-ia-trigger" data-msg="<?php echo esc_attr( $oec_cmp_chat ); ?>"><i class="bi bi-chat-dots-fill" aria-hidden="true"></i> <?php esc_html_e( 'Ayudame a elegir', 'oec-theme' ); ?></button>
 				<?php endif; ?>
 			</div>
 			<?php endif; ?>
@@ -258,7 +258,7 @@ get_header();
 	<?php /* ── CHAT IA ── */ ?>
 	<section class="oec-cmpL-block oec-cmpL-block--dark">
 		<div class="oec-cmpL-wrap oec-cmpL-chat">
-			<span class="oec-cmpL-chat__icon" aria-hidden="true"><i class="bi bi-stars"></i></span>
+			<span class="oec-cmpL-chat__icon" aria-hidden="true"><i class="bi bi-chat-dots-fill"></i></span>
 			<div>
 				<h2 class="oec-cmpL-h2"><?php esc_html_e( '¿No sabés cuál elegir?', 'oec-theme' ); ?></h2>
 				<p><?php echo esc_html( sprintf( 'Contale a nuestro asistente a qué te dedicás o qué querés lograr: conoce todas las formaciones del %s y te dice cuál te conviene, con su precio con descuento.', $oec_cmp_name ) ); ?></p>

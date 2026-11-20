@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.230
+Version: 1.0.231
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -225,7 +225,7 @@ section { padding-block: 4rem; }
 
 .header-search__icon {
   padding-left: 1rem;
-  /* bi-stars: el campo es el asistente IA, no un buscador */
+  /* globo de charla (bi-chat-dots-fill): el campo es el asistente IA, no un buscador */
   font-size: 1rem;
   line-height: 1;
   color: var(--color-accent);

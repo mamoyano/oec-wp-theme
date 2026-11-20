@@ -712,6 +712,15 @@ function oec_chat_bubble(): void {
 	<?php
 }
 
+/* Botón "¿Qué quieres aprender?" de la home: el contenido ya está guardado en cada sitio con el ícono de
+   estrellas. Desde 1.0.231 el chat con IA usa un globo de charla en todos lados. */
+add_filter( 'the_content', static function ( $content ) {
+	if ( ! is_string( $content ) || false === strpos( $content, 'oec-ai-hero-trigger' ) ) {
+		return $content;
+	}
+	return (string) preg_replace( '#(<button\b[^>]*\bid="oec-ai-hero-trigger"[^>]*>.*?<i class="bi )bi-stars(")#s', '$1bi-chat-dots-fill$2', $content );
+}, 20 );
+
 add_filter( 'the_content', function ( $content ) {
 	$content = (string) $content;
 	if ( is_page( 'formacion' ) || false === stripos( $content, 'botmaker' ) ) {
@@ -739,7 +748,7 @@ add_filter( 'the_content', function ( $content ) {
 			$attrs = preg_replace( '/\s(?:id|data-msg|href|role)="[^"]*"/', '', $m[2] );
 			$attrs = str_replace( 'oec-botmaker-trigger', 'oec-chat-ia-trigger', $attrs );
 			return '<button' . ( 'a' === $m[1] ? ' type="button"' : '' ) . $attrs . ' data-msg="Hola">'
-				. esc_html__( 'Pregúntanos', 'oec-theme' ) . ' <i class="bi bi-stars"></i></button>';
+				. esc_html__( 'Pregúntanos', 'oec-theme' ) . ' <i class="bi bi-chat-dots-fill"></i></button>';
 		},
 		$content
 	) ?? $content );

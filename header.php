@@ -50,7 +50,7 @@
 			<!-- ── ASISTENTE IA (desktop) ───────────────────── -->
 			<div class="header-search" role="search" id="oec-ai-zone">
 				<div class="header-search__box" id="oec-ai-box">
-					<i class="bi bi-stars header-search__icon" aria-hidden="true"></i>
+					<i class="bi bi-chat-dots-fill header-search__icon" aria-hidden="true"></i>
 					<input type="text"
 					       id="oec-ai-header-input"
 					       class="header-search__input"
@@ -86,7 +86,7 @@
 				<button class="header-icon-btn" id="search-toggle"
 				        aria-label="<?php esc_attr_e( 'Abrir asistente IA', 'oec-theme' ); ?>"
 				        aria-expanded="false" aria-controls="header-search-mobile">
-					<i class="bi bi-stars" aria-hidden="true"></i>
+					<i class="bi bi-chat-dots-fill" aria-hidden="true"></i>
 				</button>
 
 				<button class="menu-toggle" id="menu-toggle"
@@ -103,7 +103,7 @@
 	<div class="header-search-mobile" id="header-search-mobile" hidden>
 		<div class="container">
 			<div class="header-search__box">
-				<i class="bi bi-stars header-search__icon" aria-hidden="true"></i>
+				<i class="bi bi-chat-dots-fill header-search__icon" aria-hidden="true"></i>
 				<input type="text" id="oec-ai-mobile-input" class="header-search__input"
 				       placeholder="<?php echo esc_attr( OEC_AI_Chat::placeholder() ); ?>"
 				       autocomplete="off" autofocus>
