@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.229
+Version: 1.0.230
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -4981,17 +4981,18 @@ body.oec-chat-open { overflow: hidden; }
 }
 
 /* ── Globo flotante del chat con IA (home, landings y listado; en la ficha lo
-   dibuja el plugin con la misma forma: .oec-float-chat) ── */
+   dibuja el plugin con la misma forma: .oec-float-chat). Globo de charla
+   (bi-chat-dots-fill), 64 px; 56 en celular (1.0.230). ── */
 .oec-chat-bubble {
   position: fixed; right: 20px; bottom: 20px; z-index: 9500;
-  width: 56px; height: 56px; padding: 0; border: 0; border-radius: 50%;
+  width: 64px; height: 64px; padding: 0; border: 0; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  background: var(--color-primary); color: #fff; font-size: 26px; cursor: pointer;
+  background: var(--color-primary); color: #fff; font-size: 30px; cursor: pointer;
   box-shadow: 0 4px 14px rgba(0,0,0,.25);
   transition: transform .2s ease;
 }
 .oec-chat-bubble:hover { transform: scale(1.08); }
-.oec-chat-bubble .bi-stars { line-height: 1; }
+.oec-chat-bubble > i { line-height: 1; }
 .oec-chat-bubble__tip {
   position: absolute; right: calc(100% + 12px); top: 50%; transform: translateY(-50%);
   white-space: nowrap; padding: 8px 12px; border-radius: 14px 14px 2px 14px;
@@ -5006,7 +5007,7 @@ body.oec-chat-open { overflow: hidden; }
   100% { opacity: 0; transform: translateY(-50%); }
 }
 body.oec-chat-open .oec-chat-bubble { display: none; }
-@media (max-width: 960px) { .oec-chat-bubble { width: 48px; height: 48px; font-size: 22px; } }
+@media (max-width: 960px) { .oec-chat-bubble { width: 56px; height: 56px; font-size: 26px; } }
 @media (prefers-reduced-motion: reduce) { .oec-chat-bubble__tip { animation: none; opacity: 1; } }
 
 /* ============================================================

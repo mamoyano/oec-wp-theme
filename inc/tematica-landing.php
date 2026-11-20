@@ -707,7 +707,7 @@ function oec_chat_bubble(): void {
 	?>
 	<button type="button" class="oec-chat-bubble oec-chat-ia-trigger" data-msg="Hola" aria-label="<?php esc_attr_e( 'Chatear con nuestro asistente con IA', 'oec-theme' ); ?>">
 		<span class="oec-chat-bubble__tip" aria-hidden="true"><?php esc_html_e( '¿Alguna pregunta?', 'oec-theme' ); ?></span>
-		<i class="bi bi-stars" aria-hidden="true"></i>
+		<i class="bi bi-chat-dots-fill" aria-hidden="true"></i>
 	</button>
 	<?php
 }
