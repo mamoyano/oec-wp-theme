@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.231
+Version: 1.0.232
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -3041,17 +3041,27 @@ body.oec-chat-open { overflow: hidden; }
   flex: 1 1 320px;
   max-width: 520px;
 }
-.docentes-search i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--color-muted); }
+/* Buscador destacado: borde en el azul de marca, sombra y lupa en color,
+   para que no pase desapercibido arriba de los listados. */
+.docentes-search i {
+  position: absolute; left: 18px; top: 50%; transform: translateY(-50%);
+  color: var(--color-primary); font-size: 1.1rem; pointer-events: none;
+}
 .docentes-search input {
   width: 100%;
-  padding: .75rem 1rem .75rem 2.5rem;
-  border: 1px solid var(--color-border);
+  padding: .95rem 1.25rem .95rem 3rem;
+  border: 2px solid rgba(var(--color-primary-rgb), .35);
   border-radius: 999px;
   background: var(--color-white);
+  box-shadow: 0 6px 20px rgba(var(--color-primary-rgb), .12), 0 1px 3px rgba(var(--color-primary-rgb), .08);
   font: inherit;
-  font-size: .9375rem;
+  font-size: 1rem;
+  color: var(--color-text);
+  transition: border-color .2s, box-shadow .2s;
 }
-.docentes-search input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), .15); }
+.docentes-search input::placeholder { color: rgba(var(--color-primary-rgb), .6); }
+.docentes-search input:hover { border-color: rgba(var(--color-primary-rgb), .6); box-shadow: 0 8px 24px rgba(var(--color-primary-rgb), .16), 0 1px 3px rgba(var(--color-primary-rgb), .08); }
+.docentes-search input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 8px 24px rgba(var(--color-primary-rgb), .18), 0 0 0 4px rgba(var(--color-accent-rgb), .55); }
 .docentes-sort { display: inline-flex; align-items: center; gap: .5rem; font-size: .875rem; color: var(--color-muted); }
 .docentes-sort select {
   padding: .55rem 2rem .55rem .85rem;
