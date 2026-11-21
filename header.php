@@ -236,7 +236,8 @@ class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 	function oecApplyCredits( balance ) {
 		document.querySelectorAll( '.nav-list a, .mega-menu__item' ).forEach( function ( a ) {
 			const text = a.textContent.trim().toLowerCase();
-			if ( text === 'créditos' || text === 'creditos' ) {
+			// Ya mostrado ("560 Créditos"): se reconoce por la clase, para poder actualizarlo sin recargar.
+			if ( a.classList.contains( 'nav-credits-link' ) || text === 'créditos' || text === 'creditos' ) {
 				a.classList.add( 'nav-credits-link' );
 				a.innerHTML =
 					'<span class="nav-credits-badge">' +
