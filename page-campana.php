@@ -88,6 +88,35 @@ get_header();
 		<div class="oec-cmpL-hero__grid" aria-hidden="true"></div>
 		<div class="oec-cmpL-hero__glow" aria-hidden="true"></div>
 		<div class="oec-cmpL-hero__pcts" aria-hidden="true"><span>%</span><span>%</span><span>%</span><span>%</span><span>%</span><span>%</span></div>
+		<?php
+		// Black Days: a la derecha, los días de la promo que se van encendiendo
+		// de a uno y un sello que gira (en curso, campaign.js marca el de hoy).
+		if ( 'black' === $oec_cmp_look && 'ended' !== $oec_cmp_phase ) :
+			$oec_cmp_days = [];
+			$oec_cmp_tz   = wp_timezone();
+			$oec_cmp_d0   = ( new DateTimeImmutable( '@' . $oec_cmp_t['start'] ) )->setTimezone( $oec_cmp_tz )->setTime( 0, 0 );
+			$oec_cmp_d1   = ( new DateTimeImmutable( '@' . $oec_cmp_t['end'] ) )->setTimezone( $oec_cmp_tz )->setTime( 0, 0 );
+			for ( $d = $oec_cmp_d0; $d <= $oec_cmp_d1 && count( $oec_cmp_days ) < 5; $d = $d->modify( '+1 day' ) ) {
+				$oec_cmp_days[] = $d;
+			}
+			$oec_cmp_ring = mb_strtoupper( 'Limited time ✦ ' . $oec_cmp_name . ' ✦ ' . ( $oec_cmp_live ? 'Ya empezó' : 'Se viene' ) . ' ✦ ' );
+			?>
+		<div class="oec-cmpL-days" aria-hidden="true" style="--n:<?php echo count( $oec_cmp_days ); ?>">
+			<ol class="oec-cmpL-days__list">
+				<?php foreach ( $oec_cmp_days as $i => $d ) : ?>
+				<li style="--i:<?php echo (int) $i; ?>" data-day="<?php echo esc_attr( $d->format( 'Y-m-d' ) ); ?>">
+					<span class="oec-cmpL-days__n"><?php echo esc_html( $d->format( 'j' ) ); ?></span>
+					<span class="oec-cmpL-days__w"><?php echo esc_html( mb_strtoupper( wp_date( 'D', $d->getTimestamp() ) ) ); ?><b><?php esc_html_e( 'Hoy', 'oec-theme' ); ?></b></span>
+				</li>
+				<?php endforeach; ?>
+			</ol>
+			<p class="oec-cmpL-days__month"><?php echo esc_html( mb_strtoupper( wp_date( 'F', $oec_cmp_t['end'] ) ) ); ?></p>
+			<div class="oec-cmpL-days__seal">
+				<svg viewBox="0 0 200 200"><defs><path id="oec-cmp-ring" d="M100,100 m-78,0 a78,78 0 1,1 156,0 a78,78 0 1,1 -156,0"/></defs><text><textPath href="#oec-cmp-ring" textLength="488"><?php echo esc_html( $oec_cmp_ring ); ?></textPath></text></svg>
+				<span><?php echo $oec_cmp_live && $oec_cmp_max ? esc_html( '−' . $oec_cmp_max . '%' ) : '%'; ?><small>OFF</small></span>
+			</div>
+		</div>
+		<?php endif; ?>
 		<div class="oec-cmpL-wrap oec-cmpL-hero__inner">
 			<?php oec_breadcrumb( [ [ __( 'Especiales', 'oec-theme' ), home_url( user_trailingslashit( '/especiales' ) ) ], [ $oec_cmp_name ] ] ); ?>
 			<p class="oec-cmp-eyebrow">

@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.234
+Version: 1.0.235
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5783,7 +5783,7 @@ html.oec-cmp--live:not(.oec-cmp-look--black) .btn-primary, html.oec-cmp--live:no
    cromadas (assets/img/campaign/, del diseño de Canva) y acento lima. ── */
 .oec-cmp-logo { display: inline-block; line-height: 0; }
 /* El logo viene sobre negro: "lighten" lo funde con el fondo y la máscara borra el borde. */
-.oec-cmp-logo img { display: block; width: 100%; height: auto; mix-blend-mode: lighten; -webkit-mask-image: radial-gradient(ellipse 62% 60% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 62% 60% at 50% 50%, #000 62%, transparent 100%); }
+.oec-cmp-logo img { display: block; width: 100%; height: auto; mix-blend-mode: lighten; -webkit-mask-image: radial-gradient(ellipse 58% 56% at 50% 52%, #000 55%, transparent 98%); mask-image: radial-gradient(ellipse 58% 56% at 50% 52%, #000 55%, transparent 98%); }
 .oec-cmp-look-black.oec-cmpL { background: #f2f2ef; }
 .oec-cmp-look-black .oec-cmpL-hero,
 .oec-cmp-look-black .oec-cmpL-block--dark,
@@ -5816,6 +5816,37 @@ html.oec-cmp--live:not(.oec-cmp-look--black) .btn-primary, html.oec-cmp--live:no
 .oec-cmp-banner.oec-cmp-look-black .oec-cmp-banner__title .oec-cmp-logo { width: 220px; }
 html.oec-cmp-look--black .oec-cmp-bar__name { letter-spacing: .14em; }
 html.oec-cmp-look--black .oec-cmp-toast { background: url(assets/img/campaign/black-days-grain.webp) 0 0 / 450px auto repeat, #000; }
+/* Días de la promo a la derecha del hero: se encienden de a uno (contorno → lima) */
+.oec-cmpL-days { position: absolute; z-index: 1; right: max(6%, calc((100% - 1280px) / 2)); top: 52%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+.oec-cmpL-days__list { margin: 0; padding: 0; list-style: none; text-align: right; }
+.oec-cmpL-days__list li { display: flex; align-items: center; justify-content: flex-end; gap: 16px; line-height: .95; }
+.oec-cmpL-days__n { font-size: clamp(84px, 8.4vw, 136px); font-weight: 900; letter-spacing: -.05em; color: transparent; -webkit-text-stroke: 2px rgba(255, 255, 255, .55); font-variant-numeric: tabular-nums; animation: oec-cmp-day calc(var(--n) * 1.3s) linear calc(var(--i) * 1.3s) infinite; }
+.oec-cmpL-days__w { order: -1; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; font-size: 13px; font-weight: 800; letter-spacing: .3em; color: rgba(255, 255, 255, .55); }
+.oec-cmpL-days__w b { display: none; padding: 3px 8px; border-radius: 999px; background: var(--cmp-accent); color: #000; letter-spacing: .14em; font-size: 11px; }
+@keyframes oec-cmp-day {
+  0% { color: transparent; -webkit-text-stroke-color: rgba(255, 255, 255, .55); text-shadow: none; }
+  6%, 26% { color: var(--cmp-accent); -webkit-text-stroke-color: var(--cmp-accent); text-shadow: 0 0 40px rgba(var(--cmp-accent-rgb), .45); }
+  36%, 100% { color: transparent; -webkit-text-stroke-color: rgba(255, 255, 255, .55); text-shadow: none; }
+}
+/* En curso: hoy queda encendido; los días que pasaron, apagados */
+.oec-cmpL-days.has-today .oec-cmpL-days__n { animation: none; }
+.oec-cmpL-days li.is-today .oec-cmpL-days__n { color: var(--cmp-accent); -webkit-text-stroke-color: var(--cmp-accent); animation: oec-cmp-today 1.6s ease-in-out infinite alternate; }
+.oec-cmpL-days li.is-today .oec-cmpL-days__w { color: var(--cmp-accent); }
+.oec-cmpL-days li.is-today .oec-cmpL-days__w b { display: block; }
+.oec-cmpL-days li.is-past { opacity: .25; }
+@keyframes oec-cmp-today { from { text-shadow: 0 0 18px rgba(var(--cmp-accent-rgb), .25); } to { text-shadow: 0 0 50px rgba(var(--cmp-accent-rgb), .6); } }
+.oec-cmpL-days__month { margin: 14px 0 0; font-size: 15px; font-weight: 800; letter-spacing: .5em; margin-right: -.5em; color: #fff; }
+/* Sello que gira, montado sobre la esquina de los números */
+.oec-cmpL-days__seal { position: absolute; left: -175px; top: -10px; width: 150px; height: 150px; display: grid; place-items: center; }
+.oec-cmpL-days__seal svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; animation: oec-cmp-spin 16s linear infinite; }
+.oec-cmpL-days__seal text { fill: #fff; font-size: 15.5px; font-weight: 800; letter-spacing: .14em; }
+.oec-cmpL-days__seal span { display: grid; place-items: center; width: 92px; height: 92px; border-radius: 50%; background: var(--cmp-accent); color: #000; font-size: 28px; font-weight: 900; line-height: .9; letter-spacing: -.03em; box-shadow: 0 0 40px rgba(var(--cmp-accent-rgb), .35); }
+.oec-cmpL-days__seal small { font-size: 12px; letter-spacing: .2em; }
+@keyframes oec-cmp-spin { to { transform: rotate(360deg); } }
+/* El texto del hero no se mete debajo de los días */
+.oec-cmp-look-black .oec-cmpL-hero__big, .oec-cmp-look-black .oec-cmpL-hero__lead { max-width: min(640px, 52vw); }
+@media (max-width: 1100px) { .oec-cmpL-days { display: none; } .oec-cmp-look-black .oec-cmpL-hero__big, .oec-cmp-look-black .oec-cmpL-hero__lead { max-width: 640px; } }
+@media (prefers-reduced-motion: reduce) { .oec-cmpL-days__n, .oec-cmpL-days__seal svg, .oec-cmpL-days li.is-today .oec-cmpL-days__n { animation: none; } }
 @media (max-width: 560px) {
   .oec-cmp-look-black .oec-cmpL-hero__title { margin-left: -8px; }
 }

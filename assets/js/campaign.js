@@ -55,6 +55,17 @@
   tick();
   setInterval(tick, 1000);
 
+  /* ── Landing Black Days: en curso, el día de hoy queda encendido ── */
+  if (live) {
+    const t = new Date();
+    const hoy = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate());
+    document.querySelectorAll('.oec-cmpL-days li[data-day]').forEach((li) => {
+      li.classList.toggle('is-today', li.dataset.day === hoy);
+      li.classList.toggle('is-past', li.dataset.day < hoy);
+    });
+    document.querySelector('.oec-cmpL-days')?.classList.add('has-today');
+  }
+
   /* ── Landing: filtros por % y por temática ──────────────────── */
   const filters = document.querySelector('[data-oec-cmp-filters]');
   if (filters) {
