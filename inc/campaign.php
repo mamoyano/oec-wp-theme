@@ -38,6 +38,7 @@ defined( 'ABSPATH' ) || exit;
    ============================================================ */
 
 const OEC_CMP_OPTION = 'oec_campaign';
+const OEC_CMP_SAVED  = 'oec_campaigns_saved'; // las otras campañas, guardadas (slug => opciones)
 const OEC_CMP_DATA   = 'oec_campaign_data';
 const OEC_CMP_PRICES = 'https://api.onlineeducation.center/api-oas/v1/trainings/';
 
@@ -53,11 +54,52 @@ function oec_cmp_defaults(): array {
 		'start'       => '2026-11-02 00:00', // hora del sitio
 		'end'         => '2026-11-04 23:59',
 		'teaser_days' => 4,
+		'look'        => 'cyber',
 		// Azul oscuro con verde muy claro de acento (para Black Friday, negros).
 		'dark'        => '#0a1633',
 		'dark_2'      => '#15397a',
 		'accent'      => '#a8f5c9',
 	];
+}
+
+/**
+ * Estilos de campaña: cómo se ve el logotipo y el fondo de la landing, la
+ * franja del home y el banner. Cada uno con su paleta sugerida (se carga
+ * en los colores al elegirlo en el admin).
+ * - cyber: el nombre en letras con glitch y grilla que avanza (Cyber G-SE).
+ * - black: negro con grano, "BLACK DAYS" en letras cromadas (diseño de
+ *   Canva del equipo, assets/img/campaign/) y acento amarillo lima.
+ */
+function oec_cmp_looks(): array {
+	return [
+		'cyber' => [ 'label' => 'Cyber (azul, letras con glitch)', 'dark' => '#0a1633', 'dark_2' => '#15397a', 'accent' => '#a8f5c9' ],
+		'black' => [ 'label' => 'Black Days (negro con grano, letras cromadas)', 'dark' => '#000000', 'dark_2' => '#231f20', 'accent' => '#eeff85' ],
+	];
+}
+
+/** Las campañas guardadas (las que no están en uso), slug => opciones. */
+function oec_cmp_saved(): array {
+	$saved = [];
+	foreach ( (array) get_option( OEC_CMP_SAVED, [] ) as $slug => $o ) {
+		$saved[ $slug ] = wp_parse_args( (array) $o, oec_cmp_defaults() );
+	}
+	return $saved;
+}
+
+/**
+ * Opciones de la campaña de la landing que se está viendo: la actual o,
+ * en la landing de una campaña guardada, la suya (para que siga con su
+ * nombre, sus colores y su estilo mostrando "terminó").
+ */
+function oec_cmp_page_opts(): array {
+	if ( oec_is_campaign_page() && ! oec_cmp_is_current_page() ) {
+		$slug = (string) get_post_field( 'post_name', get_queried_object_id() );
+		$saved = oec_cmp_saved();
+		if ( isset( $saved[ $slug ] ) ) {
+			return $saved[ $slug ];
+		}
+	}
+	return oec_cmp_opts();
 }
 
 function oec_cmp_opts(): array {
@@ -401,6 +443,7 @@ function oec_cmp_front_data(): ?array {
 		'page'    => oec_is_campaign_page() ? 'landing' : ( is_page( 'formacion' ) ? 'ficha' : ( is_front_page() ? 'home' : '' ) ),
 		'preview' => $preview,
 		'key'     => sanitize_key( $o['slug'] ),
+		'look'    => sanitize_key( $o['look'] ),
 	];
 }
 
@@ -413,32 +456,42 @@ add_action( 'wp_head', function (): void {
 	}
 	$js = 'window.OEC_CMP=' . wp_json_encode( $d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . ';'
 		. '(function(c){var n=Date.now(),p=c.preview||(n<c.teaser?"":n<c.start?"teaser":n<=c.end?"live":"");c.phase=p;'
-		. 'if(p==="teaser"||p==="live"){document.documentElement.classList.add("oec-cmp","oec-cmp--"+p);}})(window.OEC_CMP);';
+		. 'if(p==="teaser"||p==="live"){document.documentElement.classList.add("oec-cmp","oec-cmp--"+p,"oec-cmp-look--"+c.look);}})(window.OEC_CMP);';
 	echo "<script id=\"oec-cmp-data\">{$js}</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- JSON
 }, 2 );
 
 // Colores de la campaña. Después de los de Ajustes OEC (prioridad 100):
-// en curso, el sitio entero toma el azul de la campaña en los fondos
-// oscuros (hero, pie) y su verde como acento.
+// en curso, el sitio entero toma el fondo oscuro de la campaña (hero, pie)
+// y, salvo Black Days, su acento.
 add_action( 'wp_head', function (): void {
 	if ( ! oec_cmp_front_data() && ! oec_is_campaign_page() ) {
 		return;
 	}
-	$o   = oec_cmp_opts();
+	// Los de la campaña de esta landing (una guardada conserva los suyos)…
+	$o   = oec_cmp_page_opts();
 	$css = sprintf(
-		':root{--cmp-dark:%1$s;--cmp-dark-2:%2$s;--cmp-accent:%3$s;--cmp-accent-rgb:%4$s;--cmp-dark-rgb:%5$s}'
-		. 'html.oec-cmp--live:root{--color-dark:%1$s;--color-dark-2:%2$s;--color-dark-rgb:%5$s;--color-accent:%6$s;--color-accent-hover:%7$s;--color-accent-rgb:%8$s}',
+		':root{--cmp-dark:%1$s;--cmp-dark-2:%2$s;--cmp-accent:%3$s;--cmp-accent-rgb:%4$s;--cmp-dark-rgb:%5$s}',
 		esc_attr( $o['dark'] ),
 		esc_attr( $o['dark_2'] ),
 		esc_attr( $o['accent'] ),
 		esc_attr( oec_hex_to_rgb_list( $o['accent'] ) ),
-		esc_attr( oec_hex_to_rgb_list( $o['dark'] ) ),
-		// Sobre fondo blanco el verde muy claro no se lee: como acento del
-		// sitio va el mismo tono, más intenso y oscuro.
-		esc_attr( oec_cmp_strong( $o['accent'] ) ),
-		esc_attr( oec_cmp_strong( $o['accent'], .32 ) ),
-		esc_attr( oec_hex_to_rgb_list( oec_cmp_strong( $o['accent'] ) ) )
+		esc_attr( oec_hex_to_rgb_list( $o['dark'] ) )
 	);
+	// …y en curso, el sitio entero toma los de la campaña en uso. Sobre fondo
+	// blanco el acento claro no se lee: va el mismo tono, más intenso y oscuro.
+	// Black Days: solo los fondos oscuros pasan a negro; el sitio conserva su
+	// acento (el lima intenso es un oliva que no es la marca).
+	$c    = oec_cmp_opts();
+	$css .= sprintf( 'html.oec-cmp--live:root{--color-dark:%1$s;--color-dark-2:%2$s;--color-dark-rgb:%3$s', esc_attr( $c['dark'] ), esc_attr( $c['dark_2'] ), esc_attr( oec_hex_to_rgb_list( $c['dark'] ) ) );
+	if ( 'black' !== $c['look'] ) {
+		$css .= sprintf(
+			';--color-accent:%1$s;--color-accent-hover:%2$s;--color-accent-rgb:%3$s',
+			esc_attr( oec_cmp_strong( $c['accent'] ) ),
+			esc_attr( oec_cmp_strong( $c['accent'], .32 ) ),
+			esc_attr( oec_hex_to_rgb_list( oec_cmp_strong( $c['accent'] ) ) )
+		);
+	}
+	$css .= '}';
 	echo "<style id=\"oec-cmp-colors\">{$css}</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- colores saneados
 }, 101 );
 
@@ -482,7 +535,7 @@ function oec_cmp_render_home(): string {
 	$url = oec_cmp_url( $o );
 	ob_start();
 	?>
-	<section class="oec-cmp-home" data-oec-cmp-phase="<?php echo esc_attr( $phase ); ?>">
+	<section class="oec-cmp-home oec-cmp-look-<?php echo esc_attr( $o['look'] ); ?>" data-oec-cmp-phase="<?php echo esc_attr( $phase ); ?>">
 		<div class="oec-cmp-home__wrap">
 			<div class="oec-cmp-home__head">
 				<div>
@@ -550,7 +603,7 @@ function oec_cmp_banner(): string {
 		: sprintf( 'Descuentos fuertes en %d formaciones, solo por %s. Mirá desde ahora cuáles participan.', count( $rows ), oec_cmp_duracion_texto( $o ) );
 	ob_start();
 	?>
-	<a class="oec-cmp-banner" href="<?php echo esc_url( oec_cmp_url( $o ) ); ?>" data-oec-cmp-phase="<?php echo esc_attr( $phase ); ?>">
+	<a class="oec-cmp-banner oec-cmp-look-<?php echo esc_attr( $o['look'] ); ?>" href="<?php echo esc_url( oec_cmp_url( $o ) ); ?>" data-oec-cmp-phase="<?php echo esc_attr( $phase ); ?>">
 		<span class="oec-cmp-banner__title"><?php echo oec_cmp_wordmark( $o['name'] ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></span>
 		<span class="oec-cmp-banner__text"><strong><?php echo esc_html( $head ); ?></strong><span><?php echo esc_html( $text ); ?></span></span>
 		<span class="oec-cmp-banner__side">
@@ -568,7 +621,11 @@ function oec_cmp_banner(): string {
  * Nombre de la campaña como logotipo: la primera palabra grande, con
  * efecto glitch (CSS, data-text), y el resto ("G-SE") en el acento.
  */
-function oec_cmp_wordmark( string $name ): string {
+function oec_cmp_wordmark( string $name, ?string $look = null ): string {
+	if ( 'black' === ( $look ?? oec_cmp_opts()['look'] ) ) {
+		// Las letras cromadas del diseño (fondo negro: se funde con el de la campaña).
+		return '<span class="oec-cmp-logo"><img src="' . esc_url( OEC_THEME_URI . '/assets/img/campaign/black-days-logo.webp' ) . '" width="1100" height="787" alt="' . esc_attr( $name ) . '" decoding="async"></span>';
+	}
 	$parts = preg_split( '/\s+/', trim( $name ), 2 );
 	$first = mb_strtoupper( $parts[0] ?? '' );
 	return '<span class="oec-cmp-word"><span class="oec-cmp-word__main" data-text="' . esc_attr( $first ) . '">' . esc_html( $first ) . '</span>'
@@ -696,10 +753,16 @@ add_action( 'admin_post_oec_cmp_save', function (): void {
 		'start'       => $dt( $raw['start'] ?? '' ) ?: $d['start'],
 		'end'         => $dt( $raw['end'] ?? '' ) ?: $d['end'],
 		'teaser_days' => min( 14, max( 0, (int) ( $raw['teaser_days'] ?? $d['teaser_days'] ) ) ),
+		'look'        => isset( oec_cmp_looks()[ $raw['look'] ?? '' ] ) ? $raw['look'] : $d['look'],
 		'dark'        => sanitize_hex_color( $raw['dark'] ?? '' ) ?: $d['dark'],
 		'dark_2'      => sanitize_hex_color( $raw['dark_2'] ?? '' ) ?: $d['dark_2'],
 		'accent'      => sanitize_hex_color( $raw['accent'] ?? '' ) ?: $d['accent'],
 	];
+	if ( isset( oec_cmp_saved()[ $o['slug'] ] ) ) {
+		// Esa dirección es de una campaña guardada: se pisarían las landings.
+		wp_safe_redirect( add_query_arg( [ 'page' => 'oec-campanas', 'oec_cmp_msg' => 'slug' ], admin_url( 'admin.php' ) ) );
+		exit;
+	}
 	$prev = oec_cmp_opts();
 	update_option( OEC_CMP_OPTION, $o, false );
 	if ( $prev['tag'] !== $o['tag'] ) {
@@ -716,6 +779,58 @@ add_action( 'admin_post_oec_cmp_save', function (): void {
 		oec_cf_queue( [], true ); // la barra, el tono y las marcas están en todas las páginas
 	}
 	wp_safe_redirect( add_query_arg( [ 'page' => 'oec-campanas', 'oec_cmp_msg' => 'saved' ], admin_url( 'admin.php' ) ) );
+	exit;
+} );
+
+/**
+ * Cambiar de campaña sin borrar ninguna: la actual se guarda en la lista
+ * (con su landing, que queda mostrando "terminó") y pasa a editarse otra
+ * guardada o una nueva. Solo una está en uso a la vez: la de este form.
+ */
+add_action( 'admin_post_oec_cmp_switch', function (): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'Sin permiso.', 'oec-theme' ) );
+	}
+	check_admin_referer( 'oec_cmp_switch' );
+	$to    = sanitize_title( wp_unslash( $_POST['to'] ?? '' ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+	$cur   = oec_cmp_opts();
+	$saved = oec_cmp_saved();
+	if ( '' === $to || ( 'nueva' !== $to && ! isset( $saved[ $to ] ) ) ) {
+		wp_safe_redirect( add_query_arg( [ 'page' => 'oec-campanas' ], admin_url( 'admin.php' ) ) );
+		exit;
+	}
+	if ( 'nueva' === $to ) {
+		// Apagada, para cargarla con calma; empieza en una semana.
+		$tz   = wp_timezone();
+		$day  = ( new DateTimeImmutable( 'now', $tz ) )->modify( '+7 days' );
+		$slug = 'nueva-campana';
+		for ( $i = 2; isset( $saved[ $slug ] ) || $slug === $cur['slug']; $i++ ) {
+			$slug = 'nueva-campana-' . $i;
+		}
+		$next = array_merge( oec_cmp_defaults(), [
+			'enabled' => false,
+			'name'    => 'Nueva campaña',
+			'slug'    => $slug,
+			'tag'     => '',
+			'start'   => $day->format( 'Y-m-d' ) . ' 00:00',
+			'end'     => $day->modify( '+1 day' )->format( 'Y-m-d' ) . ' 23:59',
+		] );
+	} else {
+		$next = $saved[ $to ];
+		unset( $saved[ $to ] );
+	}
+	$saved[ $cur['slug'] ] = $cur;
+	update_option( OEC_CMP_SAVED, $saved, false );
+	update_option( OEC_CMP_OPTION, $next, false );
+	delete_option( OEC_CMP_DATA ); // los descuentos guardados eran de la otra campaña
+	oec_cmp_schedule();
+	if ( oec_cmp_window() && ! wp_next_scheduled( 'oec_cmp_refresh' ) ) {
+		wp_schedule_single_event( time() + 5, 'oec_cmp_refresh' );
+	}
+	if ( function_exists( 'oec_cf_queue' ) ) {
+		oec_cf_queue( [], true );
+	}
+	wp_safe_redirect( add_query_arg( [ 'page' => 'oec-campanas', 'oec_cmp_msg' => 'switched' ], admin_url( 'admin.php' ) ) );
 	exit;
 } );
 
@@ -753,7 +868,51 @@ function oec_cmp_render_admin(): void {
 	<div class="wrap oec-settings-wrap">
 		<h1><?php esc_html_e( 'Campañas', 'oec-theme' ); ?></h1>
 		<?php if ( 'saved' === $msg ) : ?><div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Campaña guardada. Se borró la caché de todo el sitio.', 'oec-theme' ); ?></p></div><?php endif; ?>
+		<?php if ( 'switched' === $msg ) : ?><div class="notice notice-success is-dismissible"><p><?php esc_html_e( 'Listo: la campaña anterior quedó guardada. Abajo estás editando la que está en uso.', 'oec-theme' ); ?></p></div><?php endif; ?>
+		<?php if ( 'slug' === $msg ) : ?><div class="notice notice-error is-dismissible"><p><?php esc_html_e( 'No se guardó: esa dirección ya es de una campaña guardada. Elegí otra (por ejemplo, con el año).', 'oec-theme' ); ?></p></div><?php endif; ?>
 		<?php if ( 'refreshed' === $msg ) : ?><div class="notice notice-success is-dismissible"><p><?php echo esc_html( sprintf( 'Descuentos actualizados: %d formaciones consultadas%s.', count( $data['items'] ), $data['errors'] ? sprintf( ', %d con error (quedó su dato anterior)', $data['errors'] ) : '' ) ); ?></p></div><?php endif; ?>
+
+		<?php
+		$saved = oec_cmp_saved();
+		uasort( $saved, fn( $a, $b ) => strcmp( (string) $b['start'], (string) $a['start'] ) );
+		$looks = oec_cmp_looks();
+		?>
+		<div class="oec-card">
+			<h2 style="margin-top:0"><?php esc_html_e( 'Tus campañas', 'oec-theme' ); ?></h2>
+			<p><?php esc_html_e( 'Se usa una a la vez: la que editás más abajo. Las otras quedan guardadas con todos sus datos (para repetirlas el año que viene) y su landing sigue mostrando "terminó".', 'oec-theme' ); ?></p>
+			<table class="widefat striped" style="max-width:900px">
+				<thead><tr><th><?php esc_html_e( 'Campaña', 'oec-theme' ); ?></th><th><?php esc_html_e( 'Fechas', 'oec-theme' ); ?></th><th><?php esc_html_e( 'Estilo', 'oec-theme' ); ?></th><th></th></tr></thead>
+				<tbody>
+					<tr>
+						<td><strong><?php echo esc_html( $o['name'] ); ?></strong><br><code>/especiales/<?php echo esc_html( $o['slug'] ); ?></code></td>
+						<td><?php echo esc_html( wp_date( 'j/n/Y', $t['start'] ) . ' – ' . wp_date( 'j/n/Y', $t['end'] ) ); ?></td>
+						<td><?php echo esc_html( strtok( $looks[ $o['look'] ]['label'] ?? $o['look'], ' ' ) ); ?></td>
+						<td><span style="display:inline-block;padding:2px 10px;border-radius:999px;color:#fff;background:#2271b1"><?php esc_html_e( 'En uso (abajo)', 'oec-theme' ); ?></span></td>
+					</tr>
+					<?php foreach ( $saved as $slug => $s ) :
+						$st = oec_cmp_times( $s );
+						?>
+					<tr>
+						<td><?php echo esc_html( $s['name'] ); ?><br><code>/especiales/<?php echo esc_html( $slug ); ?></code></td>
+						<td><?php echo esc_html( $st['start'] ? wp_date( 'j/n/Y', $st['start'] ) . ' – ' . wp_date( 'j/n/Y', $st['end'] ) : '—' ); ?></td>
+						<td><?php echo esc_html( strtok( $looks[ $s['look'] ]['label'] ?? $s['look'], ' ' ) ); ?></td>
+						<td>
+							<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:0" onsubmit="return confirm(<?php echo esc_attr( wp_json_encode( sprintf( '¿Pasar a usar "%s"? "%s" queda guardada, con todos sus datos.', $s['name'], $o['name'] ) ) ); ?>)">
+								<input type="hidden" name="action" value="oec_cmp_switch"><input type="hidden" name="to" value="<?php echo esc_attr( $slug ); ?>">
+								<?php wp_nonce_field( 'oec_cmp_switch' ); ?>
+								<button type="submit" class="button"><?php esc_html_e( 'Usar y editar esta', 'oec-theme' ); ?></button>
+							</form>
+						</td>
+					</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin:14px 0 0" onsubmit="return confirm(<?php echo esc_attr( wp_json_encode( sprintf( '¿Crear una campaña nueva? "%s" queda guardada, con todos sus datos.', $o['name'] ) ) ); ?>)">
+				<input type="hidden" name="action" value="oec_cmp_switch"><input type="hidden" name="to" value="nueva">
+				<?php wp_nonce_field( 'oec_cmp_switch' ); ?>
+				<button type="submit" class="button button-primary"><span class="dashicons dashicons-plus-alt2" style="vertical-align:text-bottom"></span> <?php esc_html_e( 'Nueva campaña', 'oec-theme' ); ?></button>
+			</form>
+		</div>
 
 		<div class="oec-card">
 			<p style="margin-top:0">
@@ -783,7 +942,7 @@ function oec_cmp_render_admin(): void {
 				<tr><th scope="row"><?php esc_html_e( 'Activa', 'oec-theme' ); ?></th>
 					<td><label><input type="checkbox" name="oec_cmp[enabled]" value="1" <?php checked( $o['enabled'] ); ?>> <?php esc_html_e( 'Mostrar la campaña en las fechas de abajo', 'oec-theme' ); ?></label></td></tr>
 				<tr><th scope="row"><label for="oec-cmp-name"><?php esc_html_e( 'Nombre', 'oec-theme' ); ?></label></th>
-					<td><input type="text" id="oec-cmp-name" name="oec_cmp[name]" value="<?php echo esc_attr( $o['name'] ); ?>" class="regular-text"><p class="description"><?php esc_html_e( 'Como se ve en el sitio: "Cyber G-SE". La primera palabra va grande, como logo.', 'oec-theme' ); ?></p></td></tr>
+					<td><input type="text" id="oec-cmp-name" name="oec_cmp[name]" value="<?php echo esc_attr( $o['name'] ); ?>" class="regular-text"><p class="description"><?php esc_html_e( 'Como se ve en el sitio: "Cyber G-SE". Con el estilo Cyber, la primera palabra va grande, como logo; con Black Days, el logo es el del diseño.', 'oec-theme' ); ?></p></td></tr>
 				<tr><th scope="row"><label for="oec-cmp-slug"><?php esc_html_e( 'Dirección', 'oec-theme' ); ?></label></th>
 					<td><code><?php echo esc_html( home_url( '/especiales/' ) ); ?></code><input type="text" id="oec-cmp-slug" name="oec_cmp[slug]" value="<?php echo esc_attr( $o['slug'] ); ?>"><p class="description"><?php esc_html_e( 'La página se crea sola al guardar (hija de Especiales). Cada campaña nueva, una dirección nueva: la anterior queda mostrando "terminó".', 'oec-theme' ); ?></p></td></tr>
 				<tr><th scope="row"><label for="oec-cmp-tag"><?php esc_html_e( 'Grupo de la API', 'oec-theme' ); ?></label></th>
@@ -794,6 +953,14 @@ function oec_cmp_render_admin(): void {
 				<tr><th scope="row"><label for="oec-cmp-teaser"><?php esc_html_e( '"Se viene"', 'oec-theme' ); ?></label></th>
 					<td><input type="number" id="oec-cmp-teaser" name="oec_cmp[teaser_days]" value="<?php echo (int) $o['teaser_days']; ?>" min="0" max="14" style="width:5em"> <?php esc_html_e( 'días antes', 'oec-theme' ); ?>
 						<p class="description"><?php echo esc_html( sprintf( 'Barra y landing con cuenta regresiva al inicio y suscripción al newsletter. El newsletter semanal la anuncia desde %d días antes.', OEC_CMP_NL_DAYS ) ); ?></p></td></tr>
+				<tr><th scope="row"><label for="oec-cmp-look"><?php esc_html_e( 'Estilo', 'oec-theme' ); ?></label></th>
+					<td><select id="oec-cmp-look" name="oec_cmp[look]">
+						<?php foreach ( $looks as $k => $l ) : ?>
+						<option value="<?php echo esc_attr( $k ); ?>" data-colors="<?php echo esc_attr( wp_json_encode( [ $l['dark'], $l['dark_2'], $l['accent'] ] ) ); ?>" <?php selected( $o['look'], $k ); ?>><?php echo esc_html( $l['label'] ); ?></option>
+						<?php endforeach; ?>
+					</select>
+					<p class="description"><?php esc_html_e( 'El logotipo y el fondo de la landing, la franja del home y el banner. Al cambiarlo se cargan sus colores (se pueden ajustar).', 'oec-theme' ); ?></p>
+					<script>document.getElementById('oec-cmp-look').addEventListener('change',function(){var c=JSON.parse(this.selectedOptions[0].dataset.colors);['dark','dark_2','accent'].forEach(function(k,i){document.querySelector('[name="oec_cmp['+k+']"]').value=c[i];});});</script></td></tr>
 				<tr><th scope="row"><?php esc_html_e( 'Colores', 'oec-theme' ); ?></th>
 					<td>
 						<label><input type="color" name="oec_cmp[dark]" value="<?php echo esc_attr( $o['dark'] ); ?>"> <?php esc_html_e( 'Fondo', 'oec-theme' ); ?></label> &nbsp;

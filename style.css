@@ -4,7 +4,7 @@ Theme URI: https://github.com/mamoyano/oec-wp-theme
 Author: OEC - Dpto. IT
 Author URI: https://oec.edu
 Description: Tema corporativo liviano para OEC Educación Online.
-Version: 1.0.233
+Version: 1.0.234
 Requires at least: 6.0
 Tested up to: 6.7
 Requires PHP: 8.0
@@ -5549,7 +5549,7 @@ a.oec-live-docente:hover .oec-live-docente__foto { transform: scale(1.05); }
    ============================================================ */
 
 /* Botones con texto blanco sobre el acento: con el verde de la campaña, texto oscuro. */
-html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(--color-dark); }
+html.oec-cmp--live:not(.oec-cmp-look--black) .btn-primary, html.oec-cmp--live:not(.oec-cmp-look--black) .btn--primary { color: var(--color-dark); }
 
 .oec-cmp-eyebrow { display: inline-flex; align-items: center; gap: .45rem; margin: 0 0 14px; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--cmp-accent); }
 .oec-cmp-eyebrow--dark { color: var(--cmp-dark-2); }
@@ -5777,6 +5777,47 @@ html.oec-cmp--live .btn-primary, html.oec-cmp--live .btn--primary { color: var(-
 @media (max-width: 860px) {
   .oec-cmp-banner { grid-template-columns: minmax(0, 1fr); padding: 22px; }
   .oec-cmp-banner__side { align-items: flex-start; }
+}
+
+/* ── Estilo Black Days (look "black"): negro con grano, logo con letras
+   cromadas (assets/img/campaign/, del diseño de Canva) y acento lima. ── */
+.oec-cmp-logo { display: inline-block; line-height: 0; }
+/* El logo viene sobre negro: "lighten" lo funde con el fondo y la máscara borra el borde. */
+.oec-cmp-logo img { display: block; width: 100%; height: auto; mix-blend-mode: lighten; -webkit-mask-image: radial-gradient(ellipse 62% 60% at 50% 50%, #000 62%, transparent 100%); mask-image: radial-gradient(ellipse 62% 60% at 50% 50%, #000 62%, transparent 100%); }
+.oec-cmp-look-black.oec-cmpL { background: #f2f2ef; }
+.oec-cmp-look-black .oec-cmpL-hero,
+.oec-cmp-look-black .oec-cmpL-block--dark,
+.oec-cmp-home.oec-cmp-look-black,
+.oec-cmp-banner.oec-cmp-look-black { background: url(assets/img/campaign/black-days-grain.webp) 0 0 / 450px auto repeat, #000; }
+.oec-cmp-banner.oec-cmp-look-black { box-shadow: 0 0 0 1px rgba(var(--cmp-accent-rgb), .3); }
+.oec-cmp-look-black .oec-cmpL-hero__grid, .oec-cmp-look-black .oec-cmpL-hero__pcts { display: none; }
+.oec-cmp-look-black .oec-cmpL-hero__glow { right: auto; left: -6%; top: -4%; width: 52vw; max-width: 720px; background: radial-gradient(circle, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, 0) 62%); }
+.oec-cmp-look-black .oec-cmp-eyebrow { letter-spacing: .24em; }
+.oec-cmp-look-black .oec-cmpL-hero__title { margin: -8px 0 6px -14px; font-size: 0; }
+.oec-cmp-look-black .oec-cmpL-hero__title .oec-cmp-logo { width: min(580px, 100%); }
+.oec-cmp-look-black .oec-cmpL-hero__big { text-transform: uppercase; letter-spacing: -.01em; font-weight: 900; }
+.oec-cmp-look-black .oec-cmpL-hero__big strong { text-shadow: none; }
+.oec-cmp-look-black .oec-cmp-cd__u { background: rgba(0, 0, 0, .7); box-shadow: none; border-color: rgba(255, 255, 255, .22); }
+.oec-cmp-look-black .oec-cmp-cd__n { font-weight: 900; letter-spacing: -.02em; }
+.oec-cmp-look-black .oec-cmp-btn { border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; font-size: 14px; }
+.oec-cmp-look-black .oec-cmp-btn--ghost { border-color: rgba(255, 255, 255, .5); }
+.oec-cmp-look-black .oec-cmpL-tape { transform: rotate(-1.6deg); }
+.oec-cmp-look-black .oec-cmpL-tape__track { letter-spacing: .16em; }
+.oec-cmp-look-black .oec-cmpL-steps li { border-color: #e2e2dc; border-radius: 6px; box-shadow: none; }
+.oec-cmp-look-black .oec-cmpL-steps__n { border-radius: 50%; }
+.oec-cmp-look-black .oec-cmpL-faq .oec-faq-item { border-color: #e2e2dc; border-radius: 6px; }
+.oec-cmp-look-black .oec-cmpL-chip { border-color: #d6d6cf; }
+.oec-cmp-look-black .oec-cmpL-chat__icon { border-radius: 50%; }
+.oec-cmp-look-black .oec-cmpL-cierre__title { font-size: 0; }
+.oec-cmp-look-black .oec-cmpL-cierre__title .oec-cmp-logo { width: min(440px, 90%); }
+.oec-cmp-home.oec-cmp-look-black .oec-cmp-home__title { font-size: 0; margin-left: -10px; }
+.oec-cmp-home.oec-cmp-look-black .oec-cmp-home__title .oec-cmp-logo { width: min(360px, 80vw); }
+.oec-cmp-banner.oec-cmp-look-black .oec-cmp-banner__title { font-size: 0; }
+.oec-cmp-banner.oec-cmp-look-black .oec-cmp-banner__title .oec-cmp-logo { width: 220px; }
+html.oec-cmp-look--black .oec-cmp-bar__name { letter-spacing: .14em; }
+html.oec-cmp-look--black .oec-cmp-toast { background: url(assets/img/campaign/black-days-grain.webp) 0 0 / 450px auto repeat, #000; }
+@media (max-width: 560px) {
+  .oec-cmp-look-black .oec-cmpL-hero__title { margin-left: -8px; }
 }
 
 /* ── Visor de PDF [oec-pdf] (inc/pdf-viewer.php, assets/js/pdf-viewer.js) ── */

@@ -16,6 +16,7 @@ if ( 'off' === $oec_cmp_phase ) {
 	$oec_cmp_phase = 'teaser'; // desactivada o antes del "se viene": se ve como "se viene" (para revisarla)
 }
 $oec_cmp_name  = $oec_cmp_actual ? (string) $oec_cmp_o['name'] : get_the_title();
+$oec_cmp_look  = (string) oec_cmp_page_opts()['look']; // una guardada conserva su estilo
 $oec_cmp_t     = oec_cmp_times( $oec_cmp_o );
 $oec_cmp_rows  = $oec_cmp_actual && 'ended' !== $oec_cmp_phase ? oec_cmp_formaciones( $oec_cmp_phase ) : [];
 $oec_cmp_max   = oec_cmp_max_pct( $oec_cmp_rows );
@@ -37,8 +38,8 @@ $oec_cmp_pcts = $oec_cmp_live ? array_values( array_unique( array_filter( array_
 rsort( $oec_cmp_pcts );
 
 $oec_cmp_chat = $oec_cmp_live
-	? __( 'Hola, ¿qué formación del Cyber me recomiendas?', 'oec-theme' )
-	: __( 'Hola, ¿qué formaciones van a estar en el Cyber?', 'oec-theme' );
+	? sprintf( 'Hola, ¿qué formación del %s me recomiendas?', $oec_cmp_name )
+	: sprintf( 'Hola, ¿qué formaciones van a estar en el %s?', $oec_cmp_name );
 
 $oec_cmp_faq = [
 	[
@@ -80,7 +81,7 @@ add_filter( 'oec_seo', function ( $c ) use ( $oec_cmp_name, $oec_cmp_max, $oec_c
 
 get_header();
 ?>
-<main id="main-content" class="oec-cmpL oec-cmpL--<?php echo esc_attr( $oec_cmp_phase ); ?>" data-oec-cmp-landing="<?php echo esc_attr( $oec_cmp_phase ); ?>">
+<main id="main-content" class="oec-cmpL oec-cmpL--<?php echo esc_attr( $oec_cmp_phase ); ?> oec-cmp-look-<?php echo esc_attr( $oec_cmp_look ); ?>" data-oec-cmp-landing="<?php echo esc_attr( $oec_cmp_phase ); ?>">
 
 	<?php /* ── HERO ── */ ?>
 	<section class="oec-cmpL-hero">
@@ -101,7 +102,7 @@ get_header();
 				}
 				?>
 			</p>
-			<h1 class="oec-cmpL-hero__title"><?php echo oec_cmp_wordmark( $oec_cmp_name ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></h1>
+			<h1 class="oec-cmpL-hero__title"><?php echo oec_cmp_wordmark( $oec_cmp_name, $oec_cmp_look ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></h1>
 
 			<?php if ( 'ended' === $oec_cmp_phase ) : ?>
 			<p class="oec-cmpL-hero__big"><?php esc_html_e( 'Terminó. ¡Gracias por sumarte!', 'oec-theme' ); ?></p>
@@ -292,7 +293,7 @@ get_header();
 	<?php /* ── CIERRE ── */ ?>
 	<section class="oec-cmpL-block oec-cmpL-block--dark oec-cmpL-cierre">
 		<div class="oec-cmpL-wrap">
-			<p class="oec-cmpL-cierre__title"><?php echo oec_cmp_wordmark( $oec_cmp_name ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></p>
+			<p class="oec-cmpL-cierre__title"><?php echo oec_cmp_wordmark( $oec_cmp_name, $oec_cmp_look ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?></p>
 			<p class="oec-cmpL-hero__lead"><?php echo esc_html( $oec_cmp_live ? 'Cuando el contador llega a cero, los precios vuelven a la normalidad.' : sprintf( 'Empieza %s a las %s.', wp_date( 'l j \d\e F', $oec_cmp_t['start'] ), wp_date( 'H:i', $oec_cmp_t['start'] ) ) ); ?></p>
 			<?php echo oec_cmp_countdown( $oec_cmp_live ? $oec_cmp_t['end'] : $oec_cmp_t['start'], $oec_cmp_live ? 'Termina en' : 'Empieza en', 'oec-cmp-cd--md' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escapado adentro ?>
 			<?php if ( $oec_cmp_rows ) : ?>
