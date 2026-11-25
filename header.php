@@ -282,6 +282,18 @@ class OEC_Walker_Mega_Menu extends Walker_Nav_Menu {
 		oecApplyCredits( e.detail.balance );
 	} );
 	window.addEventListener( 'oec:credits-reset', oecClearCredits );
+	// Saldo cambiado en OTRA pestaña (p. ej. la confirmación del canje, que se
+	// abre desde el email): el localStorage es compartido pero el sessionStorage
+	// de esta pestaña quedó con el saldo viejo y se lee primero. Se pisa y se
+	// avisa con el mismo evento, así se actualizan header, ficha y bloques.
+	window.addEventListener( 'storage', function ( e ) {
+		if ( e.key !== 'oec_credits_balance' || e.newValue === null || e.newValue === '' ) return;
+		try {
+			if ( ! localStorage.getItem( 'userEmail' ) ) return;
+			sessionStorage.setItem( 'userCredits', e.newValue );
+		} catch ( _e ) { return; }
+		window.dispatchEvent( new CustomEvent( 'oec:credits-updated', { detail: { balance: parseInt( e.newValue, 10 ) } } ) );
+	} );
 }());
 </script>
 <?php

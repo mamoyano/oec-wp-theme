@@ -431,6 +431,14 @@ function oec_render_credits_widget_shortcode( $atts = [] ): string {
 				}
 			});
 
+			// Saldo cambiado en otra parte (canje confirmado en otra pestaña, chat
+			// IA, newsletter): si ya se muestra un saldo, se actualiza el número.
+			window.addEventListener('oec:credits-updated', function (e) {
+				const b = e && e.detail ? parseInt(e.detail.balance, 10) : NaN;
+				if (isNaN(b) || states.balance.hidden) return;
+				root.querySelector('.oec-credits-widget__balance-num').textContent = b.toLocaleString('es-AR');
+			});
+
 			const resetBtn = root.querySelector('[data-action="reset"]');
 			resetBtn.addEventListener('click', function () {
 				try {
