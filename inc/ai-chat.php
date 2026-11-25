@@ -3327,6 +3327,7 @@ TXT;
 				'turn'          => (int) $request->get_param( 'turn' ),
 				'page'          => (string) $request->get_param( 'page' ),
 				'reference'     => $reply,
+				'pt'            => substr( (string) $request->get_param( 'pt' ), 0, 60 ), // marca de la persona (enlaces de Lead Journey)
 			] ),
 		] );
 	}

@@ -58,7 +58,29 @@
   // para que lleguen al checkout aunque la persona después navegue a páginas sin ellos.
   // Los propios del sitio (país, moneda, búsqueda, paginado) no cuentan.
   const FIRST_KEY = 'oec_first_touch';
-  const SITE_PARAMS = ['country', 'currency', 'conversacion', 'q', 's', 'p', 'page', 'paged', 'oec_pg', 'preview', 'page_id'];
+  const SITE_PARAMS = ['country', 'currency', 'conversacion', 'q', 's', 'p', 'page', 'paged', 'oec_pg', 'preview', 'page_id', 'oecp'];
+
+  // Marca de la persona (Lead Journey, src/person-link.js): los enlaces de nuestros emails y mensajes traen
+  // ?oecp=… Se guarda 90 días y se saca de la URL (no viaja al checkout ni se comparte al copiar el enlace).
+  // El chat la manda con cada mensaje: así su conversación queda unida a la persona. No trae datos personales.
+  const PERSON_KEY = 'oec_person';
+  (function rememberPerson() {
+    try {
+      const q = new URLSearchParams(location.search);
+      const t = q.get('oecp');
+      if (!t) return;
+      if (/^[0-9a-z]{1,10}\.[0-9a-z]{1,10}\.[A-Za-z0-9_-]{16}$/.test(t)) localStorage.setItem(PERSON_KEY, JSON.stringify({ t, ts: Date.now() }));
+      q.delete('oecp');
+      const rest = q.toString();
+      history.replaceState(history.state, '', location.pathname + (rest ? '?' + rest : '') + location.hash);
+    } catch (_) {}
+  })();
+  function personMark() {
+    try {
+      const s = JSON.parse(localStorage.getItem(PERSON_KEY) || 'null');
+      return s && s.t && Date.now() - (s.ts || 0) < 90 * 864e5 ? s.t : '';
+    } catch (_) { return ''; }
+  }
   function pageParams() {
     const out = [];
     new URLSearchParams(location.search).forEach((v, k) => { if (v !== '' && SITE_PARAMS.indexOf(k) === -1) out.push([k, v]); });
@@ -914,6 +936,7 @@
           credits: storedCredits(),          // email y saldo de créditos, si ya se identificó en el sitio
           launch: launchNext ? 1 : 0,
           site: cfg.site || '',              // chat de journey.oe.center (si el sitio lo usa): qué comunidad es
+          pt: personMark(),                  // marca de la persona si llegó por un enlace nuestro (Lead Journey)
           stream: 1,
         }),
       };
